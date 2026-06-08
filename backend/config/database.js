@@ -344,6 +344,8 @@ async function ensureTablesAndColumns() {
         invoice_value DECIMAL(10,2) DEFAULT 0,
         amount_collected DECIMAL(10,2) DEFAULT 0,
         payment_status VARCHAR(50) DEFAULT NULL,
+        gst_number VARCHAR(50) DEFAULT NULL,
+        company_name VARCHAR(150) DEFAULT NULL,
         created_by INT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -459,11 +461,11 @@ async function ensureTablesAndColumns() {
     { table: "teammember", column: "emp_id", definition: "emp_id VARCHAR(50) DEFAULT NULL" },
     { table: "teammember", column: "user_id", definition: "user_id INT DEFAULT NULL" },
     { table: "teammember", column: "emp_address", definition: "emp_address TEXT DEFAULT NULL" },
-    { table: "Telecalls", column: "created_by", definition: "created_by INT DEFAULT NULL" },
-    { table: "Telecalls", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
-    { table: "Walkins", column: "assigned_to", definition: "assigned_to INT DEFAULT NULL" },
-    { table: "Walkins", column: "created_by", definition: "created_by INT DEFAULT NULL" },
-    { table: "Walkins", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
+    { table: "telecalls", column: "created_by", definition: "created_by INT DEFAULT NULL" },
+    { table: "telecalls", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
+    { table: "walkins", column: "assigned_to", definition: "assigned_to INT DEFAULT NULL" },
+    { table: "walkins", column: "created_by", definition: "created_by INT DEFAULT NULL" },
+    { table: "walkins", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
     { table: "fields", column: "assigned_to", definition: "assigned_to INT DEFAULT NULL" },
     { table: "fields", column: "created_by", definition: "created_by INT DEFAULT NULL" },
     { table: "fields", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
@@ -562,6 +564,8 @@ async function ensureTablesAndColumns() {
     { table: "call_reports", column: "step2_completed", definition: "step2_completed TINYINT(1) DEFAULT 0" },
     { table: "call_reports", column: "email", definition: "email VARCHAR(150) DEFAULT NULL" },
     { table: "call_reports", column: "status", definition: "status ENUM('Pending','In Progress','Completed','Closed','Live','Observation') DEFAULT 'Completed'", expectedType: "enum" },
+    { table: "call_reports", column: "gst_number", definition: "gst_number VARCHAR(50) DEFAULT NULL" },
+    { table: "call_reports", column: "company_name", definition: "company_name VARCHAR(150) DEFAULT NULL" },
     { table: "amc_alc_services", column: "amount_collected", definition: "amount_collected DECIMAL(10,2) DEFAULT 0" },
     { table: "amc_alc_services", column: "payment_mode", definition: "payment_mode VARCHAR(50) DEFAULT NULL" },
     { table: "amc_alc_services", column: "call_number", definition: "call_number INT DEFAULT 1" },
@@ -730,7 +734,7 @@ async function ensureTablesAndColumns() {
     { table: "tasks", column: "project_priority", oldEnum: "'Low','Normal','High','Urgent'", newEnum: "'Low','Normal','Medium','High','Urgent'" },
     { table: "teammember", column: "emp_role", oldEnum: "'Developer','BDM'", newEnum: "'Developer','BDM','Manager','Sales'" },
     { table: "telecalls", column: "call_outcome", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted'" },
-    { table: "Walkins", column: "walkin_status", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted'" },
+    { table: "walkins", column: "walkin_status", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted'" },
     { table: "fields", column: "field_outcome", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted'" }
   ];
 

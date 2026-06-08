@@ -33,7 +33,7 @@ if errorlevel 1 (
 :: DETECT LAN IP AND HOSTNAME
 :: ====================================================================
 set "LAN_IP=127.0.0.1"
-for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "(Find-NetRoute -RemoteIPAddress '8.8.8.8' -ErrorAction SilentlyContinue).LocalIPAddress, (Get-NetIPAddress -AddressFamily IPv4 -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
+for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop; if ($gw) { $ip = (Find-NetRoute -RemoteIPAddress $gw -ErrorAction SilentlyContinue).LocalIPAddress; if ($ip) { echo $ip; exit } }; (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*', 'Wi-Fi*', 'Local Area Connection*' -Type Unicast -ErrorAction SilentlyContinue).IPAddress; (Get-NetIPAddress -AddressFamily IPv4 -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
   set "CANDIDATE=%%p"
   if not "!CANDIDATE!"=="" (
     set "PREFIX1=!CANDIDATE:~0,4!"
@@ -182,33 +182,26 @@ echo  [4/%S%] Backend setup (npm install + database)...
 echo [%DATE% %TIME%] Step 4: Backend setup >> "%LOGFILE%"
 
 cd /d "%ROOT%\backend"
-call npm install --legacy-peer-deps >>"%LOGFILE%" 2>&1
-if errorlevel 1 (
-  echo         [FAIL] Backend npm install failed. Check %LOGFILE%
-  goto :fail
-)
-echo         npm install complete.
-
-:: Create database user (tries common root passwords automatically)
-call node ensure_db_user.js >>"%LOGFILE%" 2>&1
-if errorlevel 1 (
-  echo.
-  echo  ===========================================================================
-  echo    MySQL root password required to create the ACHME database user.
-  echo    Please enter your MySQL root password below:
-  echo  ===========================================================================
-  echo.
-  set /p "MYSQL_ROOT_PWD=  MySQL root password: "
-  set "MYSQL_ROOT_PASSWORD=!MYSQL_ROOT_PWD!"
-  call node ensure_db_user.js >>"%LOGFILE%" 2>&1
+if exist "%ROOT%\backend\node_modules" (
+  echo         node_modules folder already exists. Skipping npm install. [OK]
+) else (
+  echo         node_modules folder not found. Running npm install...
+  call npm install --legacy-peer-deps >>"%LOGFILE%" 2>&1
   if errorlevel 1 (
-    echo         [FAIL] Could not create database user. Check MySQL root password.
-    echo         See log: %LOGFILE%
-    pause
+    echo         [FAIL] Backend npm install failed. Check %LOGFILE%
     goto :fail
   )
+  echo         npm install complete.
 )
-echo         DB user ready.
+
+:: Create database user (tries common root passwords and hosts automatically)
+call node ensure_db_user.js >>"%LOGFILE%" 2>&1
+if errorlevel 1 (
+  echo         [WARN] Automatic database user creation failed.
+  echo                Trying to initialize database schema directly...
+) else (
+  echo         DB user ready. [OK]
+)
 
 :: Initialize database schema
 call node db_init.js >>"%LOGFILE%" 2>&1
@@ -236,6 +229,7 @@ if errorlevel 1 (
 ) else (
   echo         PM2 already installed. [OK]
 )
+call pm2 ping >nul 2>&1
 
 :: Save npm global prefix path for boot startup (SYSTEM account needs this)
 for /f "tokens=*" %%p in ('npm config get prefix 2^>nul') do (
@@ -254,12 +248,17 @@ echo  [6/%S%] Frontend setup...
 echo [%DATE% %TIME%] Step 6: Frontend setup >> "%LOGFILE%"
 
 cd /d "%ROOT%\frontend"
-call npm install --legacy-peer-deps >>"%LOGFILE%" 2>&1
-if errorlevel 1 (
-  echo         [FAIL] Frontend npm install failed. Check %LOGFILE%
-  goto :fail
+if exist "%ROOT%\frontend\node_modules" (
+  echo         node_modules folder already exists. Skipping npm install. [OK]
+) else (
+  echo         node_modules folder not found. Running npm install...
+  call npm install --legacy-peer-deps >>"%LOGFILE%" 2>&1
+  if errorlevel 1 (
+    echo         [FAIL] Frontend npm install failed. Check %LOGFILE%
+    goto :fail
+  )
+  echo         npm install complete.
 )
-echo         npm install complete.
 
 if exist "%ROOT%\frontend\build\index.html" (
   echo         Existing frontend build found - using cached build. [OK]
@@ -280,10 +279,19 @@ if exist "%ROOT%\frontend\build\index.html" (
 echo  [7/%S%] Setting up Nginx...
 echo [%DATE% %TIME%] Step 7: Nginx setup >> "%LOGFILE%"
 
-:: Download + extract if nginx not present
+:: Deploy if nginx not present
 if not exist "%NGINX_DIR%\nginx.exe" (
-  echo         Nginx not found at C:\nginx — downloading automatically...
+  if exist "%ROOT%\nginx-local\nginx.exe" (
+    echo         Found pre-bundled offline Nginx folder. Deploying...
+    if not exist "%NGINX_DIR%" mkdir "%NGINX_DIR%"
+    xcopy /E /I /Y "%ROOT%\nginx-local\*" "%NGINX_DIR%\" >nul 2>&1
+    if exist "%NGINX_DIR%\nginx.exe" (
+      echo         Pre-bundled Nginx deployed to C:\nginx. [OK]
+      goto :nginx_deployed
+    )
+  )
 
+  echo         Nginx not found at C:\nginx — downloading automatically...
   set "NGINX_URL=https://nginx.org/download/nginx-1.24.0.zip"
   echo         Downloading from !NGINX_URL! ...
   curl.exe -L -o "%NGINX_ZIP%" "!NGINX_URL!" >>"%LOGFILE%" 2>&1
@@ -316,6 +324,7 @@ if not exist "%NGINX_DIR%\nginx.exe" (
     goto :skip_nginx
   )
 )
+:nginx_deployed
 
 :: Create required directories
 if not exist "%NGINX_DIR%\logs" mkdir "%NGINX_DIR%\logs"
@@ -329,7 +338,9 @@ echo         nginx.conf written.
 xcopy /E /I /Y "%ROOT%\frontend\build\*" "%NGINX_DIR%\html\achme\" >nul 2>&1
 echo         Frontend deployed to Nginx.
 
-:: Kill any old nginx then start fresh as background process
+:: Stop any conflicting Nginx service and kill stale background instances
+net stop nginx >nul 2>&1
+sc stop nginx >nul 2>&1
 taskkill /F /IM nginx.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath 'C:\nginx\nginx.exe' -WorkingDirectory 'C:\nginx' -WindowStyle Hidden"
@@ -355,9 +366,9 @@ if errorlevel 1 (
 :: Stop old instance, start fresh
 call pm2 delete achme-backend >nul 2>&1
 if exist "%ROOT%\backend\ecosystem.production.config.js" (
-  call pm2 start ecosystem.production.config.js >>"%LOGFILE%" 2>&1
+  call pm2 start ecosystem.production.config.js >nul 2>&1
 ) else (
-  call pm2 start server.js --name achme-backend --env production >>"%LOGFILE%" 2>&1
+  call pm2 start server.js --name achme-backend --env production >nul 2>&1
 )
 call pm2 save >nul 2>&1
 echo         PM2 backend started. [OK]
@@ -369,8 +380,19 @@ echo  [9/%S%] Configuring auto-boot, firewall, and hosts...
 echo [%DATE% %TIME%] Step 9: Auto-boot setup >> "%LOGFILE%"
 
 :: --- Firewall rules ---
-netsh advfirewall firewall add rule name="ACHME CRM Port 82"   dir=in action=allow protocol=TCP localport=82   >nul 2>&1
-netsh advfirewall firewall add rule name="ACHME CRM Port 5000" dir=in action=allow protocol=TCP localport=5000 >nul 2>&1
+:: Open Port 82 and 5000 on ALL profiles
+netsh advfirewall firewall delete rule name="ACHME CRM Port 82" >nul 2>&1
+netsh advfirewall firewall add rule name="ACHME CRM Port 82" dir=in action=allow protocol=TCP localport=82 profile=any >nul 2>&1
+netsh advfirewall firewall delete rule name="ACHME CRM Port 5000" >nul 2>&1
+netsh advfirewall firewall add rule name="ACHME CRM Port 5000" dir=in action=allow protocol=TCP localport=5000 profile=any >nul 2>&1
+
+:: Explicitly allow Nginx executables (for system firewall/corporate security) on ALL profiles
+netsh advfirewall firewall delete rule name="ACHME CRM Nginx App" >nul 2>&1
+netsh advfirewall firewall add rule name="ACHME CRM Nginx App" dir=in action=allow program="C:\nginx\nginx.exe" enable=yes profile=any >nul 2>&1
+netsh advfirewall firewall delete rule name="ACHME CRM Nginx App Local" >nul 2>&1
+netsh advfirewall firewall add rule name="ACHME CRM Nginx App Local" dir=in action=allow program="%NGINX_DIR%\nginx.exe" enable=yes profile=any >nul 2>&1
+netsh advfirewall firewall delete rule name="ACHME CRM Nginx App Bundled" >nul 2>&1
+netsh advfirewall firewall add rule name="ACHME CRM Nginx App Bundled" dir=in action=allow program="%ROOT%\nginx-local\nginx.exe" enable=yes profile=any >nul 2>&1
 echo         Firewall rules added.
 
 :: --- Auto-boot: Register TWO scheduled tasks for maximum reliability ---
@@ -418,8 +440,9 @@ echo         Step 9 complete. [OK]
 echo  [10/%S%] Verifying all services...
 echo [%DATE% %TIME%] Step 10: Health verification >> "%LOGFILE%"
 
-:: Give backend a moment to fully start
-timeout /t 6 /nobreak >nul
+:: Give backend a moment to fully start (slower machines need up to 15s to run first-time migrations)
+echo         Waiting 15 seconds for services to fully initialize...
+timeout /t 15 /nobreak >nul
 
 echo.
 echo  ===========================================================================
@@ -471,6 +494,10 @@ if "%ALL_OK%"=="1" (
   echo  ===========================================================================
   echo    ALL SERVICES RUNNING PERFECTLY!
   echo  ===========================================================================
+  echo         Launching access URLs in default browser...
+  start "" "http://localhost:82"
+  start "" "http://!LAN_IP!:82"
+  start "" "http://!PC_HOSTNAME!:82"
 ) else (
   echo  ===========================================================================
   echo    SOME SERVICES MAY NEED ATTENTION - Check warnings above.

@@ -111,7 +111,7 @@ goto :mysql_retry
 :: PHASE 3: Detect current LAN IP
 :: ====================================================================
 set "LAN_IP=127.0.0.1"
-for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "(Find-NetRoute -RemoteIPAddress '8.8.8.8' -ErrorAction SilentlyContinue).LocalIPAddress, (Get-NetIPAddress -AddressFamily IPv4 -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
+for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop; if ($gw) { $ip = (Find-NetRoute -RemoteIPAddress $gw -ErrorAction SilentlyContinue).LocalIPAddress; if ($ip) { echo $ip; exit } }; (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*', 'Wi-Fi*', 'Local Area Connection*' -Type Unicast -ErrorAction SilentlyContinue).IPAddress; (Get-NetIPAddress -AddressFamily IPv4 -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
   set "CANDIDATE=%%p"
   if not "!CANDIDATE!"=="" (
     set "PREFIX1=!CANDIDATE:~0,4!"
@@ -152,13 +152,20 @@ echo [%DATE% %TIME%] Phase 4: Nginx... >> "%LOGFILE%"
 
 :: Also try local nginx folder as fallback
 if not exist "%NGINX_DIR%\nginx.exe" (
-  if exist "%ROOT%\nginx\nginx.exe" (
+  if exist "%ROOT%\nginx-local\nginx.exe" (
+    set "NGINX_DIR=%ROOT%\nginx-local"
+    echo [%DATE% %TIME%] Using local nginx at: !NGINX_DIR! >> "%LOGFILE%"
+  ) else if exist "%ROOT%\nginx\nginx.exe" (
     set "NGINX_DIR=%ROOT%\nginx"
     echo [%DATE% %TIME%] Using local nginx at: !NGINX_DIR! >> "%LOGFILE%"
   )
 )
 
 if exist "%NGINX_DIR%\nginx.exe" (
+  :: Stop any conflicting Nginx service first
+  net stop nginx >nul 2>&1
+  sc stop nginx >nul 2>&1
+
   :: Create directories
   if not exist "%NGINX_DIR%\html\achme" mkdir "%NGINX_DIR%\html\achme"
   if not exist "%NGINX_DIR%\logs" mkdir "%NGINX_DIR%\logs"
@@ -284,8 +291,11 @@ echo [%DATE% %TIME%] Final PM2_HOME: %PM2_HOME% >> "%LOGFILE%"
 
 :: --- Start PM2 ---
 if defined PM2_EXEC (
+  :: Spawn daemon cleanly with NUL handles
+  call "%PM2_EXEC%" ping >nul 2>&1
+
   :: Try resurrect first (restores saved PM2 process list)
-  call "%PM2_EXEC%" resurrect >> "%LOGFILE%" 2>&1
+  call "%PM2_EXEC%" resurrect >nul 2>&1
 
   :: Verify achme-backend is running
   call "%PM2_EXEC%" describe achme-backend >nul 2>&1
@@ -294,14 +304,14 @@ if defined PM2_EXEC (
     :: Start from ecosystem config
     if exist "%ROOT%\backend\ecosystem.production.config.js" (
       cd /d "%ROOT%\backend"
-      call "%PM2_EXEC%" start ecosystem.production.config.js >> "%LOGFILE%" 2>&1
-      call "%PM2_EXEC%" save >> "%LOGFILE%" 2>&1
+      call "%PM2_EXEC%" start ecosystem.production.config.js >nul 2>&1
+      call "%PM2_EXEC%" save >nul 2>&1
       cd /d "%ROOT%"
     ) else (
       :: Last resort: start server.js directly
       cd /d "%ROOT%\backend"
-      call "%PM2_EXEC%" start server.js --name achme-backend >> "%LOGFILE%" 2>&1
-      call "%PM2_EXEC%" save >> "%LOGFILE%" 2>&1
+      call "%PM2_EXEC%" start server.js --name achme-backend >nul 2>&1
+      call "%PM2_EXEC%" save >nul 2>&1
       cd /d "%ROOT%"
     )
   ) else (

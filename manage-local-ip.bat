@@ -349,13 +349,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "[System.IO.File]::WriteAllLines($hostsFile, ($filtered + $newMappings));" ^
   "Write-Host ('  [OK] Server hosts file mapped: achme.com + IBM-SERVER -> ' + $ip) -ForegroundColor Green;" >nul 2>&1
 
-:: Update employee-hosts-setup.bat SERVER_IP variable to match
-if exist "%ROOT%\employee-hosts-setup.bat" (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$f = '%ROOT%\employee-hosts-setup.bat';" ^
-    "$c = [System.IO.File]::ReadAllText($f);" ^
-    "$c = $c -replace '(?m)^set\s+""?SERVER_IP""?=\S*', 'set ""SERVER_IP=%ACTIVE_IP%""';" ^
-    "[System.IO.File]::WriteAllText($f, $c);" >nul 2>&1
+:: Update employee-hosts-setup.bat FALLBACK_IP variable to match (skip if loopback 127.0.0.1)
+if not "%ACTIVE_IP%"=="127.0.0.1" if not "%ACTIVE_IP%"=="" (
+  if exist "%ROOT%\employee-hosts-setup.bat" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$f = '%ROOT%\employee-hosts-setup.bat';" ^
+      "$c = [System.IO.File]::ReadAllText($f);" ^
+      "$c = $c -replace '(?m)^set\s+""FALLBACK_IP=[^\r\n]*', 'set ""FALLBACK_IP=%ACTIVE_IP%""';" ^
+      "[System.IO.File]::WriteAllText($f, $c);" >nul 2>&1
+  )
 )
 
 ipconfig /flushdns >nul

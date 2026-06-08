@@ -15,7 +15,7 @@ const VALIDITY_OPTIONS = ["2 days", "5 days", "10 days", "15 days", "30 days"];
 const PAYMENT_OPTIONS = ["100% Advance", "Payment Against Delivery", "15 Days", "30 Days", "45 Days", "Custom"];
 const WARRANTY_OPTIONS = ["No Warranty", "Testing Warranty", "1 Month", "3 Months", "6 Months", "12 Months", "24 Months", "36 Months", "OEM Warranty", "Supplier Warranty", "OEM Hardware Warranty", "No Software Warranty"];
 
-const GST_STATE_MAP = {"01":"Jammu and Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","25":"Dadra and Nagar Haveli and Daman and Diu","26":"Dadra and Nagar Haveli and Daman and Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman and Nicobar Islands","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh"};
+const GST_STATE_MAP = { "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "25": "Dadra and Nagar Haveli and Daman and Diu", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" };
 
 const emptyExtra = () => ({
   from_address_id: "", from_address_custom: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004 | GSTIN: 33AAHFA7876M1ZX",
@@ -62,7 +62,7 @@ const EstimateInvoice = () => {
 
   const [items, setItems] = useState([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
   const [customer, setCustomer] = useState({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
-  const [estimateInvoice, setEstimateInvoice] = useState({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })() });
+  const [estimateInvoice, setEstimateInvoice] = useState({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() });
   const [extra, setExtra] = useState(emptyExtra());
   const [editingIndex, setEditingIndex] = useState(null);
 
@@ -270,7 +270,7 @@ const EstimateInvoice = () => {
   const handleAddItem = () => {
     if (!descInput.trim()) return;
     const newItem = { name: descInput, brand_model: brandInput || "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 };
-    
+
     if (editingIndex !== null) {
       const updated = [...items];
       updated[editingIndex] = { ...updated[editingIndex], name: descInput, brand_model: brandInput || updated[editingIndex].brand_model };
@@ -291,7 +291,7 @@ const EstimateInvoice = () => {
     setItems([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
     setDescInput("");
     setBrandInput("");
-    setEstimateInvoice({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })() });
+    setEstimateInvoice({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() });
     setExtra(emptyExtra());
     setEditId(null);
     setEditingIndex(null);
@@ -392,7 +392,7 @@ const EstimateInvoice = () => {
                 const a = document.createElement("a"); a.href = url;
                 a.download = `Estimation_${formatEINumber(id, findInvoice(id)?.invoice_date)}.pdf`;
                 a.click(); URL.revokeObjectURL(url);
-              } catch(e) { alert("Download failed: " + e.message); }
+              } catch (e) { alert("Download failed: " + e.message); }
             }} title="Download PDF" className="w-10 h-10 bg-white border rounded-lg shadow-sm flex justify-center items-center hover:bg-gray-50 transition"><Download size={20} /></button>
             <button onClick={openMailModal} title="Send Email" className="w-10 h-10 bg-white border rounded-lg shadow-sm flex justify-center items-center hover:bg-gray-50 transition"><Mail size={18} /></button>
             <button onClick={() => { if (!selectedId) return alert("Please select an estimation first"); handleEdit(selectedId); }} title="Edit" className="w-10 h-10 bg-white border rounded-lg shadow-sm flex justify-center items-center hover:bg-gray-50 transition"><Edit2 size={18} /></button>
@@ -405,43 +405,43 @@ const EstimateInvoice = () => {
       </div>
 
       {!viewId && (
-      <div className="bg-white shadow-sm rounded-xl mt-6 overflow-hidden border border-gray-100 overflow-x-auto">
-        <table className="w-full text-sm text-center border-collapse min-w-[600px]">
-          <thead className="bg-[#f8fafc]">
-            <tr className="text-gray-700 font-bold uppercase text-xs border-b border-gray-200">
-              <th className="px-4 py-4 border-r">EI Number</th>
-              <th className="px-4 py-4 border-r">Customer Name</th>
-              <th className="px-4 py-4 border-r">Email</th>
-              <th className="px-4 py-4 border-r">Mobile</th>
-              <th className="px-4 py-4 border-r">Date</th>
-              <th className="px-4 py-4 border-r">Total</th>
-              <th className="px-4 py-4 border-r">City</th>
-              <th className="px-4 py-4">History</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredInvoices.map(p => (
-              <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
-                className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
-                <td className="px-4 py-4 border-r font-medium text-blue-600">{formatEINumber(p.id, p.invoice_date)}</td>
-                <td className="px-4 py-4 border-r">{p.customer_name}</td>
-                <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
-                <td className="px-4 py-4 border-r">{p.mobile_number}</td>
-                <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
-                <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                <td className="px-4 py-4 border-r">{p.location_city}</td>
-                <td className="px-4 py-4 text-center">
-                  <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
-                    <History size={13} /> History
-                  </button>
-                </td>
+        <div className="bg-white shadow-sm rounded-xl mt-6 overflow-hidden border border-gray-100 overflow-x-auto">
+          <table className="w-full text-sm text-center border-collapse min-w-[600px]">
+            <thead className="bg-[#f8fafc]">
+              <tr className="text-gray-700 font-bold uppercase text-xs border-b border-gray-200">
+                <th className="px-4 py-4 border-r">EI Number</th>
+                <th className="px-4 py-4 border-r">Customer Name</th>
+                <th className="px-4 py-4 border-r">Email</th>
+                <th className="px-4 py-4 border-r">Mobile</th>
+                <th className="px-4 py-4 border-r">Date</th>
+                <th className="px-4 py-4 border-r">Total</th>
+                <th className="px-4 py-4 border-r">City</th>
+                <th className="px-4 py-4">History</th>
               </tr>
-            ))}
-            {filteredInvoices.length === 0 && (<tr><td colSpan="8" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filteredInvoices.map(p => (
+                <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
+                  className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
+                  <td className="px-4 py-4 border-r font-medium text-blue-600">{formatEINumber(p.id, p.invoice_date)}</td>
+                  <td className="px-4 py-4 border-r">{p.customer_name}</td>
+                  <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
+                  <td className="px-4 py-4 border-r">{p.mobile_number}</td>
+                  <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
+                  <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
+                  <td className="px-4 py-4 border-r">{p.location_city}</td>
+                  <td className="px-4 py-4 text-center">
+                    <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
+                      <History size={13} /> History
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredInvoices.length === 0 && (<tr><td colSpan="8" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div className={`overlay ${open ? "show" : ""} flex justify-center items-start overflow-y-auto pt-6 pb-10`}>
@@ -564,13 +564,13 @@ const EstimateInvoice = () => {
                 </h4>
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">Template:</label>
-                  <select 
-                    value={extra.bank_details_id} 
+                  <select
+                    value={extra.bank_details_id}
                     onChange={e => {
                       const b = BANK_DETAILS.find(x => x.id === e.target.value);
                       if (b) {
-                        setExtra(ex => ({ 
-                          ...ex, 
+                        setExtra(ex => ({
+                          ...ex,
                           bank_details_id: b.id,
                           bank_company: b.company,
                           bank_name: b.bank,
@@ -588,7 +588,7 @@ const EstimateInvoice = () => {
                   </select>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
                 <div className="flex items-center border-b border-slate-100 pb-1">
                   <span className="w-20 text-[11px] font-bold text-slate-500 uppercase">Company</span>
@@ -627,29 +627,29 @@ const EstimateInvoice = () => {
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Customer Name *</label>
                 <div className="relative">
-                <ClientSearchDropdown
-                  value={customer.customer_name}
-                  onSelect={(client) => {
-                    setCustomer({
-                      customer_name: client.name || "",
-                      mobile_number: client.phone || "",
-                      email: client.email || client.lead_email || "",
-                      gst_number: client.gst_number || "",
-                      location_city: client.lead_city || client.city || ""
-                    });
-                    setExtra(ex => ({
-                      ...ex,
-                      client_company: client.company_name || "",
-                      client_address1: client.address || "",
-                      client_address2: "",
-                      client_city: client.lead_city || client.city || "",
-                      client_state: client.state || "",
-                      client_pincode: client.pincode || "",
-                      client_country: "India"
-                    }));
-                  }}
-                  required
-                />
+                  <ClientSearchDropdown
+                    value={customer.customer_name}
+                    onSelect={(client) => {
+                      setCustomer({
+                        customer_name: client.name || "",
+                        mobile_number: client.phone || "",
+                        email: client.email || client.lead_email || "",
+                        gst_number: client.gst_number || "",
+                        location_city: client.lead_city || client.city || ""
+                      });
+                      setExtra(ex => ({
+                        ...ex,
+                        client_company: client.company_name || "",
+                        client_address1: client.address || "",
+                        client_address2: "",
+                        client_city: client.lead_city || client.city || "",
+                        client_state: client.state || "",
+                        client_pincode: client.pincode || "",
+                        client_country: "India"
+                      }));
+                    }}
+                    required
+                  />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -721,13 +721,13 @@ const EstimateInvoice = () => {
                     <tr key={i} className="border-b last:border-0">
                       <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
                       <td className="px-3 py-2">
-                        <input 
-                          type="text" 
-                          value={item.name} 
+                        <input
+                          type="text"
+                          value={item.name}
                           onChange={e => updateItem(i, "name", e.target.value)}
                           onClick={() => { setDescInput(item.name); setBrandInput(item.brand_model); setEditingIndex(i); }}
-                          className="w-full outline-none bg-transparent text-sm cursor-text hover:text-blue-600 font-medium" 
-                          placeholder="Enter item description..." 
+                          className="w-full outline-none bg-transparent text-sm cursor-text hover:text-blue-600 font-medium"
+                          placeholder="Enter item description..."
                         />
                       </td>
                       <td className="px-3 py-2"><input type="text" value={item.brand_model} onChange={e => updateItem(i, "brand_model", e.target.value)} onClick={() => { setDescInput(item.name); setBrandInput(item.brand_model); setEditingIndex(i); }} className="w-full outline-none bg-transparent text-sm cursor-text hover:text-blue-600" placeholder="Brand/Model" /></td>
@@ -750,6 +750,25 @@ const EstimateInvoice = () => {
               </table>
               <div className="bg-gray-50 p-3 flex gap-4">
                 <button type="button" onClick={removeItem} className="flex items-center gap-2 text-red-500 font-bold text-xs hover:underline"><MinusCircle size={14} /> Remove Line</button>
+              </div>
+            </div>
+
+            {/* Totals Summary */}
+            <div className="flex justify-end pt-4">
+              <div className="w-full max-w-[320px] border border-gray-200 rounded-2xl bg-white p-5 shadow-sm">
+                {(() => {
+                  const t = getTaxCalculations();
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
+                      <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -828,15 +847,15 @@ const EstimateInvoice = () => {
                 </div>
                 {extra.terms_payment === "Custom" && (
                   <div className="flex items-center gap-2 mt-2">
-                    <input 
-                      type="number" 
-                      value={extra.terms_payment_custom ? extra.terms_payment_custom.replace(" Days", "") : ""} 
+                    <input
+                      type="number"
+                      value={extra.terms_payment_custom ? extra.terms_payment_custom.replace(" Days", "") : ""}
                       onChange={e => {
                         const val = e.target.value;
                         setExtra(ex => ({ ...ex, terms_payment_custom: val ? `${val} Days` : "" }));
-                      }} 
-                      placeholder="Enter number of days..." 
-                      className="border rounded-lg px-3 py-2 outline-none text-sm w-48 bg-white" 
+                      }}
+                      placeholder="Enter number of days..."
+                      className="border rounded-lg px-3 py-2 outline-none text-sm w-48 bg-white"
                     />
                     <span className="text-sm text-gray-600 font-medium">Days</span>
                   </div>
@@ -857,23 +876,7 @@ const EstimateInvoice = () => {
               </div>
             </div>
 
-            {/* Totals Summary */}
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <SectionTitle>Totals</SectionTitle>
-              {(() => {
-                const t = getTaxCalculations();
-                return (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">Rs.{t.subtotal.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-Rs.{t.total_discount.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">Rs.{t.total_cgst.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">Rs.{t.total_sgst.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">Rs.{t.total_igst.toLocaleString()}</span></div>
-                    <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>Rs.{t.grand_total.toLocaleString()}</span></div>
-                  </div>
-                );
-              })()}
-            </div>
+
 
             {/* Submit */}
             <div className="flex gap-4 pt-4">
@@ -990,9 +993,9 @@ const EstimateInvoice = () => {
         </div>
       )}
       {showSMTPPrompt && (
-        <SMTPConfigPrompt 
-          email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()} 
-          onClose={() => setShowSMTPPrompt(false)} 
+        <SMTPConfigPrompt
+          email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()}
+          onClose={() => setShowSMTPPrompt(false)}
         />
       )}
     </div>

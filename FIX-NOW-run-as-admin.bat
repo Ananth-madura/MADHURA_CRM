@@ -6,7 +6,11 @@ if errorlevel 1 (
   exit /b 0
 )
 
-set "LAN_IP=192.168.1.110"
+set "LAN_IP=127.0.0.1"
+for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop; if ($gw) { $ip = (Find-NetRoute -RemoteIPAddress $gw -ErrorAction SilentlyContinue).LocalIPAddress; if ($ip) { echo $ip; exit } }; (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*', 'Wi-Fi*', 'Local Area*' -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
+  set "LAN_IP=%%p"
+)
+if "%LAN_IP%"=="" set "LAN_IP=192.168.1.110"
 set "NGINX_DIR=C:\nginx"
 
 echo Fixing hosts file...
@@ -104,7 +108,7 @@ echo Testing all URLs...
 timeout /t 2 /nobreak >nul
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'http://localhost:82/nginx-health' -UseBasicParsing -TimeoutSec 4 | Out-Null; Write-Host '  [OK]  localhost:82' -ForegroundColor Green } catch { Write-Host '  [FAIL] localhost:82' -ForegroundColor Red }"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'http://192.168.1.110:82/nginx-health' -UseBasicParsing -TimeoutSec 4 | Out-Null; Write-Host '  [OK]  192.168.1.110:82' -ForegroundColor Green } catch { Write-Host '  [FAIL] 192.168.1.110:82' -ForegroundColor Red }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'http://%LAN_IP%:82/nginx-health' -UseBasicParsing -TimeoutSec 4 | Out-Null; Write-Host '  [OK]  %LAN_IP%:82' -ForegroundColor Green } catch { Write-Host '  [FAIL] %LAN_IP%:82' -ForegroundColor Red }"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'http://IBM-SERVER:82/nginx-health' -UseBasicParsing -TimeoutSec 4 | Out-Null; Write-Host '  [OK]  IBM-SERVER:82' -ForegroundColor Green } catch { Write-Host '  [FAIL] IBM-SERVER:82' -ForegroundColor Red }"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'http://achme.com:82/nginx-health' -UseBasicParsing -TimeoutSec 4 | Out-Null; Write-Host '  [OK]  achme.com:82' -ForegroundColor Green } catch { Write-Host '  [FAIL] achme.com:82' -ForegroundColor Red }"
 

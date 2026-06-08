@@ -1,4 +1,10 @@
 $ip = '192.168.1.110'
+if (Test-Path "$PSScriptRoot\.last-build-ip") {
+    $ip = (Get-Content "$PSScriptRoot\.last-build-ip" -Raw).Trim()
+} else {
+    $myIp = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*', 'Wi-Fi*', 'Local Area*' -Type Unicast | Select-Object -First 1).IPAddress
+    if ($myIp) { $ip = $myIp }
+}
 $hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
 $domains = @('achme.com', 'www.achme.com', 'IBM-SERVER', 'IBM-SERVER.achme.com')
 $content = [System.IO.File]::ReadAllLines($hostsFile)

@@ -18,6 +18,12 @@ const rootPasswords = [
   "mysql",
   "admin",
   "123456",
+  "12345678",
+  "1234",
+  "root123",
+  "root1234",
+  "mysql123",
+  "admin123",
   "Root@123",
   "root@123",
   "Admin@123",
@@ -44,9 +50,9 @@ async function appUserWorks() {
   await connection.end();
 }
 
-async function createWithRoot(password) {
+async function createWithRoot(host, password) {
   const connection = await mysql.createConnection({
-    host: dbHost,
+    host,
     port: dbPort,
     user: "root",
     password,
@@ -76,15 +82,20 @@ async function createWithRoot(password) {
     console.log(`Database user '${appUser}' is not ready. Trying root bootstrap...`);
   }
 
-  for (const password of rootPasswords) {
-    try {
-      await createWithRoot(password);
-      await appUserWorks();
-      console.log(`Database '${dbName}' and user '${appUser}' are ready.`);
-      return;
-    } catch (error) {
-      const label = password ? "provided/root password" : "blank root password";
-      console.log(`Root bootstrap failed with ${label}: ${error.message}`);
+  const hosts = [dbHost, "localhost", "127.0.0.1"];
+  const uniqueHosts = [...new Set(hosts)];
+
+  for (const host of uniqueHosts) {
+    for (const password of rootPasswords) {
+      try {
+        await createWithRoot(host, password);
+        await appUserWorks();
+        console.log(`Database '${dbName}' and user '${appUser}' are ready via root@${host}.`);
+        return;
+      } catch (error) {
+        const label = password ? "provided/root password" : "blank root password";
+        console.log(`Root bootstrap failed for root@${host} with ${label}: ${error.message}`);
+      }
     }
   }
 

@@ -71,7 +71,7 @@ export default function Login() {
         setTwoFaMessage("A 6-digit verification code has been sent to your email.");
       } else {
         login({ ...res.data.user, token: res.data.token });
-        navigate("/dashboard/team");
+        navigate("/dashboard");
       }
     } catch (err) {
       const msg = err.response?.data?.message || "Login failed";
@@ -96,7 +96,7 @@ export default function Login() {
         otp: otp2FA.trim()
       });
       login({ ...res.data.user, token: res.data.token });
-      navigate("/dashboard/team");
+      navigate("/dashboard");
     } catch (err) {
       setError(err.response?.data?.message || "Verification failed");
     } finally {

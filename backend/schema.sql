@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS `call_reports` (
   `created_by` int DEFAULT NULL,
   `amount_collected` decimal(10,2) DEFAULT '0.00',
   `payment_mode` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `gst_number` varchar(50) DEFAULT NULL,
+  `company_name` varchar(150) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

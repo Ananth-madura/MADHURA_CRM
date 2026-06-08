@@ -108,7 +108,7 @@ export function downloadAsHtml(data, type) {
     .db{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:flex-end;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#f8fafc;color:var(--muted);font-size:12px}
     .db span{color:var(--ink);font-weight:600}.tb{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
     .ib,.trm,.sb,.nb,.bb,.brb,.ft{background:var(--card-bg);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-sm)}
-    .ib{min-height:166px;padding:12px}.bt,.sh{color:var(--brand);font-weight:700}.bt{margin-bottom:8px;font-size:13px}
+    .ib{min-height:166px;padding:12px;text-align:left}.bt,.sh{color:var(--brand);font-weight:700}.bt{margin-bottom:8px;font-size:13px}
     .ib h3{margin-bottom:3px;font-size:15px;line-height:1.25}.gst{margin-bottom:9px;color:var(--muted);font-size:11px;font-weight:600}
     .cp,.cl,.trm li,.nb,.bg,.brb,.ft{font-size:11.5px;line-height:1.55}
     .cl{display:flex;gap:7px;align-items:baseline;margin-top:7px;word-break:break-word}.cl .label{min-width:40px;color:var(--brand-deep);font-weight:600}

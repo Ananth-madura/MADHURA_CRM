@@ -42,8 +42,8 @@ Copy the full `ACHME_COMUNICATION-main` folder to a simple location on the clien
    - **Step 6/10**: Prepares the cached frontend web assets.
    - **Step 7/10**: Downloads Nginx, installs it to `C:\nginx\`, and writes configuration.
    - **Step 8/10**: Starts the backend under PM2 with automatic crash recovery.
-   - **Step 9/10**: Adds Firewall rules, maps the `achme.com` domain, and registers boot startup schedulers.
-   - **Step 10/10**: Performs a full health-check of Nginx, the Backend, and loopbacks.
+   - **Step 9/10**: Adds persistent Port 82 & 5000 firewall rules, adds Nginx-specific application-level exceptions (bypassing corporate firewall/antivirus blocks), maps the `achme.com` domain, and registers boot startup schedulers.
+   - **Step 10/10**: Performs a full health-check of Nginx, the Backend, and loopbacks, and automatically launches all 3 dynamic URLs (`localhost:82`, `IP:82`, `hostname:82`) in separate default browser tabs.
 
 ---
 

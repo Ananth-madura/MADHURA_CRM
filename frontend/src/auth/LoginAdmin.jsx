@@ -51,7 +51,7 @@ export default function LoginAdmin() {
         if (res.data.user.role === "admin") {
           navigate("/dashboard");
         } else {
-          navigate("/dashboard/team");
+          navigate("/dashboard");
         }
       }
     } catch (err) {
@@ -80,7 +80,7 @@ export default function LoginAdmin() {
       if (res.data.user.role === "admin") {
         navigate("/dashboard");
       } else {
-        navigate("/dashboard/team");
+        navigate("/dashboard");
       }
     } catch (err) {
       setError(err.response?.data?.message || "Verification failed");
