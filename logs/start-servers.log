@@ -1,14 +1,14 @@
  
-[Mon 06/08/2026 12:22:20.50] ========== ACHME CRM One-Click Setup started ========== 
-[Mon 06/08/2026 12:22:26.69] Step 1: MySQL check 
-[Mon 06/08/2026 12:22:27.68] MySQL OK, set to auto-start 
-[Mon 06/08/2026 12:22:27.68] Step 2: Node.js check 
-[Mon 06/08/2026 12:22:27.93] Node.js at: C:\Program Files\nodejs\ 
-[Mon 06/08/2026 12:22:27.93] Step 3: Config files 
-[Mon 06/08/2026 12:22:27.95] Step 4: Backend setup 
-◇ injected env (14) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+[Tue 06/09/2026 12:24:29.26] ========== ACHME CRM One-Click Setup started ========== 
+[Tue 06/09/2026 12:25:07.52] Step 1: MySQL check 
+[Tue 06/09/2026 12:25:08.64] MySQL OK, set to auto-start 
+[Tue 06/09/2026 12:25:08.65] Step 2: Node.js check 
+[Tue 06/09/2026 12:25:08.91] Node.js at: C:\Program Files\nodejs\ 
+[Tue 06/09/2026 12:25:08.91] Step 3: Config files 
+[Tue 06/09/2026 12:25:08.93] Step 4: Backend setup 
+◇ injected env (14) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
 Database user 'achme_user' already works.
-◇ injected env (14) from .env // tip: ⌘ enable debugging { debug: true }
+◇ injected env (14) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
 
 ======================================================
 ⚙️  DATABASE PRE-START CHECK
@@ -18,12 +18,12 @@ Connecting to MySQL at 127.0.0.1:3306 as achme_user...
 ✅ Database 'achme' exists or was successfully created.
 ======================================================
 
-[Mon 06/08/2026 12:22:28.58] Step 5: PM2 check 
-[Mon 06/08/2026 12:22:29.57] npm prefix: C:\Users\thana\AppData\Roaming\npm 
-[Mon 06/08/2026 12:22:30.05] PM2 home: C:\Users\thana\.pm2 
-[Mon 06/08/2026 12:22:30.06] Step 6: Frontend setup 
-[Mon 06/08/2026 12:22:30.08] Step 7: Nginx setup 
-[Mon 06/08/2026 12:23:23.12] Step 8: PM2 backend start 
-[Mon 06/08/2026 12:23:25.79] Step 9: Auto-boot setup 
-[Mon 06/08/2026 12:23:27.19] Scheduled tasks registered 
-[Mon 06/08/2026 12:23:27.61] Step 10: Health verification 
+[Tue 06/09/2026 12:25:09.52] Step 5: PM2 check 
+[Tue 06/09/2026 12:25:10.35] npm prefix: C:\Users\thana\AppData\Roaming\npm 
+[Tue 06/09/2026 12:25:10.77] PM2 home: C:\Users\thana\.pm2 
+[Tue 06/09/2026 12:25:10.78] Step 6: Frontend setup 
+[Tue 06/09/2026 12:25:10.79] Step 7: Nginx setup 
+[Tue 06/09/2026 12:25:17.16] Step 8: PM2 backend start 
+[Tue 06/09/2026 12:25:19.74] Step 9: Auto-boot setup 
+[Tue 06/09/2026 12:25:20.89] Scheduled tasks registered 
+[Tue 06/09/2026 12:25:21.21] Step 10: Health verification 

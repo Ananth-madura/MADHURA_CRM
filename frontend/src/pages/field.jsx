@@ -5,6 +5,7 @@ import axios from "axios";
 import {getToday} from "../utils/leadutil";
 import { useAuth } from "../auth/AuthContext";
 import { API } from "../config";
+import socket from "../socket/socket";
 
 
 const Fields = () =>{
@@ -21,6 +22,8 @@ const Fields = () =>{
       const [followOpen, setFollowOpen] = useState(false);
       const [isEdit, setIsEdit] = useState(false);
       const [editId, setEditId] = useState(null);
+      const [customOutcomeInput, setCustomOutcomeInput] = useState("");
+      const OUTCOME_OPTIONS = ["New", "Hot Case", "Warm Case", "Cold Case", "Not Required", "Converted", "Disqualified", "Closed", "Billed", "Custom"];
 
 
      const [form, setForm] = useState({
@@ -77,6 +80,17 @@ const fetchMissedCounts = async () => {
 
 useEffect(() => { fetchFields(); fetchMissedCounts();
   axios.get(`${API}/api/teammember`, getAuthConfig()).then(r => setTeamMembers(r.data)).catch(() => {});
+}, []);
+
+useEffect(() => {
+  const handleDataChanged = () => {
+    fetchFields();
+    fetchMissedCounts();
+  };
+  socket.on("data_changed", handleDataChanged);
+  return () => {
+    socket.off("data_changed", handleDataChanged);
+  };
 }, []);
 
 const formatReminderDate = (dateStr) => {
@@ -284,7 +298,7 @@ useEffect(() => {
 
           <div className="mt-2">
             <button
-              onClick={() => { setIsEdit(false); setForm({customer_name: "", mobile_number: "", location_city: "", visit_date: new Date().toISOString().slice(0, 10), purpose: "", staff_name: "", field_outcome: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_notes: "", reference: "", email: ""}); setOpen(true); }}
+              onClick={() => { setIsEdit(false); setForm({customer_name: "", mobile_number: "", location_city: "", visit_date: new Date().toISOString().slice(0, 10), purpose: "", staff_name: "", field_outcome: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_notes: "", reference: "", email: "", gst_number: ""}); setCustomOutcomeInput(""); setOpen(true); }}
               className="bg-[#FF3355] text-white w-12 h-12 rounded-full flex justify-center items-center shadow-lg hover:bg-[#e62848] "
             >
               <Plus size={24} />
@@ -357,9 +371,9 @@ useEffect(() => {
                    </div>
                 </div>
 
-                {/* Reference */}
+                {/* Description */}
                 <div className="grid grid-cols-4 items-center gap-6">
-                   <label htmlFor="" className="text-sm text-gray-600 text-left">Reference</label>
+                   <label htmlFor="" className="text-sm text-gray-600 text-left">Description</label>
                    <input type="text" name="reference" value={form.reference} onChange={handleChange} className="col-span-3 border rounded-md px-3 py-2 outline-none bg-white w-[100%]"/>
                 </div>
 
@@ -391,10 +405,15 @@ useEffect(() => {
          {/* DROPDOWN OPTIONS */}
               {outcomeOpen && (
                  <div className="absolute left-0 right-0 bg-white border rounded-md mt-1 shadow-lg z-20">
-                 {["New", "Hot Case", "Warm Case", "Cold Case", "Not Required", "Converted"].map((outcome) => (
-           <div key={outcome} onClick={() => { setForm({ ...form, field_outcome: outcome }); setOutcomeOpen(false); }}
+                 {OUTCOME_OPTIONS.map((outcome) => (
+           <div key={outcome} onClick={() => { if (outcome === "Custom") setCustomOutcomeInput(""); setForm({ ...form, field_outcome: outcome }); setOutcomeOpen(false); }}
              className="px-3 py-2 cursor-pointer hover:bg-blue-600 hover:text-white text-left">{outcome}</div>
          ))}
+       </div>
+     )}
+     {form.field_outcome === "Custom" && (
+       <div className="mt-2">
+         <input type="text" value={customOutcomeInput} onChange={e => { setCustomOutcomeInput(e.target.value); setForm({ ...form, field_outcome: e.target.value }); }} placeholder="Enter custom outcome..." className="border rounded-md px-3 py-2 outline-none w-full bg-white text-sm" autoFocus />
        </div>
      )}
    </div>
@@ -474,12 +493,14 @@ useEffect(() => {
                </thead>
                <tbody className="text-sm font-[Times-New-Roman] text-center">
                  {fields.filter(f => f.customer_name?.toLowerCase().includes(searchTerm.toLowerCase())).map((f) => {
-                   const statusColors = {
-                     "New": "bg-gray-100 text-gray-700", "Hot Case": "bg-red-100 text-red-700",
-                     "Warm Case": "bg-orange-100 text-orange-700", "Cold Case": "bg-blue-100 text-blue-700",
-                     "Not Required": "bg-gray-200 text-gray-500", "Converted": "bg-green-100 text-green-700",
-                     "Disqualified": "bg-red-100 text-red-700",
-                   };
+                    const statusColors = {
+                      "New": "bg-gray-100 text-gray-700", "Hot Case": "bg-red-100 text-red-700",
+                      "Warm Case": "bg-orange-100 text-orange-700", "Cold Case": "bg-blue-100 text-blue-700",
+                      "Not Required": "bg-gray-200 text-gray-500", "Converted": "bg-green-100 text-green-700",
+                      "Disqualified": "bg-red-100 text-red-700",
+                      "Closed": "bg-purple-100 text-purple-700",
+                      "Billed": "bg-emerald-100 text-emerald-700",
+                    };
                    const missed = missedCounts[f.id] || 0;
                    return (
                    <tr key={f.id} className="border-b border-gray-200 hover:bg-gray-50 transition cursor-pointer">
@@ -491,7 +512,7 @@ useEffect(() => {
                                           <td className="border px-4 py-3 border">
                        <div className="flex flex-col items-center">
                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Added By</span>
-                         <span className="text-xs font-semibold text-blue-600">{f.creator_name || "Admin"}</span>
+                         <span className="text-xs font-semibold text-blue-600">{f.created_by === user?.id ? "Me" : (f.creator_name || "Admin")}</span>
                        </div>
                      </td>
 
@@ -500,37 +521,18 @@ useEffect(() => {
                     </td>
                     <td className="px-4 py-3 border">
                       <div className="flex gap-2 justify-center items-center">
-                        <button type="button" onClick={() => openReminderPanel(f)} title="Reminders" className="relative text-yellow-500 hover:text-yellow-700">
+                        <button type="button" onClick={() => openReminderPanel(f)} title="Reminders" className="relative text-yellow-500 hover:text-yellow-700 p-1.5 rounded-lg hover:bg-yellow-50 transition-all">
                           <Bell size={16} />
                           {missed > 0 && <span className={`absolute -top-1.5 -right-1.5 text-[9px] font-black px-1 rounded-full text-white ${missed >= 3 ? "bg-red-600" : "bg-orange-500"}`}>{missed}</span>}
                         </button>
-                        <button type="button" onClick={() => openHistory(f)} title="History" className="text-indigo-500 hover:text-indigo-700"><History size={16} /></button>
-                        <button 
-                          type="button" 
-                          onClick={async () => {
-                            if (!f.customer_name) {
-                              alert("Cannot convert: Customer name is missing");
-                              return;
-                            }
-                            if (!window.confirm(`Convert "${f.customer_name}" to Client?`)) return;
-                            try {
-                              await axios.put(`${API}/api/leads/field/${f.id}`, { field_outcome: "Converted" }, getAuthConfig());
-                              alert("Lead converted to Client successfully!");
-                              fetchFields();
-                              window.dispatchEvent(new Event("refresh-clients"));
-                            } catch (err) {
-                              console.error("Convert error:", err);
-                              const msg = err.response?.data?.message || err.response?.data?.error || err.message || "Failed to convert lead";
-                              alert("Conversion failed: " + msg);
-                            }
-                          }} 
-                          title="Convert to Client" 
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <FileText size={16} />
-                        </button>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); openEdit(f.id); }} className="text-green-600 hover:text-green-800"><Edit size={18} /></button>
-                        <button type="button" onClick={(e) => { e.stopPropagation(); deletefield(f.id); }} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
+                        <button type="button" onClick={async () => {
+                          try {
+                            await axios.patch(`${API}/api/fields/${f.id}`, { followup_required: "Yes", followup_date: new Date().toISOString().slice(0, 10) }, getAuthConfig());
+                            fetchFields();
+                          } catch (err) { alert("Failed to set followup"); }
+                        }} title="Send Followup" className="text-blue-500 hover:text-blue-700 p-1.5 rounded-lg hover:bg-blue-50 transition-all"><Clock size={16} /></button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); openEdit(f.id); }} title="Edit" className="text-green-600 hover:text-green-800 p-1.5 rounded-lg hover:bg-green-50 transition-all"><Edit size={18} /></button>
+                        {isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); deletefield(f.id); }} title="Delete" className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition-all"><Trash2 size={18} /></button>}
                       </div>
                     </td>
                    </tr>

@@ -16,6 +16,15 @@ const INDIAN_STATES = [
 const VALIDITY_OPTIONS = ["2 days", "5 days", "10 days", "15 days", "30 days"];
 const PAYMENT_OPTIONS = ["100% Advance", "Payment Against Delivery", "15 Days", "30 Days", "45 Days", "Custom"];
 const WARRANTY_OPTIONS = ["No Warranty", "Testing Warranty", "1 Month", "3 Months", "6 Months", "12 Months", "24 Months", "36 Months", "OEM Warranty", "Supplier Warranty", "OEM Hardware Warranty", "No Software Warranty"];
+const GST_MODES = ["Exclusive", "Inclusive", "Exempt"];
+const STATUS_OPTIONS = ["Send", "Pending", "Close", "Billed", "Cancel"];
+const STATUS_COLORS = {
+  Send: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
+  Pending: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
+  Close: { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" },
+  Billed: { bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
+  Cancel: { bg: "bg-red-100", text: "text-red-700", border: "border-red-200" },
+};
 const GST_STATE_MAP = {
     "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand",
     "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar",
@@ -50,6 +59,7 @@ const emptyExtra = () => ({
     bank_ifsc: "HDFC0000031",
     bank_branch: "Coimbatore",
     custom_terms: "",
+    gst_mode: "Exclusive",
 });
 const ServiceEstimation = () => {
     const [serviceInvoices, setServiceInvoices] = useState([]);
@@ -131,6 +141,14 @@ const ServiceEstimation = () => {
             await axios.delete(`${API}/api/service-estimation/${id}`, getAuthConfig());
             setHistoryList(prev => prev.filter(q => q.id !== id));
         } catch (err) { alert("Failed to delete"); }
+    };
+    const handleStatusUpdate = async (id, status) => {
+        try {
+            await axios.patch(`${API}/api/service-estimation/${id}`, { status }, getAuthConfig());
+            fetchServiceInvoices();
+        } catch (err) {
+            alert("Failed to update status: " + (err.response?.data?.message || err.message));
+        }
     };
     const formatSubSENumber = (rootId, version, dateStr) => {
         const year = dateStr ? new Date(dateStr).getFullYear() : new Date().getFullYear();
@@ -249,6 +267,7 @@ const ServiceEstimation = () => {
                 bank_ifsc: h.bank_ifsc || "HDFC0000031",
                 bank_branch: h.bank_branch || "Coimbatore",
                 custom_terms: h.custom_terms || "",
+                gst_mode: h.gst_mode || "Exclusive",
             });
             setEditId(id);
             setOpen(true);
@@ -264,6 +283,15 @@ const ServiceEstimation = () => {
             const grandTotal = subtotal - totalDiscount;
             return { subtotal, total_discount: totalDiscount, total_cgst: 0, total_sgst: 0, total_igst: 0, grand_total: grandTotal };
         }
+
+        const gstMode = extra.gst_mode || "Exclusive";
+
+        if (gstMode === "Exempt") {
+            const subtotal = items.reduce((acc, i) => acc + (i.price * (i.qty || i.quantity || 0)), 0);
+            const totalDiscount = items.reduce((acc, i) => acc + (i.discount || 0), 0);
+            return { subtotal, total_discount: totalDiscount, total_cgst: 0, total_sgst: 0, total_igst: 0, grand_total: subtotal - totalDiscount };
+        }
+
         const branchState = (BRANCH_OPTIONS.find(b => b.value === extra.supplier_branch)?.state || "Tamil Nadu").toLowerCase().trim();
         const clientState = (extra.client_state || "").toLowerCase().trim();
         const isSameState = branchState === clientState && clientState !== "";
@@ -277,19 +305,34 @@ const ServiceEstimation = () => {
             const price = Number(item.price || 0);
             const itemSubtotal = price * qty;
             const discountAmount = Number(item.discount || 0);
-            const taxableAmount = itemSubtotal - discountAmount;
             const taxRate = Number(item.tax || 0);
-            const taxAmount = (taxableAmount * taxRate) / 100;
+
             subtotal += itemSubtotal;
             totalDiscount += discountAmount;
-            if (isSameState) {
-                totalCGST += taxAmount / 2;
-                totalSGST += taxAmount / 2;
+
+            if (gstMode === "Inclusive") {
+                const taxableValue = itemSubtotal / (1 + taxRate / 100);
+                const taxAmount = itemSubtotal - taxableValue;
+                const discTaxRatio = discountAmount / itemSubtotal;
+                const actualTax = taxAmount * (1 - discTaxRatio);
+                if (isSameState) {
+                    totalCGST += actualTax / 2;
+                    totalSGST += actualTax / 2;
+                } else {
+                    totalIGST += actualTax;
+                }
             } else {
-                totalIGST += taxAmount;
+                const taxableAmount = itemSubtotal - discountAmount;
+                const taxAmount = (taxableAmount * taxRate) / 100;
+                if (isSameState) {
+                    totalCGST += taxAmount / 2;
+                    totalSGST += taxAmount / 2;
+                } else {
+                    totalIGST += taxAmount;
+                }
             }
         });
-        const grandTotal = subtotal - totalDiscount + totalCGST + totalSGST + totalIGST;
+        const grandTotal = gstMode === "Inclusive" ? subtotal - totalDiscount : subtotal - totalDiscount + totalCGST + totalSGST + totalIGST;
         return { subtotal, total_discount: totalDiscount, total_cgst: totalCGST, total_sgst: totalSGST, total_igst: totalIGST, grand_total: grandTotal };
     };
     const handleSubmit = async (e) => {
@@ -488,11 +531,14 @@ const ServiceEstimation = () => {
                                 <th className="px-4 py-4 border-r">Date</th>
                                 <th className="px-4 py-4 border-r">Total</th>
                                 <th className="px-4 py-4 border-r">City</th>
+                                <th className="px-4 py-4 border-r">Status</th>
                                 <th className="px-4 py-4">History</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredInvoices.map(p => (
+                            {filteredInvoices.map(p => {
+                                const sc = STATUS_COLORS[p.status] || STATUS_COLORS.Pending;
+                                return (
                                 <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
                                     className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
                                     <td className="px-4 py-4 border-r font-medium text-blue-600">{formatSENumber(p.id, p.invoice_date)}</td>
@@ -502,6 +548,20 @@ const ServiceEstimation = () => {
                                     <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
                                     <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
                                     <td className="px-4 py-4 border-r">{p.location_city}</td>
+                                    <td className="px-4 py-4 border-r">
+                                        <select
+                                            value={p.status || "Pending"}
+                                            onClick={e => e.stopPropagation()}
+                                            onChange={e => handleStatusUpdate(p.id, e.target.value)}
+                                            className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
+                                        >
+                                            {STATUS_OPTIONS.map(s => (
+                                                <option key={s} value={s} className="bg-white text-gray-700 font-normal">
+                                                    {s}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </td>
                                     <td className="px-4 py-4 text-center">
                                         <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
                                             className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
@@ -509,8 +569,8 @@ const ServiceEstimation = () => {
                                         </button>
                                     </td>
                                 </tr>
-                            ))}
-                            {filteredInvoices.length === 0 && (<tr><td colSpan="8" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
+                            );})}
+                            {filteredInvoices.length === 0 && (<tr><td colSpan="9" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
                         </tbody>
                     </table>
                 </div>
@@ -861,14 +921,19 @@ const ServiceEstimation = () => {
                         <div className="flex justify-end pt-2">
                             <div className="w-72 border rounded-xl p-4 bg-gray-50 shadow-sm">
                                 {(() => {
-                                    const totals = getTaxCalculations();
+                                    const t = getTaxCalculations();
+                                    const gstMode = extra.gst_mode || "Exclusive";
+                                    const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
                                     return (<>
-                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{totals.subtotal.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{totals.total_discount.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm py-1" style={{ color: totals.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{totals.total_cgst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm py-1" style={{ color: totals.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{totals.total_sgst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm py-1" style={{ color: totals.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{totals.total_igst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{totals.grand_total.toLocaleString()}</span></div>
+                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
+                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
+                                        {gstMode === "Inclusive" && (
+                                            <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
+                                        )}
+                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
+                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
+                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
+                                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
                                     </>);
                                 })()}
                             </div>
@@ -914,6 +979,21 @@ const ServiceEstimation = () => {
                                     <p className="text-xs text-gray-500">Prices quoted are exclusive of Sales and Service Tax (SEZ – NIL Tax applicable)</p>
                                 </div>
                             </label>
+
+                            {!extra.terms_tax && (
+                                <div className="ml-7">
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">GST Mode</label>
+                                    <div className="flex flex-wrap gap-3">
+                                        {GST_MODES.map(mode => (
+                                            <label key={mode} className={`flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 transition text-sm ${extra.gst_mode === mode ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200"}`}>
+                                                <input type="radio" name="gst_mode_se" value={mode} checked={extra.gst_mode === mode} onChange={e => setExtra(ex => ({ ...ex, gst_mode: e.target.value }))} className="accent-blue-600" />
+                                                <span>{mode} — {mode === "Exclusive" ? "GST added to price" : mode === "Inclusive" ? "GST included in price" : "No GST charged"}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Project Period */}
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Project Period</label>

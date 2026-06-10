@@ -147,6 +147,7 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
   const terms = [];
   if (h.terms_general === 1 || h.terms_general === true) terms.push("General Terms & Conditions apply.");
   if (h.terms_tax === 1 || h.terms_tax === true) terms.push("Prices quoted are exclusive of Sales and Service Tax.");
+  if (h.gst_mode) terms.push(`GST: ${h.gst_mode === "Exclusive" ? "GST Extra" : h.gst_mode === "Inclusive" ? "GST Inclusive" : "GST Exempt"}`);
   if (h.terms_project_period) terms.push(`Project Period: ${h.terms_project_period}`);
   if (h.terms_validity) terms.push(`Quote valid for ${h.terms_validity} from quotation date.`);
   if (h.terms_separate_orders) {

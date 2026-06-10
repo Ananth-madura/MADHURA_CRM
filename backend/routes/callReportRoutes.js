@@ -1,16 +1,29 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/database");
-const { verifyToken, isAdmin } = require("../middleware/authMiddleware");
+const { verifyToken, isAdmin, canEditCallReport } = require("../middleware/authMiddleware");
 
-// GET all call reports (with optional filters)
+// GET all call reports (with optional filters and scope)
 router.get("/", verifyToken, (req, res) => {
-  const { from, to, status, engineer, priority, payment_status } = req.query;
+  const { from, to, status, engineer, priority, payment_status, scope, customer, month, year } = req.query;
   let sql = "SELECT * FROM call_reports WHERE 1=1";
   const params = [];
+
+  // Scope: active = only Pending, history = everything else
+  if (scope === "history") {
+    sql += " AND status != 'Pending'";
+  } else {
+    // Default active scope — only pending calls
+    sql += " AND status = 'Pending'";
+  }
+
   if (from && to) { sql += " AND report_date BETWEEN ? AND ?"; params.push(from, to); }
   else if (from) { sql += " AND report_date >= ?"; params.push(from); }
   else if (to) { sql += " AND report_date <= ?"; params.push(to); }
+  if (month && year) { sql += " AND MONTH(report_date) = ? AND YEAR(report_date) = ?"; params.push(parseInt(month), parseInt(year)); }
+  else if (month) { sql += " AND MONTH(report_date) = ?"; params.push(parseInt(month)); }
+  else if (year) { sql += " AND YEAR(report_date) = ?"; params.push(parseInt(year)); }
+  if (customer) { sql += " AND (customer_name LIKE ? OR client_name LIKE ?)"; params.push(`%${customer}%`, `%${customer}%`); }
   if (status && status !== "All") { sql += " AND status = ?"; params.push(status); }
   if (engineer && engineer !== "All") { sql += " AND (staff_name = ? OR technician = ?)"; params.push(engineer, engineer); }
   if (priority && priority !== "All") { sql += " AND priority = ?"; params.push(priority); }
@@ -137,7 +150,7 @@ router.get("/contracts/:type", verifyToken, (req, res) => {
 });
 
 // POST — create new call report (Form 1 or Form 2)
-router.post("/", verifyToken, (req, res) => {
+router.post("/", verifyToken, canEditCallReport, (req, res) => {
   const c = req.body;
   
   const startMins = c.start_time ? (() => { const [h, m] = c.start_time.split(":").map(Number); return h * 60 + m; })() : 0;
@@ -147,6 +160,10 @@ router.post("/", verifyToken, (req, res) => {
   const isExceeded = actualDuration > assignedTime ? 1 : 0;
   const hasEngineer = !!(c.engineer || c.staff_name || c.technician);
   const step2Completed = hasEngineer ? 1 : (c.step2_completed || 0);
+
+  if (c.status === "Closed" && step2Completed !== 1) {
+    return res.status(400).json({ error: "Cannot close call report without completing Step 2 (Engineer Details)!" });
+  }
 
   const sessionId = c.session_id || `SES-${Date.now()}`;
   
@@ -215,7 +232,7 @@ router.post("/", verifyToken, (req, res) => {
 });
 
 // PUT — update single call report (handles both full edit and Step 2 partial update)
-router.put("/:id", verifyToken, (req, res) => {
+router.put("/:id", verifyToken, canEditCallReport, (req, res) => {
   const { id } = req.params;
   const c = req.body;
   
@@ -237,6 +254,12 @@ router.put("/:id", verifyToken, (req, res) => {
     // Set step2_completed=1 if engineer is assigned (Step 2 submission), unless explicitly overridden
     const newStep2 = c.step2_completed !== undefined ? (c.step2_completed ? 1 : 0) : (hasEngineer ? 1 : currentStep2);
 
+    if (c.status === "Closed" && newStep2 !== 1) {
+      return res.status(400).json({ error: "Cannot close call report without completing Step 2 (Engineer Details)!" });
+    }
+
+    const isCompleted = newStep2 === 1 && c.status === "Closed";
+
     const sql = `
       UPDATE call_reports SET
         client_name = ?, customer_name = ?, name = ?, staff_name = ?, technician = ?, executive_name = ?, phone = ?, mobile_number = ?, email = ?, location = ?, location_city = ?,
@@ -244,7 +267,8 @@ router.put("/:id", verifyToken, (req, res) => {
         remarks = ?, complaint = ?, description = ?, km = ?, petrol_charges = ?, spare_parts_price = ?,
         labour_charges = ?, total_expenses = ?, status = ?, priority = ?, call_type = ?, service_type = ?,
         payment_type = ?, invoice_value = ?, payment_status = ?, duration_limit = ?, contract_title = ?,
-        call_referrer = ?, step2_completed = ?, gst_number = ?, company_name = ?
+        call_referrer = ?, step2_completed = ?, gst_number = ?, company_name = ?,
+        completed_at = ?
       WHERE id = ?
     `;
     const params = [
@@ -285,18 +309,19 @@ router.put("/:id", verifyToken, (req, res) => {
       newStep2, 
       c.gst_number || "",
       c.company_name || "",
+      isCompleted ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
       id
     ];
 
     db.query(sql, params, (err) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: "Updated", step2_completed: newStep2 });
+      res.json({ message: "Updated", step2_completed: newStep2, completed_at: isCompleted ? new Date().toISOString() : null });
     });
   });
 });
 
 // DELETE call report
-router.delete("/:id", verifyToken, (req, res) => {
+router.delete("/:id", verifyToken, canEditCallReport, (req, res) => {
   const userRole = req.user?.role;
   if (userRole !== "admin" && userRole !== "subadmin") {
     return res.status(403).json({ error: "Only admins can delete call reports" });

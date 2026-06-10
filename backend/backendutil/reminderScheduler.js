@@ -158,7 +158,7 @@ function runCheckMissed() {
         LEFT JOIN Telecalls t ON t.id = lr.lead_id AND lr.lead_type = 'telecall'
         LEFT JOIN Walkins w ON w.id = lr.lead_id AND lr.lead_type = 'walkin'
         LEFT JOIN fields f ON f.id = lr.lead_id AND lr.lead_type = 'field'
-        WHERE lr.status = 'Missed'
+        WHERE lr.status = 'Missed' AND (lr.notification_sent IS NULL OR lr.notification_sent < 2)
         GROUP BY lr.lead_id, lr.lead_type, t.customer_name, w.customer_name, f.customer_name, t.mobile_number, w.mobile_number, f.mobile_number, t.staff_name, w.staff_name, f.staff_name, lr.employee_id, t.followup_date, w.followup_date, f.followup_date
         HAVING total_missed >= 3
       `;
@@ -170,7 +170,7 @@ function runCheckMissed() {
         leads.forEach(lead => {
           // Check consecutive missed count
           const consecSql = `
-            SELECT status FROM lead_reminders 
+            SELECT id, status, notification_sent FROM lead_reminders 
             WHERE lead_id = ? AND lead_type = ? 
             ORDER BY reminder_date DESC, COALESCE(reminder_time, '00:00:00') DESC, id DESC
             LIMIT 10
@@ -180,9 +180,17 @@ function runCheckMissed() {
             if (!rows) return;
             
             let consecutiveMissed = 0;
+            let missedIds = [];
             for (let i = 0; i < rows.length; i++) {
               if (rows[i].status === 'Missed') {
+                if (rows[i].notification_sent !== null && rows[i].notification_sent >= 2) {
+                  break;
+                }
                 consecutiveMissed++;
+                missedIds.push(rows[i].id);
+                if (consecutiveMissed === 3) {
+                  break;
+                }
               } else if (rows[i].status === 'Done') {
                 break;
               }
@@ -191,7 +199,17 @@ function runCheckMissed() {
             // We only want to escalate and notify if consecutiveMissed is >= 3!
             if (consecutiveMissed >= 3) {
               db.query(
-                "SELECT id, missed_count, missed_threshold_reached FROM lead_escalations WHERE lead_id=? AND lead_type=? AND status='Open'",
+                "UPDATE lead_reminders SET notification_sent = 2 WHERE id IN (?)",
+                [missedIds],
+                (updateErr) => {
+                  if (updateErr) {
+                    console.error("[Scheduler] Failed to update reminder notification_sent:", updateErr.message);
+                  }
+                }
+              );
+
+              db.query(
+                "SELECT id, missed_count FROM lead_escalations WHERE lead_id=? AND lead_type=? AND status='Open'",
                 [lead.lead_id, lead.lead_type],
                 (e, existing) => {
                   if (e) {
@@ -202,29 +220,24 @@ function runCheckMissed() {
                   if (existing && existing.length > 0) {
                     // Update missed count and last followup date
                     db.query(
-                      "UPDATE lead_escalations SET missed_count=?, last_followup_date=? WHERE id=?",
-                      [consecutiveMissed, toDateOnly(lead.last_reminder_date), existing[0].id]
+                      "UPDATE lead_escalations SET missed_count = missed_count + 3, last_followup_date=? WHERE id=?",
+                      [toDateOnly(lead.last_reminder_date), existing[0].id]
                     );
-
-                    // Send notification ONLY if we haven't notified yet for this open escalation
-                    if (!existing[0].missed_threshold_reached) {
-                      db.query("UPDATE lead_escalations SET missed_threshold_reached = 1 WHERE id = ?", [existing[0].id]);
-                      sendMissedAlert(lead, consecutiveMissed);
-                    }
+                    sendMissedAlert(lead, 3);
                   } else {
-                    // Create new escalation with missed_threshold_reached = 1 and send exactly 1 alert
+                    // Create new escalation and send exactly 1 alert
                     db.query(
                       `INSERT INTO lead_escalations 
                        (lead_id, lead_type, employee_id, customer_name, mobile_number, staff_name, last_followup_date, missed_count, status, missed_threshold_reached)
                        VALUES (?,?,?,?,?,?,?,?,'Open',1)`,
                       [lead.lead_id, lead.lead_type, lead.employee_id || null, lead.customer_name, lead.mobile_number,
-                       lead.staff_name, toDateOnly(lead.last_reminder_date), consecutiveMissed],
+                       lead.staff_name, toDateOnly(lead.last_reminder_date), 3],
                       (e2) => {
                         if (e2) {
                           console.error("[Scheduler] lead_escalations insert error:", e2.message);
                         } else {
                           console.log(`[Scheduler] Escalation created for lead ${lead.lead_id} (${lead.lead_type})`);
-                          sendMissedAlert(lead, consecutiveMissed);
+                          sendMissedAlert(lead, 3);
                         }
                       }
                     );
@@ -304,10 +317,8 @@ function runDailyTaskCheck() {
       });
 
       // Send daily summary notification ONLY ONCE per day!
-      const todayStart = `${today} 00:00:00`;
       db.query(
-        "SELECT id FROM admin_notifications WHERE type = 'daily_task_summary' AND created_at >= ?",
-        [todayStart],
+        "SELECT id FROM admin_notifications WHERE type = 'daily_task_summary' AND created_at >= DATE_SUB(NOW(), INTERVAL 22 HOUR)",
         (summaryCheckErr, summaryRows) => {
           if (summaryCheckErr) {
             console.error("[Scheduler] daily_task_summary check error:", summaryCheckErr.message);

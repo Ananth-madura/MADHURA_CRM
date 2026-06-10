@@ -30,6 +30,36 @@ const checkDuplicateLead = (phone, email, excludeId, callback) => {
   });
 };
 
+// Helper to safely format date to YYYY-MM-DD
+const toDateOnly = (val) => {
+  if (!val) return null;
+  return val.toString().slice(0, 10);
+};
+
+const resolveAssignedTo = (staffName, callback) => {
+  if (!staffName) return callback(null);
+  const cleanName = staffName.trim().replace(/\s+/g, ' ');
+  db.query(
+    "SELECT user_id FROM teammember WHERE TRIM(CONCAT(first_name, ' ', COALESCE(last_name, ''))) = ? OR TRIM(first_name) = ? OR TRIM(last_name) = ?",
+    [cleanName, cleanName, cleanName],
+    (err, rows) => {
+      if (err || rows.length === 0) return callback(null);
+      callback(rows[0].user_id || null);
+    }
+  );
+};
+
+const isAuthorizedToEdit = (lead, user) => {
+  if (user.role === 'admin' || user.role === 'subadmin') return true;
+  if (lead.created_by === user.id) return true;
+  if (lead.assigned_to === user.id) return true;
+  
+  const userName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
+  if (lead.staff_name && lead.staff_name.trim().toLowerCase() === userName) return true;
+  
+  return false;
+};
+
 /* AUTO CREATE CLIENT IF CONVERTED */
 const syncClient = (data, userId, leadId, teammemberId) => {
   const { customer_name, mobile_number, location_city, purpose, email, field_outcome, gst_number, staff_name } = data;
@@ -103,68 +133,36 @@ router.post("/new", verifyToken, (req, res) => {
       return res.status(409).json({ message: "Duplicate lead found", duplicates, details: `Phone/Email already exists: ${msgs.join("; ")}` });
     }
 
-  db.query("INSERT INTO fields SET ?", data, (err, result) => {
-    if (err) { console.error(err); return res.status(500).json({ message: "Insert failed" }); }
-    const newId = result.insertId;
-    syncClient(data, req.user.id, newId, data.teammember_id || null);
+    resolveAssignedTo(data.staff_name, (resolvedId) => {
+      data.assigned_to = resolvedId || data.assigned_to || null;
+      db.query("INSERT INTO fields SET ?", data, (err, result) => {
+        if (err) { console.error(err); return res.status(500).json({ message: "Insert failed" }); }
+        const newId = result.insertId;
+        syncClient(data, req.user.id, newId, data.teammember_id || null);
 
-    // Notify when lead is converted
-    if (data.field_outcome === "Converted") {
-      // DISABLED: Old notification system
-      /*
-      const notificationIO = getNotificationIO();
-      if (notificationIO) {
-        const time = new Date().toLocaleString();
-        notificationIO.emitNotification("lead_converted", {
-          id: newId,
-          customerName: data.customer_name,
-          mobileNumber: data.mobile_number,
-          staffName: data.staff_name,
-          leadType: "Field Work",
-          convertedAt: time,
-          type: "lead"
-        }, null, true);
-      }
-      */
-    }
-    db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-      [newId, "field", "Lead Created", `Outcome: ${data.field_outcome || "New"}`]);
-    if (data.reminder_required === "Yes" && data.reminder_date) {
-      db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-        [newId, "field", data.reminder_date, data.reminder_notes || "", req.user?.id || null]);
-    }
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+          [newId, "field", "Lead Created", `Outcome: ${data.field_outcome || "New"}`]);
+        if (data.reminder_required === "Yes" && data.reminder_date) {
+          db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
+            [newId, "field", toDateOnly(data.reminder_date), data.reminder_notes || "", req.user?.id || null]);
+        }
 
-    // DISABLED: Old notification system
-    /*
-    const notificationIO = getNotificationIO();
-    if (notificationIO) {
-      notificationIO.emitNotification("new_lead", {
-        id: newId,
-        customerName: data.customer_name,
-        mobileNumber: data.mobile_number,
-        leadType: "Field Work",
-        staffName: data.staff_name,
-        status: data.field_outcome || "New",
-        type: "lead"
-      }, null, true);
-    }
-    */
-
-    res.json({ message: "Field added", id: newId });
-  });
+        res.json({ message: "Field added", id: newId });
+      });
+    });
   });
 });
 
 /* UPDATE FIELD */
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const data = req.body;
 
-  // Check ownership
-  db.query("SELECT created_by FROM fields WHERE id = ?", [req.params.id], (err, results) => {
+  // Check ownership & authorization
+  db.query("SELECT created_by, assigned_to, staff_name FROM fields WHERE id = ?", [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ message: "Not found" });
     
-    if (req.user.role !== 'admin' && results[0].created_by !== req.user.id) {
+    if (!isAuthorizedToEdit(results[0], req.user)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -175,51 +173,34 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
         return res.status(409).json({ message: "Duplicate lead found", duplicates, details: `Phone/Email already exists: ${msgs.join("; ")}` });
       }
 
-    db.query(
-      `UPDATE fields SET ? WHERE id=?`,
-      [data, req.params.id],
-      (err, result) => {
-        if (err) return res.status(500).json({ message: err.sqlMessage });
-        syncClient(data, results[0].created_by || req.user.id, req.params.id, data.teammember_id || null);
-      const id = req.params.id;
+      resolveAssignedTo(data.staff_name, (resolvedId) => {
+        data.assigned_to = resolvedId || data.assigned_to || null;
+        db.query(
+          `UPDATE fields SET ? WHERE id=?`,
+          [data, req.params.id],
+          (err, result) => {
+            if (err) return res.status(500).json({ message: err.sqlMessage });
+            syncClient(data, results[0].created_by || req.user.id, req.params.id, data.teammember_id || null);
+            const id = req.params.id;
 
-      // Notify when lead is converted on update
-      if (data.field_outcome === "Converted") {
-        // DISABLED: Old notification system
-        /*
-        const notificationIO = getNotificationIO();
-        if (notificationIO) {
-          const time = new Date().toLocaleString();
-          notificationIO.emitNotification("lead_converted", {
-            id: id,
-            customerName: data.customer_name,
-            mobileNumber: data.mobile_number,
-            staffName: data.staff_name,
-            leadType: "Field Work",
-            convertedAt: time,
-            type: "lead"
-          }, null, true);
-        }
-        */
-      }
-
-      db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-        [id, "field", "Status Updated", `Outcome: ${data.field_outcome || "New"}`]);
-      if (data.followup_required === "Yes" && data.followup_date) {
-        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-          [id, "field", "Follow-up Scheduled", `Date: ${data.followup_date}${data.followup_notes ? " | Notes: " + data.followup_notes : ""}`]);
-      }
-      if (data.reminder_required === "Yes" && data.reminder_date) {
-        db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-          [id, "field", data.reminder_date, data.reminder_notes || "", req.user?.id || null],
-          (e) => {
-            if (!e) db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-              [id, "field", "Reminder Added", `Date: ${data.reminder_date}${data.reminder_notes ? " | " + data.reminder_notes : ""}`]);
-          });
-      }
-      res.json({ message: "Field updated successfully" });
-    }
-  );
+            db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+              [id, "field", "Status Updated", `Outcome: ${data.field_outcome || "New"}`]);
+            if (data.followup_required === "Yes" && data.followup_date) {
+              db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+                [id, "field", "Follow-up Scheduled", `Date: ${toDateOnly(data.followup_date)}${data.followup_notes ? " | Notes: " + data.followup_notes : ""}`]);
+            }
+            if (data.reminder_required === "Yes" && data.reminder_date) {
+              db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
+                [id, "field", toDateOnly(data.reminder_date), data.reminder_notes || "", req.user?.id || null],
+                (e) => {
+                  if (!e) db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+                    [id, "field", "Reminder Added", `Date: ${toDateOnly(data.reminder_date)}${data.reminder_notes ? " | " + data.reminder_notes : ""}`]);
+                });
+            }
+            res.json({ message: "Field updated successfully" });
+          }
+        );
+      });
     });
   });
 });
@@ -232,7 +213,7 @@ router.get("/:id", verifyToken, (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ message: "Not found" });
     const lead = results[0];
-    if (req.user.role !== "admin" && lead.created_by !== req.user.id) {
+    if (!isAuthorizedToEdit(lead, req.user)) {
       return res.status(403).json({ message: "Access denied" });
     }
     res.json(lead);
@@ -258,6 +239,36 @@ router.get("/", verifyToken, (req, res) => {
   db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ message: "Fetch failed" });
     res.json(results);
+  });
+});
+
+// PATCH - partial update for quick actions
+router.patch("/:id", verifyToken, (req, res) => {
+  const allowedFields = ["field_outcome", "followup_required", "followup_date", "followup_notes", "reminder_required", "reminder_date", "reminder_notes"];
+  const updates = [];
+  const params = [];
+  allowedFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      updates.push(`${field}=?`);
+      params.push((field === "followup_date" || field === "reminder_date") ? toDateOnly(req.body[field]) : req.body[field]);
+    }
+  });
+  if (updates.length === 0) return res.status(400).json({ message: "No valid fields to update" });
+  db.query("SELECT created_by, assigned_to, staff_name FROM fields WHERE id = ?", [req.params.id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ message: "Not found" });
+    if (!isAuthorizedToEdit(results[0], req.user)) return res.status(403).json({ message: "Access denied" });
+    params.push(req.params.id);
+    db.query(`UPDATE fields SET ${updates.join(", ")} WHERE id=?`, params, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (req.body.field_outcome) {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "field", "Status Updated", `Outcome: ${req.body.field_outcome}`]);
+      }
+      if (req.body.followup_required === "Yes") {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "field", "Follow-up Scheduled", `Date: ${toDateOnly(req.body.followup_date) || "Today"}`]);
+      }
+      res.json({ message: "Updated successfully" });
+    });
   });
 });
 

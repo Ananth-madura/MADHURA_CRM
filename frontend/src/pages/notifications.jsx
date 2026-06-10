@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { Bell, AlertTriangle, Trophy, Clock, Search, X, Trash2, Archive, RotateCcw } from "lucide-react";
+import { Bell, AlertTriangle, Trophy, Clock, Search, X, Trash2, Archive, RotateCcw, ClipboardList } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useNotifications } from "../context/NotificationContext";
 import { API } from "../config/api";
@@ -58,9 +58,23 @@ const NOTIF_CONFIG = {
     label: "Target Completed",
     desc: "Monthly target fully achieved",
   },
+  daily_task_summary: {
+    icon: ClipboardList,
+    color: N.primary,
+    bg: N.lavender,
+    label: "Daily Task Summary",
+    desc: "Summary of outstanding and overdue tasks",
+  },
+  task_not_completed: {
+    icon: AlertTriangle,
+    color: N.error,
+    bg: N.peach,
+    label: "Incomplete Task Alert",
+    desc: "Task overdue and incomplete",
+  },
 };
 
-const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived }) => {
+const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTasksModal }) => {
   const config = NOTIF_CONFIG[n.type] || { icon: Bell, color: N.steel, bg: N.surface, label: n.type, desc: "" };
   const Icon = config.icon;
   const isUnread = n.is_read === 0;
@@ -68,14 +82,21 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived }) => {
 
   return (
     <div
-      className={`rounded-xl border p-4 transition-all ${isUnread && !showArchived ? "cursor-pointer" : ""}`}
+      className="rounded-xl border p-4 transition-all cursor-pointer hover:shadow-sm"
       style={{
         background: N.canvas,
         borderColor: isUnread ? config.color : N.hairline,
         borderLeftWidth: "4px",
         borderLeftColor: config.color,
       }}
-      onClick={() => isUnread && !showArchived && onMarkRead?.(n.id, source)}
+      onClick={(e) => {
+        if (isUnread && !showArchived) {
+          onMarkRead?.(n.id, source);
+        }
+        if (n.type === "daily_task_summary") {
+          onShowTasksModal?.();
+        }
+      }}
     >
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: config.bg }}>
@@ -116,6 +137,143 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived }) => {
   );
 };
 
+const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  if (!isOpen) return null;
+
+  const filteredTasks = tasks.filter(t => {
+    const nameMatch = (t.project_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (t.task_title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (t.staff_name || t.assigned_to || "").toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (statusFilter === "all") return nameMatch;
+    if (statusFilter === "New") return nameMatch && t.project_status === "New";
+    if (statusFilter === "Process") return nameMatch && t.project_status === "Process";
+    if (statusFilter === "Completed") return nameMatch && t.project_status === "Completed";
+    return nameMatch;
+  });
+
+  const getPriorityStyle = (p) => {
+    switch (p) {
+      case "Urgent": return { color: "#e03131", bg: "#ffe3e3" };
+      case "High": return { color: "#dd5b00", bg: "#ffe8d4" };
+      case "Medium": return { color: "#5645d4", bg: "#e6e0f5" };
+      default: return { color: "#37352f", bg: "#f6f5f4" };
+    }
+  };
+
+  const getStatusStyle = (s) => {
+    switch (s) {
+      case "Completed": return { color: "#1aae39", bg: "#d9f3e1" };
+      case "Process": return { color: "#0072f5", bg: "#dcecfa" };
+      default: return { color: "#787671", bg: "#f6f5f4" };
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-4xl max-h-[85vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden border" style={{ background: N.canvas, borderColor: N.hairline }}>
+        {/* Header */}
+        <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: N.hairline }}>
+          <div>
+            <h3 className="text-lg font-bold" style={{ color: N.ink }}>Current Task Statuses</h3>
+            <p className="text-xs mt-1" style={{ color: N.steel }}>Live details of all active and pending tasks</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" style={{ color: N.steel }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Filter controls */}
+        <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: N.hairline, background: N.surfaceSoft }}>
+          <div className="flex gap-1 rounded-xl p-1 w-full md:w-auto" style={{ background: N.surface }}>
+            {[
+              { key: "all", label: "All Statuses" },
+              { key: "New", label: "New" },
+              { key: "Process", label: "In Process" },
+              { key: "Completed", label: "Completed" },
+            ].map(f => (
+              <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${statusFilter === f.key ? "bg-white shadow" : ""}`}
+                style={{ color: statusFilter === f.key ? N.primary : N.steel }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border w-full md:w-80" style={{ background: N.canvas, borderColor: N.hairline }}>
+            <Search size={14} style={{ color: N.stone }} />
+            <input className="outline-none text-sm bg-transparent w-full" style={{ color: N.ink }}
+              placeholder="Search tasks or staff..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm("")} className="cursor-pointer" style={{ color: N.stone }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-8 h-8 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
+              <p className="text-sm font-medium" style={{ color: N.slate }}>Loading tasks...</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="text-center py-20">
+              <ClipboardList size={48} className="mx-auto mb-3" style={{ color: N.stone }} />
+              <p className="text-sm font-medium" style={{ color: N.slate }}>No tasks found</p>
+              <p className="text-xs mt-1" style={{ color: N.stone }}>Try adjusting your filters or search term</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: N.hairline, color: N.stone }}>
+                    <th className="pb-3 pl-2">Project & Task</th>
+                    <th className="pb-3">Assigned Staff</th>
+                    <th className="pb-3">Due Date</th>
+                    <th className="pb-3">Priority</th>
+                    <th className="pb-3 pr-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-sm" style={{ borderColor: N.hairline }}>
+                  {filteredTasks.map(t => {
+                    const pStyle = getPriorityStyle(t.project_priority);
+                    const sStyle = getStatusStyle(t.project_status);
+                    return (
+                      <tr key={t.id} className="hover:bg-gray-50/50 transition-colors group">
+                        <td className="py-4 pl-2">
+                          <p className="font-semibold group-hover:text-indigo-600 transition-colors" style={{ color: N.ink }}>{t.task_title}</p>
+                          <p className="text-xs mt-0.5" style={{ color: N.steel }}>{t.project_name || "General Project"}</p>
+                        </td>
+                        <td className="py-4 font-medium" style={{ color: N.charcoal }}>{t.staff_name || t.assigned_to || "Unassigned"}</td>
+                        <td className="py-4" style={{ color: N.slate }}>{t.due_date ? new Date(t.due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "No due date"}</td>
+                        <td className="py-4">
+                          <span className="px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wide inline-block" style={{ color: pStyle.color, background: pStyle.bg }}>
+                            {t.project_priority || "Normal"}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-2">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold inline-block" style={{ color: sStyle.color, background: sStyle.bg }}>
+                            {t.project_status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Notifications = () => {
   const { user } = useAuth();
   const { notifications, adminNotifications, markAsRead, markAdminAsRead, refreshNotifications,
@@ -127,8 +285,28 @@ const Notifications = () => {
   const [showArchived, setShowArchived] = useState(false);
   const [archivedNotifs, setArchivedNotifs] = useState([]);
 
+  const [showTasksModal, setShowTasksModal] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+
   const isAdmin = user?.role === "admin";
   const isSubAdmin = user?.role === "subadmin";
+
+  const handleShowTasksModal = async () => {
+    setShowTasksModal(true);
+    setLoadingTasks(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${API}/api/task`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTasks(res.data || []);
+    } catch (e) {
+      console.error("Error fetching tasks:", e);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
 
   useEffect(() => {
     if (isPushSupported()) {
@@ -338,7 +516,7 @@ const Notifications = () => {
         ) : (
           <div className="space-y-3">
             {archivedNotifs.map(n => (
-              <NotifCard key={n.id || n.dbId} n={n} showArchived onMarkRead={handleMarkRead} onArchive={handleUnarchive} />
+              <NotifCard key={n.id || n.dbId} n={n} showArchived onMarkRead={handleMarkRead} onArchive={handleUnarchive} onShowTasksModal={handleShowTasksModal} />
             ))}
           </div>
         )
@@ -353,10 +531,13 @@ const Notifications = () => {
       ) : (
         <div className="space-y-3">
           {filteredNotifs.map(n => (
-            <NotifCard key={n.id || n.dbId} n={n} onMarkRead={handleMarkRead} onArchive={handleArchive} onDelete={handleDelete} />
+            <NotifCard key={n.id || n.dbId} n={n} onMarkRead={handleMarkRead} onArchive={handleArchive} onDelete={handleDelete} onShowTasksModal={handleShowTasksModal} />
           ))}
         </div>
       )}
+
+      {/* Tasks Summary Modal */}
+      <TasksSummaryModal isOpen={showTasksModal} onClose={() => setShowTasksModal(false)} tasks={tasks} loading={loadingTasks} />
     </div>
   );
 };

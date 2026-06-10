@@ -25,4 +25,34 @@ describe("Call Report Routes", () => {
       expect(res.statusCode).toBe(200);
     });
   });
+
+  describe("POST /api/call-reports validation", () => {
+    it("should block creation of Closed call report without Step 2 completion", async () => {
+      const res = await request(app)
+        .post("/api/call-reports")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ status: "Closed", step2_completed: 0 });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.error).toContain("Cannot close call report");
+    });
+  });
+
+  describe("PUT /api/call-reports/:id validation", () => {
+    it("should block updating to Closed status if Step 2 is not completed", async () => {
+      mockDb.query.mockImplementation((sql, values, cb) => {
+        if (typeof values === "function") { cb = values; values = []; }
+        if (sql.includes("SELECT step2_completed")) {
+          cb(null, [{ step2_completed: 0 }]);
+        } else {
+          cb(null, { affectedRows: 1 });
+        }
+      });
+      const res = await request(app)
+        .put("/api/call-reports/1")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ status: "Closed", step2_completed: 0 });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.error).toContain("Cannot close call report");
+    });
+  });
 });

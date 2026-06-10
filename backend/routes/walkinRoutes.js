@@ -30,7 +30,37 @@ const checkDuplicateLead = (phone, email, excludeId, callback) => {
   });
 };
 
-// GET all telecalls
+// Helper to safely format date to YYYY-MM-DD
+const toDateOnly = (val) => {
+  if (!val) return null;
+  return val.toString().slice(0, 10);
+};
+
+const resolveAssignedTo = (staffName, callback) => {
+  if (!staffName) return callback(null);
+  const cleanName = staffName.trim().replace(/\s+/g, ' ');
+  db.query(
+    "SELECT user_id FROM teammember WHERE TRIM(CONCAT(first_name, ' ', COALESCE(last_name, ''))) = ? OR TRIM(first_name) = ? OR TRIM(last_name) = ?",
+    [cleanName, cleanName, cleanName],
+    (err, rows) => {
+      if (err || rows.length === 0) return callback(null);
+      callback(rows[0].user_id || null);
+    }
+  );
+};
+
+const isAuthorizedToEdit = (lead, user) => {
+  if (user.role === 'admin' || user.role === 'subadmin') return true;
+  if (lead.created_by === user.id) return true;
+  if (lead.assigned_to === user.id) return true;
+  
+  const userName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
+  if (lead.staff_name && lead.staff_name.trim().toLowerCase() === userName) return true;
+  
+  return false;
+};
+
+// GET all walkins
 router.get("/", verifyToken, (req, res) => {
   const { id: user_id, role, first_name: user_name } = req.user;
   let sql = `
@@ -130,110 +160,78 @@ router.post("/", verifyToken, (req, res) => {
     email
   } = req.body;
 
-  const sql = `
-    INSERT INTO walkins (
-      customer_name,
-      mobile_number,
-      location_city,
-      walkin_date,
-      purpose,
-      staff_name,
-      walkin_status,
-      followup_required,
-      followup_date,
-      followup_notes,
-      reminder_required,
-      reminder_date,
-      reminder_notes,
-      reference,
-      gst_number,
-      email,
-      created_by,
-      assigned_to
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.query(
-    sql,
-    [
-      customer_name,
-      mobile_number,
-      location_city,
-      walkin_date,
-      purpose,
-      staff_name,
-      walkin_status,
-      followup_required,
-      followup_date,
-      followup_notes,
-      reminder_required,
-      reminder_date,
-      reminder_notes,
-      reference,
-      gst_number,
-      email,
-      req.user.id,
-    req.body.assigned_to || null
-  ],
-  (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-
-    // Check duplicates before proceeding
-    checkDuplicateLead(mobile_number, email, (duplicates) => {
-      if (duplicates && duplicates.length > 0) {
-        const msgs = duplicates.map(d => `${d.name} (${d.phone || "N/A"})`);
-        return res.status(409).json({ message: "Duplicate lead found", duplicates, details: `Phone/Email already exists: ${msgs.join("; ")}` });
-      }
-
-    syncClient(req.body, req.user.id, result.insertId, req.body.teammember_id || null);
-    const newId = result.insertId;
-
-    // Notify when lead is converted
-    if (walkin_status === "Converted") {
-      // DISABLED: Old notification system
-      /*
-      const notificationIO = getNotificationIO();
-      if (notificationIO) {
-        const time = new Date().toLocaleString();
-        notificationIO.emitNotification("lead_converted", {
-          id: newId,
-          customerName: customer_name,
-          mobileNumber: mobile_number,
-          staffName: staff_name,
-          leadType: "walkins",
-          convertedAt: time,
-          type: "lead"
-        }, null, true);
-      }
-      */
-    }
-    db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-      [newId, "walkin", "Lead Created", `Status: ${walkin_status || "New"}`]);
-    if (reminder_required === "Yes" && reminder_date) {
-      db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-        [newId, "walkin", reminder_date, reminder_notes || "", req.user?.id || null]);
+  // Check duplicates before proceeding
+  checkDuplicateLead(mobile_number, email, (duplicates) => {
+    if (duplicates && duplicates.length > 0) {
+      const msgs = duplicates.map(d => `${d.name} (${d.phone || "N/A"})`);
+      return res.status(409).json({ message: "Duplicate lead found", duplicates, details: `Phone/Email already exists: ${msgs.join("; ")}` });
     }
 
-    // DISABLED: Old notification system
-    /*
-    const notificationIO = getNotificationIO();
-    if (notificationIO) {
-      notificationIO.emitNotification("new_lead", {
-        id: newId,
-        customerName: customer_name,
-        mobileNumber: mobile_number,
-        leadType: "walkins",
-        staffName: staff_name,
-        status: walkin_status || "New",
-        type: "lead"
-      }, null, true);
-    }
-    */
+    resolveAssignedTo(staff_name, (resolvedId) => {
+      const finalAssignedTo = resolvedId || req.body.assigned_to || null;
+      const sql = `
+        INSERT INTO walkins (
+          customer_name,
+          mobile_number,
+          location_city,
+          walkin_date,
+          purpose,
+          staff_name,
+          walkin_status,
+          followup_required,
+          followup_date,
+          followup_notes,
+          reminder_required,
+          reminder_date,
+          reminder_notes,
+          reference,
+          gst_number,
+          email,
+          created_by,
+          assigned_to
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-      res.json({ message: "walkins added", id: newId });
-    }
-  );
+      db.query(
+        sql,
+        [
+          customer_name,
+          mobile_number,
+          location_city,
+          toDateOnly(walkin_date),
+          purpose,
+          staff_name,
+          walkin_status,
+          followup_required,
+          toDateOnly(followup_date),
+          followup_notes,
+          reminder_required,
+          toDateOnly(reminder_date),
+          reminder_notes,
+          reference,
+          gst_number,
+          email,
+          req.user.id,
+          finalAssignedTo
+        ],
+        (err, result) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          const newId = result.insertId;
+          syncClient(req.body, req.user.id, newId, req.body.teammember_id || null);
+
+          db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+            [newId, "walkin", "Lead Created", `Status: ${walkin_status || "New"}`]);
+          if (reminder_required === "Yes" && reminder_date) {
+            db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
+              [newId, "walkin", toDateOnly(reminder_date), reminder_notes || "", req.user?.id || null]);
+          }
+
+          res.json({ message: "walkins added", id: newId });
+        }
+      );
+    });
   });
 });
 
@@ -254,7 +252,7 @@ router.get("/:id", verifyToken, (req, res) => {
       if (results.length === 0) return res.status(404).json({ message: "Not found" });
       
       const lead = results[0];
-      if (req.user.role !== 'admin' && lead.created_by !== req.user.id) {
+      if (!isAuthorizedToEdit(lead, req.user)) {
         return res.status(403).json({ message: "Access denied" });
       }
       
@@ -266,7 +264,7 @@ router.get("/:id", verifyToken, (req, res) => {
 
 // Edit 
 
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const {
     customer_name,
     mobile_number,
@@ -286,12 +284,12 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
     email
   } = req.body;
 
-  // Check ownership
-  db.query("SELECT created_by FROM walkins WHERE id = ?", [req.params.id], (err, results) => {
+  // Check ownership & authorization
+  db.query("SELECT created_by, assigned_to, staff_name FROM walkins WHERE id = ?", [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ message: "Not found" });
     
-    if (req.user.role !== 'admin' && results[0].created_by !== req.user.id) {
+    if (!isAuthorizedToEdit(results[0], req.user)) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -302,95 +300,108 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
         return res.status(409).json({ message: "Duplicate lead found", duplicates, details: `Phone/Email already exists: ${msgs.join("; ")}` });
       }
 
-db.query(
-      `UPDATE walkins SET
-        customer_name=?,
-        mobile_number=?,
-        location_city=?,
-        walkin_date=?,
-        purpose=?,
-        staff_name=?,
-        walkin_status=?,
-        followup_required=?,
-        followup_date=?,
-        followup_notes=?,
-        reminder_required=?,
-        reminder_date=?,
-        reminder_notes=?,
-        reference=?,
-        gst_number=?,
-        email=?,
-        assigned_to=?
-       WHERE id=?`,
-      [
-        customer_name,
-        mobile_number,
-        location_city,
-        walkin_date,
-        purpose,
-        staff_name,
-        walkin_status,
-        followup_required,
-        followup_date,
-        followup_notes,
-        reminder_required,
-        reminder_date,
-        reminder_notes,
-        reference,
-        gst_number,
-        email,
-        req.body.assigned_to || null,
-        req.params.id
-      ],
-      (err, result) => {
-        if (err) {
-          console.error("Update error:", err);
-          return res.status(500).json({ error: err.message });
-        }
-        syncClient(req.body, results[0].created_by || req.user.id, Number(req.params.id), req.body.teammember_id || null);
-      const id = req.params.id;
+      resolveAssignedTo(staff_name, (resolvedId) => {
+        const finalAssignedTo = resolvedId || req.body.assigned_to || null;
+        db.query(
+          `UPDATE walkins SET
+            customer_name=?,
+            mobile_number=?,
+            location_city=?,
+            walkin_date=?,
+            purpose=?,
+            staff_name=?,
+            walkin_status=?,
+            followup_required=?,
+            followup_date=?,
+            followup_notes=?,
+            reminder_required=?,
+            reminder_date=?,
+            reminder_notes=?,
+            reference=?,
+            gst_number=?,
+            email=?,
+            assigned_to=?
+           WHERE id=?`,
+          [
+            customer_name,
+            mobile_number,
+            location_city,
+            toDateOnly(walkin_date),
+            purpose,
+            staff_name,
+            walkin_status,
+            followup_required,
+            toDateOnly(followup_date),
+            followup_notes,
+            reminder_required,
+            toDateOnly(reminder_date),
+            reminder_notes,
+            reference,
+            gst_number,
+            email,
+            finalAssignedTo,
+            req.params.id
+          ],
+          (err, result) => {
+            if (err) {
+              console.error("Update error:", err);
+              return res.status(500).json({ error: err.message });
+            }
+            syncClient(req.body, results[0].created_by || req.user.id, Number(req.params.id), req.body.teammember_id || null);
+            const id = req.params.id;
 
-      // Notify when lead is converted on update
-      if (walkin_status === "Converted") {
-        // DISABLED: Old notification system
-        /*
-        const notificationIO = getNotificationIO();
-        if (notificationIO) {
-          const time = new Date().toLocaleString();
-          notificationIO.emitNotification("lead_converted", {
-            id: id,
-            customerName: customer_name,
-            mobileNumber: mobile_number,
-            staffName: staff_name,
-            leadType: "walkins",
-            convertedAt: time,
-            type: "lead"
-          }, null, true);
-        }
-        */
-      }
-
-      db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-        [id, "walkin", "Status Updated", `Outcome: ${walkin_status || "New"}`]);
-      if (followup_required === "Yes" && followup_date) {
-        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-          [id, "walkin", "Follow-up Scheduled", `Date: ${followup_date}${followup_notes ? " | Notes: " + followup_notes : ""}`]);
-      }
-      if (reminder_required === "Yes" && reminder_date) {
-        db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-          [id, "walkin", reminder_date, reminder_notes || "", req.user?.id || null],
-          (e) => {
-            if (!e) db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
-              [id, "walkin", "Reminder Added", `Date: ${reminder_date}${reminder_notes ? " | " + reminder_notes : ""}`]);
-          });
-      }
-      res.json({ message: "Walkin updated successfully" });
-    }
-  );
+            db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+              [id, "walkin", "Status Updated", `Outcome: ${walkin_status || "New"}`]);
+            if (followup_required === "Yes" && followup_date) {
+              db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+                [id, "walkin", "Follow-up Scheduled", `Date: ${toDateOnly(followup_date)}${followup_notes ? " | Notes: " + followup_notes : ""}`]);
+            }
+            if (reminder_required === "Yes" && reminder_date) {
+              db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
+                [id, "walkin", toDateOnly(reminder_date), reminder_notes || "", req.user?.id || null],
+                (e) => {
+                  if (!e) db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
+                    [id, "walkin", "Reminder Added", `Date: ${toDateOnly(reminder_date)}${reminder_notes ? " | " + reminder_notes : ""}`]);
+                });
+            }
+            res.json({ message: "Walkin updated successfully" });
+          }
+        );
+      });
     });
   });
 });
 
+
+// PATCH - partial update for quick actions
+router.patch("/:id", verifyToken, (req, res) => {
+  const allowedFields = ["walkin_status", "followup_required", "followup_date", "followup_notes", "reminder_required", "reminder_date", "reminder_notes"];
+  const updates = [];
+  const params = [];
+  allowedFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      updates.push(`${field}=?`);
+      params.push((field === "followup_date" || field === "reminder_date") ? toDateOnly(req.body[field]) : req.body[field]);
+    }
+  });
+  if (updates.length === 0) return res.status(400).json({ message: "No valid fields to update" });
+  db.query("SELECT created_by, assigned_to, staff_name FROM walkins WHERE id = ?", [req.params.id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ message: "Not found" });
+    if (!isAuthorizedToEdit(results[0], req.user)) return res.status(403).json({ message: "Access denied" });
+    params.push(req.params.id);
+    db.query(`UPDATE walkins SET ${updates.join(", ")} WHERE id=?`, params, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (req.body.walkin_status) {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "walkin", "Status Updated", `Outcome: ${req.body.walkin_status}`]);
+      }
+      if (req.body.followup_required === "Yes") {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "walkin", "Follow-up Scheduled", `Date: ${toDateOnly(req.body.followup_date) || "Today"}`]);
+      }
+      res.json({ message: "Updated successfully" });
+    });
+  });
+});
 
  // Delete;
   router.delete("/:id", verifyToken, isAdmin, (req,res) =>{

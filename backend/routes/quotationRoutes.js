@@ -31,7 +31,7 @@ router.get("/", verifyToken, (req, res) => {
   const { id: user_id, role } = req.user;
   let sql = `
     SELECT q.id, q.quotation_date AS invoice_date, q.grand_total, q.reference_no,
-           q.version, q.is_latest, q.parent_id,
+           q.version, q.is_latest, q.parent_id, q.status,
            c.customer_name, c.mobile_number, c.email,
            COALESCE(c.location_city, q.client_city) AS location_city,
            MIN(qi.description) AS description
@@ -104,7 +104,7 @@ router.get("/:id", verifyToken, (req, res) => {
       q.terms_general, q.terms_tax, q.terms_project_period, q.terms_validity,
       q.terms_separate_orders, q.terms_payment, q.terms_payment_custom, q.terms_warranty,
       q.hsn_sac_code, q.supplier_branch,
-      q.bank_details_id, q.bank_company, q.bank_name, q.bank_account, q.bank_ifsc, q.bank_branch, q.custom_terms,
+      q.bank_details_id, q.bank_company, q.bank_name, q.bank_account, q.bank_ifsc, q.bank_branch, q.custom_terms, q.gst_mode,
       c.customer_name, c.mobile_number, c.email, c.gst_number, c.location_city,
       qi.product_number, qi.description, qi.brand_model, qi.uom,
       qi.price, qi.quantity, qi.tax, qi.discount, qi.subtotal AS item_subtotal,
@@ -224,8 +224,8 @@ router.post("/create", verifyToken, (req, res) => {
             tax_type, custom_tax, exec_name, exec_phone, exec_email,
             terms_general, terms_tax, terms_project_period, terms_validity, terms_separate_orders,
             terms_payment, terms_payment_custom, terms_warranty, hsn_sac_code, supplier_branch,
-            bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, gst_mode, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             customerId, quotationDate,
             q.total_cgst || 0, q.total_sgst || 0, q.total_igst || 0, q.subtotal || 0,
@@ -240,7 +240,7 @@ router.post("/create", verifyToken, (req, res) => {
             ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
             ex.hsn_sac_code || null, ex.supplier_branch || null,
             ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
-            req.user.id
+            ex.gst_mode || "Exclusive", req.user.id
           ],
            (err, quotationResult) => {
             if (err) {
@@ -340,8 +340,8 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
                   terms_payment, terms_payment_custom, terms_warranty,
                   hsn_sac_code, supplier_branch,
                   bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms,
-                  parent_id, version, is_latest, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                  gst_mode, parent_id, version, is_latest, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
                 [
                   current.customer_id, quotationDate,
                   q.total_cgst || 0, q.total_sgst || 0, q.total_igst || 0, q.subtotal || 0,
@@ -356,7 +356,7 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
                   ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
                   ex.hsn_sac_code || null, ex.supplier_branch || null,
                   ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
-                  rootId, newVersion, 1, req.user.id
+                  ex.gst_mode || "Exclusive", rootId, newVersion, 1, req.user.id
                 ],
                 (err, result) => {
                   if (err) {
@@ -392,6 +392,25 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 
+
+// PATCH — quick status update (allow non-admin with ownership check)
+router.patch("/:id", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: "Status is required" });
+
+  db.query("SELECT created_by FROM quotations WHERE id = ?", [id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ message: "Not found" });
+    if (req.user.role !== "admin" && results[0].created_by !== req.user.id) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    db.query("UPDATE quotations SET status = ? WHERE id = ?", [status, id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: "Status updated", status });
+    });
+  });
+});
 
 /// DELETE QUOTATION (SAFE)
 router.delete("/:id", verifyToken, isAdmin, (req, res) => {

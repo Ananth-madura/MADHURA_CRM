@@ -5,6 +5,7 @@ import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 import { API } from "../config";
+import socket from "../socket/socket";
 
 const Walkins = () =>{
   const { user } = useAuth();
@@ -15,28 +16,31 @@ const Walkins = () =>{
     const [remainderDetails, setRemainderDetails] = useState(false);
     const [followOpen, setFollowOpen] = useState(false);
     const [open, setOpen] = useState(false);
+    const [customOutcomeInput, setCustomOutcomeInput] = useState("");
+    const OUTCOME_OPTIONS = ["New", "Hot Case", "Warm Case", "Cold Case", "Not Required", "Converted", "Disqualified", "Closed", "Billed", "Custom"];
     const tabopen = () => {
     setOpen(true);
   };
   const [isEdit, setIsEdit] = useState(false);
   const [editId, setEditId] = useState(null);
   
-  const [form, setForm] = useState({
-      customer_name: "",
-       mobile_number: "",
-       location_city: "",
-       walkin_date: new Date().toISOString().slice(0, 10),
-       purpose: "",
-       staff_name: "",
-       walkin_status: "New",
-      followup_required: "Default",
-      followup_date: new Date().toISOString().slice(0, 10),
-      followup_notes: "",
-      reminder_required: "Default",
-      reminder_date: new Date().toISOString().slice(0, 10),
-       reminder_notes: "",
-       reference: "",
-       email: "",
+   const [form, setForm] = useState({
+       customer_name: "",
+        mobile_number: "",
+        location_city: "",
+        walkin_date: new Date().toISOString().slice(0, 10),
+        purpose: "",
+        staff_name: "",
+        walkin_status: "New",
+       followup_required: "Default",
+       followup_date: new Date().toISOString().slice(0, 10),
+       followup_notes: "",
+       reminder_required: "Default",
+       reminder_date: new Date().toISOString().slice(0, 10),
+        reminder_notes: "",
+        reference: "",
+        email: "",
+        gst_number: "",
 
     });
 
@@ -77,6 +81,17 @@ const fetchMissedCounts = async () => {
 
 useEffect(() => { fetchWalkins(); fetchMissedCounts(); 
   axios.get(`${API}/api/teammember`, getAuthConfig()).then(r => setTeamMembers(r.data)).catch(() => {});
+}, []);
+
+useEffect(() => {
+  const handleDataChanged = () => {
+    fetchWalkins();
+    fetchMissedCounts();
+  };
+  socket.on("data_changed", handleDataChanged);
+  return () => {
+    socket.off("data_changed", handleDataChanged);
+  };
 }, []);
 
 const formatDate = (date) => {
@@ -213,6 +228,7 @@ const openEdit = async (id) => {
       reminder_notes: data.reminder_notes || "",
       reference: data.reference || "",
       email: data.email || "",
+      gst_number: data.gst_number || "",
     });
 
     setEditId(id);
@@ -277,7 +293,7 @@ const openEdit = async (id) => {
 
           <div className="mt-2">
             <button
-              onClick={() => { setIsEdit(false); setForm({customer_name: "", mobile_number: "", location_city: "", walkin_date: new Date().toISOString().slice(0, 10), purpose: "", staff_name: "", walkin_status: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_notes: "", reference: "", email: ""}); setOpen(true); }}
+              onClick={() => { setIsEdit(false); setForm({customer_name: "", mobile_number: "", location_city: "", walkin_date: new Date().toISOString().slice(0, 10), purpose: "", staff_name: "", walkin_status: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_notes: "", reference: "", email: "", gst_number: ""}); setCustomOutcomeInput(""); setOpen(true); }}
               className="bg-[#FF3355] text-white w-12 h-12 rounded-full flex justify-center items-center shadow-lg hover:bg-[#e62848] "
             >
               <Plus size={24} />
@@ -354,9 +370,9 @@ const openEdit = async (id) => {
                    </div>
                 </div>
 
-                {/* Reference */}
+                {/* Description */}
                 <div className="grid grid-cols-4 items-center gap-6">
-                   <label htmlFor="" className="text-sm text-gray-600 text-left">Reference</label>
+                   <label htmlFor="" className="text-sm text-gray-600 text-left">Description</label>
                    <input type="text" value={form.reference} onChange={handleChange} name="reference" className="col-span-3 border rounded-md px-3 py-2 outline-none bg-white w-[100%]"/>
                 </div>
 
@@ -388,11 +404,12 @@ const openEdit = async (id) => {
          {/* DROPDOWN OPTIONS */}
               {outcomeOpen && (
                  <div className="absolute left-0 right-0 bg-white border rounded-md mt-1 shadow-lg z-20">
-                 {["New", "Hot Case", "Warm Case", "Cold Case", "Not Required", "Converted"].map((outcome) => (
+                 {OUTCOME_OPTIONS.map((outcome) => (
            <div
              key={outcome}
              onClick={() => {
-               setForm({ ...form, walkin_status  : outcome });
+               if (outcome === "Custom") setCustomOutcomeInput("");
+               setForm({ ...form, walkin_status: outcome });
                setOutcomeOpen(false);
              }}
              className="px-3 py-2 cursor-pointer hover:bg-blue-600 hover:text-white text-left"
@@ -400,6 +417,11 @@ const openEdit = async (id) => {
              {outcome}
            </div>
          ))}
+       </div>
+     )}
+     {form.walkin_status === "Custom" && (
+       <div className="mt-2">
+         <input type="text" value={customOutcomeInput} onChange={e => { setCustomOutcomeInput(e.target.value); setForm({ ...form, walkin_status: e.target.value }); }} placeholder="Enter custom outcome..." className="border rounded-md px-3 py-2 outline-none w-full bg-white text-sm" autoFocus />
        </div>
      )}
    </div>
@@ -485,6 +507,8 @@ const openEdit = async (id) => {
                   "Warm Case": "bg-orange-100 text-orange-700", "Cold Case": "bg-blue-100 text-blue-700",
                   "Not Required": "bg-gray-200 text-gray-500", "Converted": "bg-green-100 text-green-700",
                   "Disqualified": "bg-red-100 text-red-700",
+                  "Closed": "bg-purple-100 text-purple-700",
+                  "Billed": "bg-emerald-100 text-emerald-700",
                 };
                 const missed = missedCounts[W.id] || 0;
                 return (
@@ -497,7 +521,7 @@ const openEdit = async (id) => {
                                        <td className="border px-4 py-2">
                       <div className="flex flex-col items-center">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Added By</span>
-                        <span className="text-xs font-semibold text-blue-600">{W.creator_name || "Admin"}</span>
+                        <span className="text-xs font-semibold text-blue-600">{W.created_by === user?.id ? "Me" : (W.creator_name || "Admin")}</span>
                       </div>
                     </td>
 
@@ -505,38 +529,19 @@ const openEdit = async (id) => {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[W.walkin_status] || "bg-gray-100 text-gray-600"}`}>{W.walkin_status}</span>
                   </td>
                   <td className="border px-4 py-2 text-center">
-                    <div className="flex justify-center gap-1.5 items-center">
-                      <button type="button" onClick={() => openReminderPanel(W)} title="Reminders" className="relative text-yellow-500 hover:text-yellow-700">
+                    <div className="flex justify-center gap-2 items-center">
+                      <button type="button" onClick={() => openReminderPanel(W)} title="Reminders" className="relative text-yellow-500 hover:text-yellow-700 p-1.5 rounded-lg hover:bg-yellow-50 transition-all">
                         <Bell size={16} />
                         {missed > 0 && <span className={`absolute -top-1.5 -right-1.5 text-[9px] font-black px-1 rounded-full text-white ${missed >= 3 ? "bg-red-600" : "bg-orange-500"}`}>{missed}</span>}
                       </button>
-                      <button type="button" onClick={() => openHistory(W)} title="History" className="text-indigo-500 hover:text-indigo-700"><History size={16} /></button>
-                      <button 
-                        type="button" 
-                        onClick={async () => {
-                          if (!W.customer_name) {
-                            alert("Cannot convert: Customer name is missing");
-                            return;
-                          }
-                          if (!window.confirm(`Convert "${W.customer_name}" to Client?`)) return;
-                          try {
-                            await axios.put(`${API}/api/leads/walkin/${W.id}`, { walkin_status: "Converted" }, getAuthConfig());
-                            alert("Lead converted to Client successfully!");
-                            fetchWalkins();
-                            window.dispatchEvent(new Event("refresh-clients"));
-                          } catch (err) {
-                            console.error("Convert error:", err);
-                            const msg = err.response?.data?.message || err.response?.data?.error || err.message || "Failed to convert lead";
-                            alert("Conversion failed: " + msg);
-                          }
-                        }} 
-                        title="Convert to Client" 
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        <FileText size={16} />
-                      </button>
-                      <button type="button" onClick={() => openEdit(W.id)} title="Edit" className="text-green-600 hover:text-green-800"><Edit size={16} /></button>
-                      <button type="button" onClick={() => deletefield(W.id)} title="Delete" className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button>
+                      <button type="button" onClick={async () => {
+                        try {
+                          await axios.patch(`${API}/api/Walkins/${W.id}`, { followup_required: "Yes", followup_date: new Date().toISOString().slice(0, 10) }, getAuthConfig());
+                          fetchWalkins();
+                        } catch (err) { alert("Failed to set followup"); }
+                      }} title="Send Followup" className="text-blue-500 hover:text-blue-700 p-1.5 rounded-lg hover:bg-blue-50 transition-all"><Clock size={16} /></button>
+                      <button type="button" onClick={() => openEdit(W.id)} title="Edit" className="text-green-600 hover:text-green-800 p-1.5 rounded-lg hover:bg-green-50 transition-all"><Edit size={16} /></button>
+                      {isAdmin && <button type="button" onClick={() => deletefield(W.id)} title="Delete" className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition-all"><Trash2 size={16} /></button>}
                     </div>
                   </td>
                 </tr>

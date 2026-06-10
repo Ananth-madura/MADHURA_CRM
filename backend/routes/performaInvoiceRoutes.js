@@ -8,7 +8,7 @@ router.get("/", verifyToken, (req, res) => {
   const { id: user_id, role } = req.user;
   const sql = `
     SELECT
-      p.id, p.invoice_date, p.grand_total, p.version, p.parent_id,
+      p.id, p.invoice_date, p.grand_total, p.version, p.parent_id, p.status,
       c.customer_name, c.mobile_number,
       COALESCE(p.client_city, c.location_city) AS location_city,
       c.email,
@@ -69,7 +69,7 @@ router.get("/:id", verifyToken, (req, res) => {
       p.terms_general, p.terms_tax, p.terms_project_period, p.terms_validity, p.terms_separate_orders,
       p.terms_payment, p.terms_payment_custom, p.terms_warranty,
       p.hsn_sac_code, p.supplier_branch,
-      p.bank_details_id, p.bank_company, p.bank_name, p.bank_account, p.bank_ifsc, p.bank_branch, p.custom_terms,
+      p.bank_details_id, p.bank_company, p.bank_name, p.bank_account, p.bank_ifsc, p.bank_branch, p.custom_terms, p.gst_mode, p.status,
       c.customer_name, c.mobile_number, c.email, c.gst_number, c.location_city,
       pi.product_number, pi.description, pi.price, pi.quantity, pi.tax, pi.discount, pi.subtotal AS item_subtotal,
       pi.brand_model, pi.uom, pi.hsn_sac
@@ -160,8 +160,8 @@ router.post("/create", verifyToken, (req, res) => {
             exec_name, exec_phone, exec_email,
             terms_general, terms_tax, terms_project_period, terms_validity, terms_separate_orders,
             terms_payment, terms_payment_custom, terms_warranty, hsn_sac_code, supplier_branch,
-            bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, gst_mode, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             customerId, performaInvoice.invoice_date,
             performaInvoice.total_cgst || 0, performaInvoice.total_sgst || 0, performaInvoice.total_igst || 0, performaInvoice.subtotal || 0,
@@ -175,7 +175,7 @@ router.post("/create", verifyToken, (req, res) => {
             ex.terms_validity || ex.terms_validity_days || null, ex.terms_separate_orders ? JSON.stringify(ex.terms_separate_orders) : null,
             ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
             ex.hsn_sac_code || null, ex.supplier_branch || null,
-            ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
+            ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null, ex.gst_mode || "Exclusive",
             req.user.id
           ],
           (err, result) => {
@@ -252,9 +252,9 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
                 tax_type, custom_tax, exec_name, exec_phone, exec_email,
                 terms_general, terms_tax, terms_project_period, terms_validity, terms_separate_orders,
                 terms_payment, terms_payment_custom, terms_warranty,
-                hsn_sac_code, supplier_branch, bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms,
+                hsn_sac_code, supplier_branch, bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, gst_mode,
                 parent_id, version, is_latest, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
               [
                 current.customer_id, performaInvoice.invoice_date,
                 performaInvoice.total_cgst || 0, performaInvoice.total_sgst || 0, performaInvoice.total_igst || 0,
@@ -270,7 +270,7 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
                 ex.terms_validity || null, ex.terms_separate_orders ? JSON.stringify(ex.terms_separate_orders) : null,
                 ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
                 ex.hsn_sac_code || null, ex.supplier_branch || null,
-                ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
+                ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null, ex.gst_mode || "Exclusive",
                 rootId, newVersion, 1, current.created_by
               ],
               (err, result) => {
@@ -449,6 +449,25 @@ router.post("/send-email/:id", verifyToken, (req, res) => {
         console.error("Email error:", error);
         res.status(500).json({ message: "Failed to send email", error: error.message });
       }
+    });
+  });
+});
+
+// PATCH STATUS
+router.patch("/:id", verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: "Status is required" });
+
+  db.query("SELECT created_by FROM performainvoices WHERE id = ?", [id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ message: "Not found" });
+    if (req.user.role !== "admin" && results[0].created_by !== req.user.id) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    db.query("UPDATE performainvoices SET status = ? WHERE id = ?", [status, id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: "Status updated", status });
     });
   });
 });

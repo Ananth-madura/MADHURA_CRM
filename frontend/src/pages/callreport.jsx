@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import "../Styles/tailwind.css";
-import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench, Users, Zap } from "lucide-react";
+import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench, Users } from "lucide-react";
 import axios from "axios";
 import socket from "../socket/socket";
 import { API } from "../config";
@@ -15,6 +15,17 @@ const getAuthConfig = () => {
 
 const getUserRole = () => {
   try { return JSON.parse(localStorage.getItem("user") || "{}").role || "employee"; } catch { return "employee"; }
+};
+
+// Call Report permission: admin role OR malarvannan/priyanka by name
+const CALL_REPORT_EDITOR_NAMES = ["malarvannan", "priyanka"];
+const getCanEditCallReport = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const role = user.role || "employee";
+    const name = (user.name || "").trim().toLowerCase();
+    return role === "admin" || CALL_REPORT_EDITOR_NAMES.includes(name);
+  } catch { return false; }
 };
 
 const ENGINEERS = [
@@ -177,19 +188,6 @@ const formatTimeOnly = (timeVal) => {
   return str.includes(" ") ? (str.split(" ")[1] || str) : str;
 };
 
-const formatTimeAndDuration = (startTime, endTime, actualDuration) => {
-  if (!startTime || !endTime) return "—";
-  try {
-    const sStr = String(startTime);
-    const eStr = String(endTime);
-    const startPart = sStr.includes(" ") ? (sStr.split(" ")[1] || sStr) : sStr;
-    const endPart = eStr.includes(" ") ? (eStr.split(" ")[1] || eStr) : eStr;
-    return `${startPart} - ${endPart} (${actualDuration || 0}m)`;
-  } catch (e) {
-    return `${startTime} - ${endTime} (${actualDuration || 0}m)`;
-  }
-};
-
 const DetailModal = ({ call, onClose, formatCurrency }) => {
   if (!call) return null;
   const sc = STATUS_COLORS[call.status] || STATUS_COLORS.Pending;
@@ -334,145 +332,9 @@ const DetailModal = ({ call, onClose, formatCurrency }) => {
   );
 };
 
-const SessionLogsModal = ({ sessionId, callsList, onClose, formatCurrency, canEdit, onEditCall }) => {
-  const sessionCalls = React.useMemo(() => {
-    return callsList
-      .filter(c => c.session_id === sessionId)
-      .sort((a, b) => (a.call_sequence || 1) - (b.call_sequence || 1));
-  }, [sessionId, callsList]);
-
-  if (!sessionId) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl max-h-[90vh] overflow-y-auto border border-border animate-scale-in" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-border px-6 py-4 flex justify-between items-center z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary/10">
-              <Zap size={18} className="text-primary" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold font-display text-foreground">Session Service Call Logs</h2>
-              <p className="text-xs font-mono text-muted-foreground">Session ID: {sessionId}</p>
-            </div>
-          </div>
-          <X className="cursor-pointer hover:text-destructive transition-colors text-muted-foreground" onClick={onClose} />
-        </div>
-
-        <div className="p-6 space-y-6">
-          {sessionCalls.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">No calls found under this session.</div>
-          ) : (
-            <div className="space-y-4">
-              {sessionCalls.map((c, idx) => {
-                const sc = STATUS_COLORS[c.status] || STATUS_COLORS.Pending;
-                const pc = PRIORITY_COLORS[c.priority] || PRIORITY_COLORS.Medium;
-                const psc = PAYMENT_STATUS_COLORS[c.payment_status] || PAYMENT_STATUS_COLORS.Pending;
-                const totalExpenses = (parseFloat(c.petrol_charges) || 0) + (parseFloat(c.spare_parts_price) || 0) + (parseFloat(c.labour_charges) || 0);
-
-                return (
-                  <div key={c.id} className="border border-border rounded-xl p-4 bg-muted/20 hover:border-primary/20 transition-all shadow-sm">
-                    <div className="flex flex-wrap justify-between items-center gap-2 pb-3 mb-3 border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-primary/10 text-primary">
-                          Call #{c.call_sequence || (idx + 1)}
-                        </span>
-                        <span className="text-xs text-muted-foreground font-mono">ID: {c.call_id || `#${c.id}`}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge bg={sc.bg} text={sc.text} border={sc.border}>{c.status || "Pending"}</Badge>
-                        <Badge bg={pc.bg} text={pc.text} border={pc.border}>{c.priority || "Medium"}</Badge>
-                        {canEdit && (
-                          <button
-                            onClick={() => onEditCall(c)}
-                            className="p-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition-colors border border-accent/20 hover:scale-105 active:scale-95 flex items-center justify-center ml-1"
-                            title="Edit Details"
-                          >
-                            <Edit size={12} className="stroke-[2.5px]" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                      <div>
-                        <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Date</p>
-                        <p className="font-semibold text-foreground mt-0.5 flex items-center gap-1">
-                          <Calendar size={12} className="text-primary" /> {safeFormatDate(c.report_date || c.created_at)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Engineer Assigned</p>
-                        <p className="font-semibold text-foreground mt-0.5 flex items-center gap-1">
-                          <User size={12} className="text-primary" /> {c.engineer || c.staff_name || "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Time & Duration</p>
-                        <p className="font-semibold text-foreground mt-0.5 flex items-center gap-1">
-                          <Clock size={12} className="text-primary" /> 
-                          {formatTimeAndDuration(c.start_time, c.end_time, c.actual_duration)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Pay Status</p>
-                        <p className="font-semibold text-foreground mt-0.5 flex items-center gap-1">
-                          <CreditCard size={12} className="text-primary" /> {c.payment_status || "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-3 border-t border-dashed border-border text-xs">
-                      <div>
-                        <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Call Details</p>
-                        <p className="text-muted-foreground mt-1 text-sm bg-white p-2 rounded border border-border">
-                          {c.call_details || c.complaint || c.description || "—"}
-                        </p>
-                      </div>
-                      <div className="flex flex-col justify-between">
-                        <div>
-                          <p className="font-bold text-muted-foreground uppercase tracking-wide text-[9px]">Expenses & Travel</p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1 text-[10px] text-muted-foreground">
-                            <div>KM: {c.km !== null && c.km !== undefined && c.km !== "" ? `${c.km} km` : "0 km"}</div>
-                            <div>Petrol: {formatCurrency(c.petrol_charges)}</div>
-                            <div>Spare Parts: {formatCurrency(c.spare_parts_price)}</div>
-                            <div>Labour: {formatCurrency(c.labour_charges)}</div>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex justify-between items-center p-2 rounded bg-white border border-border">
-                          <div>
-                            <span className="text-[10px] font-bold text-muted-foreground block">TOTAL EXPENSES</span>
-                            <span className="font-bold text-sm text-foreground">{formatCurrency(totalExpenses)}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] font-bold text-muted-foreground block">PAY (INVOICE VALUE)</span>
-                            <span className="font-bold text-sm text-accent">{formatCurrency(c.invoice_value)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="sticky bottom-0 bg-white border-t border-border px-6 py-4 flex justify-between items-center">
-          <div className="text-xs text-muted-foreground">
-            Total Session Calls: <span className="font-bold text-foreground">{sessionCalls.length}</span> | 
-            Total Session Revenue: <span className="font-bold text-accent">{formatCurrency(sessionCalls.reduce((sum, c) => sum + (parseFloat(c.invoice_value) || 0), 0))}</span>
-          </div>
-          <button onClick={onClose} className="px-6 py-2.5 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-colors">Close</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const CallReport = () => {
   const userRole = getUserRole();
-  const canEditDelete = userRole === "admin" || userRole === "subadmin";
+  const canEditDelete = getCanEditCallReport();
 
   const [activeTab, setActiveTab] = useState("calls");
   const [collapsedMonths, setCollapsedMonths] = useState({});
@@ -488,32 +350,25 @@ const CallReport = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [editId, setEditId] = useState(null);
   const [detailCall, setDetailCall] = useState(null);
-  const [sessionLogsModalOpen, setSessionLogsModalOpen] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [perfEngineerFilter, setPerfEngineerFilter] = useState("All");
-
-  const [basicForm, setBasicForm] = useState({
-    customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", duration: "", call_type: "", call_details: "",
-    invoice_value: "", priority: "", call_referrer: "", status: "Pending", payment_type: "", payment_status: "Pending",
-    gst_number: "", company_name: "", contract_title: "",
-    session_id: "", call_sequence: 1
-  });
-
-  const [basicContractSearchResults, setBasicContractSearchResults] = useState([]);
-  const [basicContractLoading, setBasicContractLoading] = useState(false);
-  const [selectedBasicContract, setSelectedBasicContract] = useState(null);
 
   const [form, setForm] = useState({
     customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", call_details: "",
-    priority: "", call_referrer: "", status: "", call_type: "",
-    payment_type: "", invoice_value: "", payment_status: "", duration: "", contract_title: "",
+    priority: "Medium", call_referrer: "", status: "Pending", call_type: "",
+    payment_type: "", invoice_value: "", payment_status: "Pending", duration: "", contract_title: "",
     gst_number: "", company_name: "",
+    engineer: "", start_time: "", end_time: "", km: "",
+    petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
+    session_id: "", call_sequence: 1,
+    step2_completed: 0
   });
 
   const [step2Form, setStep2Form] = useState({
     engineer: "", start_time: "", end_time: "", km: "",
     petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
     status: "", invoice_value: "",
+    payment_status: "Pending",
+    payment_type: "",
   });
 
   const [customerSearchResults, setCustomerSearchResults] = useState([]);
@@ -523,6 +378,32 @@ const CallReport = () => {
   const [selectedContract, setSelectedContract] = useState(null);
   const [step2CallId, setStep2CallId] = useState(null);
   const [step2ModalOpen, setStep2ModalOpen] = useState(false);
+
+  // History tab state
+  const [historyCalls, setHistoryCalls] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFilters, setHistoryFilters] = useState({
+    dateRangeType: "all", // "all", "exact_day", "last_7", "last_30", "custom", "month_year"
+    exactDate: new Date().toISOString().split("T")[0],
+    from: "",
+    to: "",
+    month: "",
+    year: new Date().getFullYear().toString(),
+    customer: "",
+    engineer: "All"
+  });
+  const [historySearchInput, setHistorySearchInput] = useState("");
+
+  // Debounce history search input
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setHistoryFilters(prev => {
+        if (prev.customer === historySearchInput) return prev;
+        return { ...prev, customer: historySearchInput };
+      });
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [historySearchInput]);
 
   const fetchCalls = useCallback(async () => {
     try {
@@ -555,6 +436,63 @@ const CallReport = () => {
     socket.on("data_changed", handler);
     return () => socket.off("data_changed", handler);
   }, [fetchCalls]);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({ scope: "history" });
+      
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+
+      if (historyFilters.dateRangeType === "exact_day") {
+        if (historyFilters.exactDate) {
+          params.append("from", historyFilters.exactDate);
+          params.append("to", historyFilters.exactDate);
+        }
+      } else if (historyFilters.dateRangeType === "last_7") {
+        const last7 = new Date();
+        last7.setDate(today.getDate() - 7);
+        params.append("from", last7.toISOString().split("T")[0]);
+        params.append("to", todayStr);
+      } else if (historyFilters.dateRangeType === "last_30") {
+        const last30 = new Date();
+        last30.setDate(today.getDate() - 30);
+        params.append("from", last30.toISOString().split("T")[0]);
+        params.append("to", todayStr);
+      } else if (historyFilters.dateRangeType === "custom") {
+        if (historyFilters.from) params.append("from", historyFilters.from);
+        if (historyFilters.to) params.append("to", historyFilters.to);
+      } else if (historyFilters.dateRangeType === "month_year") {
+        if (historyFilters.month) params.append("month", historyFilters.month);
+        if (historyFilters.year) params.append("year", historyFilters.year);
+      }
+
+      if (historyFilters.customer) params.append("customer", historyFilters.customer);
+      if (historyFilters.engineer && historyFilters.engineer !== "All") params.append("engineer", historyFilters.engineer);
+
+      const res = await axios.get(`${API}/api/call-reports?${params.toString()}`, getAuthConfig());
+      setHistoryCalls(res.data || []);
+    } catch (err) {
+      console.error("Fetch history error:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyFilters]);
+
+  const handleHistorySearchClick = () => {
+    setHistoryFilters(prev => {
+      if (prev.customer === historySearchInput) {
+        fetchHistory();
+        return prev;
+      }
+      return { ...prev, customer: historySearchInput };
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab === "history") fetchHistory();
+  }, [activeTab, fetchHistory]);
 
    const mapClientOption = (c) => ({
      value: c.name || c.customer || "",
@@ -603,16 +541,13 @@ const CallReport = () => {
      finally { setCustomerLoading(false); }
    }, []);
 
-   const searchContracts = useCallback(async (type, searchTerm = "", target = "edit") => {
-     const setLoadingState = target === "basic" ? setBasicContractLoading : setContractLoading;
-     const setResultsState = target === "basic" ? setBasicContractSearchResults : setContractSearchResults;
-
+   const searchContracts = useCallback(async (type, searchTerm = "") => {
      if (type !== "AMC" && type !== "ALC") {
-       setResultsState([]);
+       setContractSearchResults([]);
        return;
      }
 
-     setLoadingState(true);
+     setContractLoading(true);
      try {
        const res = await axios.get(`${API}/api/contract/with-usage`, getAuthConfig());
        const q = searchTerm.trim().toLowerCase();
@@ -621,36 +556,26 @@ const CallReport = () => {
          const haystack = `${c.contract_title || ""} ${c.client_company || ""} ${c.mobile_number || ""} ${c.email || ""}`.toLowerCase();
          return matchesType && (!q || haystack.includes(q));
        });
-       setResultsState(filtered.map(mapContractOption));
+       setContractSearchResults(filtered.map(mapContractOption));
      } catch (err) {
        console.error(err);
-       setResultsState([]);
+       setContractSearchResults([]);
      }
-     finally { setLoadingState(false); }
+     finally { setContractLoading(false); }
    }, []);
 
-  const handleBasicCallTypeChange = (type) => {
-    setBasicForm({ ...basicForm, call_type: type });
-    setBasicContractSearchResults([]);
-    setSelectedBasicContract(null);
-    if (type === "AMC" || type === "ALC") {
-      searchContracts(type, "", "basic");
-    } else {
-      setBasicForm(prev => ({
-        ...prev,
-        call_type: type,
-        customer_id: "",
-      }));
-    }
-  };
-
   const handleCallTypeChange = (type) => {
-    setForm({ ...form, call_type: type });
+    setForm(prev => ({
+      ...prev,
+      call_type: type,
+      contract_title: "",
+      customer_id: "",
+    }));
+    setSelectedContract(null);
     if (type === "AMC" || type === "ALC") {
-      searchContracts(type, "", "edit");
+      searchContracts(type, "");
     } else {
       setContractSearchResults([]);
-      setSelectedContract(null);
     }
   };
 
@@ -658,16 +583,16 @@ const CallReport = () => {
     const contract = contractSearchResults.find(c => c.value === contractTitle);
     if (contract) {
       setSelectedContract(contract);
-      setForm({
-        ...form,
+      setForm(prev => ({
+        ...prev,
         customer: contract.client_company || contract.label,
         customer_id: contract.contract_id || "",
         contract_title: contract.value || "",
         mobile_number: contract.mobile_number || "",
         email: contract.email || "",
         location_city: contract.location_city || "",
-        invoice_value: contract.invoice_value || form.invoice_value,
-      });
+        invoice_value: contract.invoice_value || prev.invoice_value,
+      }));
     }
   };
 
@@ -684,25 +609,6 @@ const CallReport = () => {
       }));
     } else {
       setForm((prev) => ({ ...prev, customer: customerVal }));
-    }
-  };
-
-  const handleBasicCustomerSelect = (customerVal) => {
-    const customer = customerSearchResults.find(c => c.value === customerVal);
-    if (customer) {
-      setBasicForm((prev) => ({
-        ...prev,
-        customer: customer.value,
-        customer_id: customer.customer_id || "",
-        contract_title: "",
-        mobile_number: customer.mobile_number || "",
-        email: customer.email || "",
-        location_city: customer.location_city || "",
-      }));
-      setSelectedBasicContract(null);
-    } else {
-      setBasicForm((prev) => ({ ...prev, customer: customerVal, contract_title: "" }));
-      setSelectedBasicContract(null);
     }
   };
 
@@ -741,14 +647,20 @@ const CallReport = () => {
   const resetForm = () => {
     setForm({
       customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", call_details: "",
-      priority: "", call_referrer: "", status: "", call_type: "",
-      payment_type: "", invoice_value: "", payment_status: "", duration: "", contract_title: "",
+      priority: "Medium", call_referrer: "", status: "Pending", call_type: "",
+      payment_type: "", invoice_value: "", payment_status: "Pending", duration: "", contract_title: "",
       gst_number: "", company_name: "",
+      engineer: "", start_time: "", end_time: "", km: "",
+      petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
+      session_id: "", call_sequence: 1,
+      step2_completed: 0
     });
     setStep2Form({
       engineer: "", start_time: "", end_time: "", km: "",
       petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
       status: "", invoice_value: "",
+      payment_status: "Pending",
+      payment_type: "",
     });
     setIsEdit(false); setEditId(null);
     setSelectedContract(null);
@@ -768,17 +680,28 @@ const CallReport = () => {
       email: call.email || "",
       location_city: call.location_city || call.location || "",
       call_details: call.call_details || call.complaint || call.description || "",
-      priority: call.priority || "",
+      priority: call.priority || "Medium",
       call_referrer: call.call_referrer || "",
-      status: call.status || "",
+      status: call.status || "Pending",
       call_type: call.call_type || "",
       payment_type: call.payment_type || "",
       invoice_value: call.invoice_value || "",
-      payment_status: call.payment_status || "",
+      payment_status: call.payment_status || "Pending",
       contract_title: call.contract_title || "",
       duration: call.duration_limit ? (call.duration_limit == 60 ? "1hr" : call.duration_limit == 90 ? "1.5hr" : call.duration_limit == 120 ? "2hr" : "") : "",
       gst_number: call.gst_number || "",
       company_name: call.company_name || "",
+      engineer: call.engineer || call.staff_name || "",
+      start_time: call.start_time || "",
+      end_time: call.end_time || "",
+      km: call.km || "",
+      petrol_charges: call.petrol_charges || "",
+      spare_parts_price: call.spare_parts_price || "",
+      labour_charges: call.labour_charges || "",
+      remarks: call.remarks || "",
+      session_id: call.session_id || "",
+      call_sequence: call.call_sequence || 1,
+      step2_completed: call.step2_completed || 0,
     });
     setStep2Form({
       engineer: call.engineer || call.staff_name || "",
@@ -789,8 +712,10 @@ const CallReport = () => {
       spare_parts_price: call.spare_parts_price || "",
       labour_charges: call.labour_charges || "",
       remarks: call.remarks || "",
-      status: call.status || "",
+      status: call.status || "Pending",
       invoice_value: call.invoice_value || "",
+      payment_status: call.payment_status || "Pending",
+      payment_type: call.payment_type || "",
     });
     setEditId(call.id);
     setIsEdit(true);
@@ -810,6 +735,8 @@ const CallReport = () => {
       remarks: call.remarks || "",
       status: call.status || "Pending",
       invoice_value: call.invoice_value || "",
+      payment_status: call.payment_status || "Pending",
+      payment_type: call.payment_type || "",
     });
     setStep2ModalOpen(true);
   };
@@ -829,10 +756,47 @@ const CallReport = () => {
     if (form.invoice_value === "" || isNaN(parseFloat(form.invoice_value))) return alert("Invoice value is required");
     if (!form.payment_status) return alert("Payment status is required");
 
+    let finalPaymentStatus = form.payment_status;
+    let finalStatus = form.status;
+
+    if (finalStatus === "Closed") {
+      const hasEngineer = !!(form.engineer);
+      const isStep2Completed = form.step2_completed || hasEngineer;
+      if (!isStep2Completed) {
+        return alert("Cannot close call report without filling out the second form (Step 2: Engineer Details)!");
+      }
+    }
+
+    if (finalStatus === "Closed" && finalPaymentStatus !== "Collected") {
+      const confirmCollect = window.confirm("Cannot close call unless payment is Collected. Would you like to mark it as Collected now?");
+      if (confirmCollect) {
+        finalPaymentStatus = "Collected";
+        setForm(prev => ({ ...prev, payment_status: "Collected" }));
+      } else {
+        return;
+      }
+    }
+
+    if (finalPaymentStatus === "Pending" && finalStatus === "Closed") {
+      const confirmStatus = window.confirm("A closed call must have its payment marked as 'Collected'. Do you want to set the call status to 'Pending'?");
+      if (confirmStatus) {
+        finalStatus = "Pending";
+        setForm(prev => ({ ...prev, status: "Pending" }));
+      } else {
+        return;
+      }
+    }
+
+    const durVal = calculateDuration();
+    if (durVal.exceeded && !form.remarks?.trim()) {
+      return alert(`Duration exceeded by ${durVal.overflow} min. Please specify the reason why the time was exceeded in the remarks field!`);
+    }
+
     try {
       const payload = {
-        ...(isEdit ? step2Form : {}),
         ...form,
+        status: finalStatus,
+        payment_status: finalPaymentStatus,
         invoice_value: parseFloat(form.invoice_value) || 0,
         duration_limit: form.duration === "1hr" ? 60 : form.duration === "1.5hr" ? 90 : form.duration === "2hr" ? 120 : 30,
         assigned_time: form.duration === "1hr" ? 60 : form.duration === "1.5hr" ? 90 : form.duration === "2hr" ? 120 : 30,
@@ -858,6 +822,29 @@ const CallReport = () => {
       return alert("Pay (invoice value) cannot be 0 or empty!");
     }
 
+    let finalPaymentStatus = step2Form.payment_status;
+    let finalStatus = step2Form.status;
+
+    if (finalStatus === "Closed" && finalPaymentStatus !== "Collected") {
+      const confirmCollect = window.confirm("Cannot close call unless payment is Collected. Would you like to mark it as Collected now?");
+      if (confirmCollect) {
+        finalPaymentStatus = "Collected";
+        setStep2Form(prev => ({ ...prev, payment_status: "Collected" }));
+      } else {
+        return;
+      }
+    }
+
+    if (finalPaymentStatus === "Pending" && finalStatus === "Closed") {
+      const confirmStatus = window.confirm("A closed call must have its payment marked as 'Collected'. Do you want to set status back to 'Pending'?");
+      if (confirmStatus) {
+        finalStatus = "Pending";
+        setStep2Form(prev => ({ ...prev, status: "Pending" }));
+      } else {
+        return;
+      }
+    }
+
     const step2Duration = calculateStep2Duration();
     if (step2Duration.exceeded && !step2Form.remarks?.trim()) {
       return alert(`Duration exceeded by ${step2Duration.overflow} min. Please specify the reason why the time was exceeded in the remarks field!`);
@@ -874,8 +861,11 @@ const CallReport = () => {
         spare_parts_price: step2Form.spare_parts_price,
         labour_charges: step2Form.labour_charges,
         remarks: step2Form.remarks,
-        status: step2Form.status,
+        status: finalStatus,
         invoice_value: payVal,
+        payment_status: finalPaymentStatus,
+        payment_type: step2Form.payment_type,
+        step2_completed: 1,
       };
       await axios.put(`${API}/api/call-reports/${step2CallId}`, payload, getAuthConfig());
       setStep2ModalOpen(false);
@@ -1073,7 +1063,7 @@ const CallReport = () => {
       // Refresh calls list in the background
       await fetchCalls();
 
-      // Open the Step 2 complete modal directly for this newly created follow-up call!
+      // Open the Step 2 modal directly for this newly created follow-up call!
       setStep2CallId(newCallId);
       setStep2Form({
         engineer: "",
@@ -1085,6 +1075,7 @@ const CallReport = () => {
         labour_charges: "",
         remarks: "",
         status: "Pending",
+        invoice_value: "",
       });
       setStep2ModalOpen(true);
     } catch (err) {
@@ -1093,14 +1084,19 @@ const CallReport = () => {
   };
 
   const openBasicForm = () => {
-    setBasicForm({
-      customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", duration: "", call_type: "", call_details: "",
-      invoice_value: "", priority: "", call_referrer: "", status: "Pending", payment_type: "", payment_status: "Pending", gst_number: "", company_name: "", contract_title: "",
+    setForm({
+      customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", call_details: "",
+      priority: "Medium", call_referrer: "", status: "Pending", call_type: "",
+      payment_type: "", invoice_value: "", payment_status: "Pending", duration: "", contract_title: "",
+      gst_number: "", company_name: "",
+      engineer: "", start_time: "", end_time: "", km: "",
+      petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
       session_id: `SES-${Date.now()}`,
-      call_sequence: 1
+      call_sequence: 1,
+      step2_completed: 0
     });
-    setSelectedBasicContract(null);
-    setBasicContractSearchResults([]);
+    setSelectedContract(null);
+    setContractSearchResults([]);
     setModalOpen(true);
     setIsEdit(false);
     setEditId(null);
@@ -1111,6 +1107,33 @@ const CallReport = () => {
       const res = await axios.get(`${API}/api/call-reports/${callId}`, getAuthConfig());
       const currentCall = res.data;
       if (!currentCall) return;
+
+      if (updatedFields.status === "Closed") {
+        const step2_comp = currentCall.step2_completed;
+        const hasEng = !!(currentCall.engineer || currentCall.staff_name);
+        if (!step2_comp && !hasEng) {
+          alert("Cannot close call report without filling out the second form (Step 2: Engineer Details)!");
+          return;
+        }
+      }
+
+      if (updatedFields.status === "Closed" && (updatedFields.payment_status || currentCall.payment_status) !== "Collected") {
+        const confirmCollect = window.confirm("Cannot close call unless payment is Collected. Would you like to mark it as Collected now?");
+        if (confirmCollect) {
+          updatedFields.payment_status = "Collected";
+        } else {
+          return;
+        }
+      }
+
+      if (updatedFields.payment_status === "Pending" && (updatedFields.status || currentCall.status) === "Closed") {
+        const confirmStatus = window.confirm("A closed call must have its payment marked as 'Collected'. Do you want to set status back to 'Pending'?");
+        if (confirmStatus) {
+          updatedFields.status = "Pending";
+        } else {
+          return;
+        }
+      }
 
       const payload = {
         customer: currentCall.customer_name || currentCall.client_name || "",
@@ -1145,70 +1168,6 @@ const CallReport = () => {
     } catch (err) {
       alert("Error updating: " + (err.response?.data?.error || err.message));
     }
-  };
-
-  const handleBasicContractSelect = (contractTitle) => {
-    const contract = basicContractSearchResults.find(c => c.value === contractTitle);
-    if (contract) {
-      setSelectedBasicContract(contract);
-      setBasicForm({
-        ...basicForm,
-        customer: contract.client_company || contract.label,
-        customer_id: contract.contract_id || "",
-        contract_title: contract.value || "",
-        mobile_number: contract.mobile_number || "",
-        email: contract.email || "",
-        location_city: contract.location_city || "",
-        invoice_value: contract.invoice_value || basicForm.invoice_value,
-      });
-      setBasicContractSearchResults([]);
-    }
-  };
-
-  const handleBasicSubmit = async (e) => {
-    e.preventDefault();
-    if (!basicForm.customer.trim()) return alert("Customer name is required");
-    if (!basicForm.mobile_number?.trim()) return alert("Mobile number is required");
-    if (!basicForm.email?.trim()) return alert("Email is required");
-    if (!basicForm.location_city?.trim()) return alert("Location/City is required");
-    if (!basicForm.call_type) return alert("Call type is required");
-    if (!basicForm.duration) return alert("Duration is required");
-    if (!basicForm.priority) return alert("Priority is required");
-    if (!basicForm.call_referrer) return alert("Call referrer is required");
-    if (!basicForm.call_details?.trim()) return alert("Call details are required");
-    if (!basicForm.status) return alert("Status is required");
-    if (!basicForm.payment_type) return alert("Payment type is required");
-
-    try {
-      const durationMap = { "1hr": 60, "1.5hr": 90, "2hr": 120 };
-      const payload = {
-        customer: basicForm.customer,
-        customer_id: basicForm.customer_id || null,
-        mobile_number: basicForm.mobile_number || "",
-        email: basicForm.email || "",
-        location_city: basicForm.location_city || "",
-        call_type: basicForm.call_type,
-        contract_title: basicForm.contract_title || "",
-        call_details: basicForm.call_details,
-        priority: basicForm.priority,
-        call_referrer: basicForm.call_referrer,
-        status: basicForm.status,
-        payment_type: basicForm.payment_type,
-        invoice_value: parseFloat(basicForm.invoice_value) || 0,
-        payment_status: basicForm.payment_status || "Pending",
-        duration_limit: durationMap[basicForm.duration] || 60,
-        assigned_time: durationMap[basicForm.duration] || 60,
-        service_type: (basicForm.call_type === "AMC" || basicForm.call_type === "ALC") ? basicForm.call_type : "None",
-        report_date: new Date().toISOString().split("T")[0],
-        session_id: basicForm.session_id || `SES-${Date.now()}`,
-        call_sequence: basicForm.call_sequence || 1,
-        gst_number: basicForm.gst_number || "",
-        company_name: basicForm.company_name || "",
-      };
-      await axios.post(`${API}/api/call-reports`, payload, getAuthConfig());
-      setModalOpen(false);
-      fetchCalls();
-    } catch (err) { alert("Error: " + (err.response?.data?.error || err.message)); }
   };
 
   const performanceData = useMemo(() => {
@@ -1262,6 +1221,7 @@ const CallReport = () => {
 
   const TABS = [
     { id: "calls", label: "Calls" },
+    { id: "history", label: "History" },
     { id: "engineers", label: "Engineers" },
     { id: "performance", label: "Performance" },
   ];
@@ -1285,9 +1245,11 @@ const CallReport = () => {
           <button onClick={downloadCSV} className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors">
             <Download size={14} /> Export
           </button>
-          <button onClick={openBasicForm} className="px-4 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-2 bg-primary hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg">
-            <Plus size={16} /> New Call
-          </button>
+          {canEditDelete && (
+            <button onClick={openBasicForm} className="px-4 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-2 bg-primary hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg">
+              <Plus size={16} /> New Call
+            </button>
+          )}
         </div>
       </div>
 
@@ -1419,33 +1381,39 @@ const CallReport = () => {
                             const dur = c.actual_duration || 0;
                             const isComplete = c.step2_completed;
                             return (
-                              <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onDoubleClick={() => {
-                                setSelectedSessionId(c.session_id);
-                                setSessionLogsModalOpen(true);
-                              }}>
+                              <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                                 <td className="px-4 py-3 font-mono font-bold text-xs text-primary">
                                   <div className="text-primary font-black text-sm">Call #{c.call_sequence || 1}</div>
                                   <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">ID: {String(c.id).padStart(3, '0')}</div>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <p className="font-semibold text-sm truncate text-foreground">{c.customer_name || c.client_name || "—"}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-semibold text-sm truncate text-foreground">{c.customer_name || c.client_name || "—"}</p>
+                                    {c.status === "Pending" && c.report_date && new Date(c.report_date) < new Date(new Date().toDateString()) && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 whitespace-nowrap">Overdue</span>
+                                    )}
+                                  </div>
                                   <p className="text-[10px] truncate text-muted-foreground">{c.location_city || c.location || ""}</p>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                  <select
-                                    value={c.status || "Pending"}
-                                    onChange={(e) => handleInlineUpdate(c.id, { status: e.target.value })}
-                                    className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
-                                    style={{
-                                      background: sc.bg,
-                                      color: sc.text,
-                                      borderColor: sc.border,
-                                    }}
-                                  >
-                                    {STATUS_OPTIONS.map(opt => (
-                                      <option key={opt} value={opt} style={{ background: "#ffffff", color: "#1a1a1a" }}>{opt}</option>
-                                    ))}
-                                  </select>
+                                  {canEditDelete ? (
+                                    <select
+                                      value={c.status || "Pending"}
+                                      onChange={(e) => handleInlineUpdate(c.id, { status: e.target.value })}
+                                      className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
+                                      style={{
+                                        background: sc.bg,
+                                        color: sc.text,
+                                        borderColor: sc.border,
+                                      }}
+                                    >
+                                      {STATUS_OPTIONS.map(opt => (
+                                        <option key={opt} value={opt} style={{ background: "#ffffff", color: "#1a1a1a" }}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <Badge bg={sc.bg} text={sc.text} border={sc.border}>{c.status || "Pending"}</Badge>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3 text-xs text-center text-muted-foreground">{c.call_type || "—"}</td>
                                 <td className="px-4 py-3 text-center">
@@ -1472,16 +1440,18 @@ const CallReport = () => {
                                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
                                         Basic
                                       </span>
-                                      <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openStep2Form(c);
-                                        }} 
-                                        className="p-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20 hover:scale-105 active:scale-95 flex items-center justify-center"
-                                        title="Complete Details"
-                                      >
-                                        <Plus size={12} className="stroke-[3px]" />
-                                      </button>
+                                      {canEditDelete && (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openStep2Form(c);
+                                          }} 
+                                          className="p-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20 hover:scale-105 active:scale-95 flex items-center justify-center"
+                                          title="Complete Details"
+                                        >
+                                          <Plus size={12} className="stroke-[3px]" />
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </td>
@@ -1493,27 +1463,32 @@ const CallReport = () => {
                                 <td className="px-4 py-3 text-xs font-bold text-center text-foreground">{c.total_expenses !== null && c.total_expenses !== undefined ? formatCurrency(c.total_expenses) : "—"}</td>
                                 <td className="px-4 py-3 text-xs font-bold text-center text-foreground">{c.invoice_value !== null && c.invoice_value !== undefined ? formatCurrency(c.invoice_value) : "—"}</td>
                                 <td className="px-4 py-3 text-center">
-                                  <select
-                                    value={c.payment_status || "Pending"}
-                                    onChange={(e) => handleInlineUpdate(c.id, { payment_status: e.target.value })}
-                                    className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
-                                    style={{
-                                      background: psc.bg,
-                                      color: psc.text,
-                                      borderColor: psc.border,
-                                    }}
-                                  >
-                                    {PAYMENT_STATUS_OPTIONS.map(opt => (
-                                      <option key={opt} value={opt} style={{ background: "#ffffff", color: "#1a1a1a" }}>{opt}</option>
-                                    ))}
-                                  </select>
+                                  {canEditDelete ? (
+                                    <select
+                                      value={c.payment_status || "Pending"}
+                                      onChange={(e) => handleInlineUpdate(c.id, { payment_status: e.target.value })}
+                                      className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
+                                      style={{
+                                        background: psc.bg,
+                                        color: psc.text,
+                                        borderColor: psc.border,
+                                      }}
+                                    >
+                                      {PAYMENT_STATUS_OPTIONS.map(opt => (
+                                        <option key={opt} value={opt} style={{ background: "#ffffff", color: "#1a1a1a" }}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <Badge bg={psc.bg} text={psc.text} border={psc.border}>{c.payment_status || "Pending"}</Badge>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex gap-1 justify-center items-center">
                                     <button onClick={() => setDetailCall(c)} className="p-1 rounded hover:bg-primary/10 transition-colors" title="View Details"><Eye size={14} className="text-primary" /></button>
-                                    <button onClick={() => openFollowUpCall(c)} className="p-1 rounded hover:bg-purple-100 transition-colors text-purple-600" title="Add follow-up call to this session"><Plus size={14} /></button>
-                                    {(!isComplete || canEditDelete) && <button onClick={() => openStep2Form(c)} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary text-white hover:bg-primary/90 transition-colors" title={isComplete ? "Edit Details" : "Complete Details"}>{isComplete ? "Edit Details" : "Complete"}</button>}
-                                    <button onClick={() => openEditModal(c)} className="p-1 rounded hover:bg-accent/10 transition-colors" title="Edit"><Edit size={14} className="text-accent" /></button>
+
+                                    {canEditDelete && (!isComplete || canEditDelete) && <button onClick={() => openStep2Form(c)} className="p-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors" title={isComplete ? "Edit Details" : "Complete Details"}><CheckCircle size={14} /></button>}
+                                    {canEditDelete && <button onClick={() => openEditModal(c)} className="p-1 rounded hover:bg-accent/10 transition-colors" title="Edit"><Edit size={14} className="text-accent" /></button>}
+                                    {canEditDelete && <button onClick={() => openFollowUpCall(c)} className="p-1 rounded hover:bg-purple-100 transition-colors text-purple-600" title="Add follow-up call to this session"><Plus size={14} /></button>}
                                     {canEditDelete && <button onClick={() => deleteCall(c.id)} className="p-1 rounded hover:bg-destructive/10 transition-colors" title="Delete"><Trash2 size={14} className="text-destructive" /></button>}
                                   </div>
                                 </td>
@@ -1523,6 +1498,209 @@ const CallReport = () => {
                         </React.Fragment>
                       );
                     })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "history" && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {[
+              { label: "Completed Calls", value: historyCalls.length, icon: CheckCircle, color: "hsl(var(--accent))", bg: "hsl(var(--accent) / 0.1)" },
+              { label: "Total Revenue", value: `₹${historyCalls.reduce((s,c) => s + (parseFloat(c.invoice_value)||0), 0).toLocaleString()}`, icon: DollarSign, color: "hsl(271 81% 56%)", bg: "hsl(271 81% 56% / 0.1)" },
+              { label: "Total Expenses", value: `₹${historyCalls.reduce((s,c) => s + (parseFloat(c.total_expenses)||0), 0).toLocaleString()}`, icon: TrendingUp, color: "hsl(217 91% 60%)", bg: "hsl(217 91% 60% / 0.1)" },
+              { label: "Collected", value: `₹${historyCalls.filter(c => c.payment_status === "Collected").reduce((s,c) => s + (parseFloat(c.invoice_value)||0), 0).toLocaleString()}`, icon: Phone, color: "hsl(142 71% 45%)", bg: "hsl(142 71% 45% / 0.1)" },
+            ].map((s, i) => (
+              <div key={i} className="rounded-xl p-4 border border-border bg-card hover:border-primary/20 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: s.bg }}>
+                    <s.icon size={18} style={{ color: s.color }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
+                    <p className="text-lg font-bold font-display text-foreground">{s.value}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-card rounded-xl border border-border p-4 mb-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-border bg-muted/50">
+                <Search size={16} className="text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search customer..."
+                  className="outline-none text-sm w-full bg-transparent text-foreground"
+                  value={historySearchInput}
+                  onChange={e => setHistorySearchInput(e.target.value)}
+                />
+              </div>
+
+              <select
+                value={historyFilters.dateRangeType}
+                onChange={e => setHistoryFilters(p => ({ ...p, dateRangeType: e.target.value }))}
+                className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+              >
+                <option value="all">All Dates</option>
+                <option value="exact_day">Exact Day</option>
+                <option value="last_7">Last 7 Days</option>
+                <option value="last_30">Last 30 Days</option>
+                <option value="custom">Custom Range</option>
+                <option value="month_year">Month & Year</option>
+              </select>
+
+              {historyFilters.dateRangeType === "exact_day" && (
+                <input
+                  type="date"
+                  value={historyFilters.exactDate}
+                  onChange={e => setHistoryFilters(p => ({ ...p, exactDate: e.target.value }))}
+                  className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+                  title="Select Date"
+                />
+              )}
+
+              {historyFilters.dateRangeType === "custom" && (
+                <>
+                  <input
+                    type="date"
+                    value={historyFilters.from}
+                    onChange={e => setHistoryFilters(p => ({ ...p, from: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+                    title="From"
+                  />
+                  <input
+                    type="date"
+                    value={historyFilters.to}
+                    onChange={e => setHistoryFilters(p => ({ ...p, to: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+                    title="To"
+                  />
+                </>
+              )}
+
+              {historyFilters.dateRangeType === "month_year" && (
+                <>
+                  <select
+                    value={historyFilters.month}
+                    onChange={e => setHistoryFilters(p => ({ ...p, month: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+                  >
+                    <option value="">All Months</option>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>
+                        {new Date(0, i).toLocaleString("default", { month: "long" })}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={historyFilters.year}
+                    onChange={e => setHistoryFilters(p => ({ ...p, year: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+                  >
+                    {Array.from({ length: 5 }, (_, i) => {
+                      const y = new Date().getFullYear() - i;
+                      return <option key={y} value={y}>{y}</option>;
+                    })}
+                  </select>
+                </>
+              )}
+
+              <select
+                value={historyFilters.engineer}
+                onChange={e => setHistoryFilters(p => ({ ...p, engineer: e.target.value }))}
+                className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
+              >
+                <option value="All">All Engineers</option>
+                {ENGINEERS.map(e => (
+                  <option key={e.value} value={e.value}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleHistorySearchClick}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/95 transition-colors shadow"
+              >
+                Search
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr className="text-muted-foreground font-bold uppercase text-xs border-b border-border">
+                    <th className="px-4 py-3 text-left w-[80px]">ID</th>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">Engineer</th>
+                    <th className="px-4 py-3 text-center w-[80px]">Duration</th>
+                    <th className="px-4 py-3 text-center w-[90px]">Expenses</th>
+                    <th className="px-4 py-3 text-center w-[90px]">Invoice</th>
+                    <th className="px-4 py-3 text-center w-[100px]">Pay Status</th>
+                    <th className="px-4 py-3 text-center w-[120px]">Completed At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyLoading ? (
+                    <tr><td colSpan="8" className="text-center py-12 text-muted-foreground">Loading...</td></tr>
+                  ) : historyCalls.length === 0 ? (
+                    <tr><td colSpan="8" className="text-center py-12 text-muted-foreground">No completed calls found</td></tr>
+                  ) : (
+                    (() => {
+                      const groups = {};
+                      historyCalls.forEach(c => {
+                        const d = new Date(c.report_date || c.completed_at || Date.now());
+                        const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                        const ml = d.toLocaleString('default',{month:'long',year:'numeric'});
+                        if (!groups[mk]) groups[mk] = { key: mk, label: ml, calls: [], totalRevenue: 0, totalExpenses: 0 };
+                        groups[mk].calls.push(c);
+                        groups[mk].totalRevenue += parseFloat(c.invoice_value) || 0;
+                        groups[mk].totalExpenses += parseFloat(c.total_expenses) || 0;
+                      });
+                      return Object.values(groups).sort((a,b) => b.key.localeCompare(a.key)).map(group => (
+                        <React.Fragment key={group.key}>
+                          <tr className="bg-primary/5 hover:bg-primary/10 transition-colors border-b border-border">
+                            <td colSpan="8" className="px-4 py-3 font-semibold text-sm">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-primary font-bold text-base font-display">{group.label}</span>
+                                  <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono">{group.calls.length} calls</span>
+                                </div>
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground mr-4">
+                                  <span>Expenses: <strong className="text-foreground">{formatCurrency(group.totalExpenses)}</strong></span>
+                                  <span>Revenue: <strong className="text-accent">{formatCurrency(group.totalRevenue)}</strong></span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                          {group.calls.map(c => (
+                            <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                              <td className="px-4 py-3 font-mono text-xs font-bold text-primary">#{String(c.id).padStart(3,'0')}</td>
+                              <td className="px-4 py-3">
+                                <p className="font-semibold text-sm text-foreground">{c.customer_name || c.client_name || "—"}</p>
+                                <p className="text-[10px] text-muted-foreground">{c.location_city || ""}</p>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-muted-foreground">{c.staff_name || c.technician || "—"}</td>
+                              <td className="px-4 py-3 text-center text-sm">{c.actual_duration || 0}m</td>
+                              <td className="px-4 py-3 text-center text-sm font-medium">{formatCurrency(c.total_expenses)}</td>
+                              <td className="px-4 py-3 text-center text-sm font-bold text-accent">{formatCurrency(c.invoice_value)}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${c.payment_status === "Collected" ? "bg-green-100 text-green-700 border border-green-200" : "bg-red-100 text-red-700 border border-red-200"}`}>{c.payment_status || "Pending"}</span>
+                              </td>
+                              <td className="px-4 py-3 text-center text-[11px] text-muted-foreground">{c.completed_at ? new Date(c.completed_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : "—"}</td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ));
+                    })()
                   )}
                 </tbody>
               </table>
@@ -1790,248 +1968,20 @@ const CallReport = () => {
           </div>
         </>
       )}
-
       {detailCall && <DetailModal call={detailCall} onClose={() => setDetailCall(null)} formatCurrency={formatCurrency} />}
 
-      {sessionLogsModalOpen && (
-        <SessionLogsModal
-          sessionId={selectedSessionId}
-          callsList={calls}
-          onClose={() => {
-            setSessionLogsModalOpen(false);
-            setSelectedSessionId(null);
-          }}
-          formatCurrency={formatCurrency}
-          canEdit={canEditDelete}
-          onEditCall={(call) => {
-            setSessionLogsModalOpen(false);
-            setSelectedSessionId(null);
-            openStep2Form(call);
-          }}
-        />
-      )}
-
-      {/* Step 1 - Basic Call Form */}
-      {modalOpen && !isEdit && (
-        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in" style={{ backgroundColor: "rgba(0, 0, 0, 0.3)", backdropFilter: "blur(4px)" }} onClick={() => { setModalOpen(false); }}>
-          <div className="w-[95%] max-w-3xl my-4 relative animate-scale-in" style={{ backgroundColor: "var(--color-canvas, #ffffff)", borderRadius: "var(--radius-xl, 16px)", boxShadow: "var(--shadow-level-4, 0 16px 48px -8px rgba(15,15,15,0.16))", border: "1px solid var(--color-hairline, #e5e3df)" }} onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 px-5 sm:px-6 py-4 flex justify-between items-center z-20" style={{ backgroundColor: "rgba(255, 255, 255, 0.95)", backdropFilter: "blur(8px)", borderBottom: "1px solid var(--color-hairline, #e5e3df)" }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 flex items-center justify-center" style={{ borderRadius: "var(--radius-md, 8px)", backgroundColor: "rgba(86, 69, 212, 0.1)" }}>
-                  <Plus size={18} style={{ color: "var(--color-primary, #5645d4)" }} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold" style={{ fontFamily: "var(--font-display, Inter), sans-serif", color: "var(--color-ink, #1a1a1a)" }}>
-                    New Service Call (Call #{basicForm.call_sequence || 1})
-                  </h2>
-                  <p className="text-xs" style={{ color: "var(--color-steel, #787671)" }}>Step 1: All fields required</p>
-                </div>
-              </div>
-              <X className="cursor-pointer transition-colors" style={{ color: "var(--color-steel, #787671)", borderRadius: "var(--radius-sm, 6px)", padding: "4px" }} onClick={() => { setModalOpen(false); }} onMouseEnter={e => { e.target.style.backgroundColor = "var(--color-surface, #f6f5f4)"; e.target.style.color = "var(--color-ink, #1a1a1a)"; }} onMouseLeave={e => { e.target.style.backgroundColor = "transparent"; e.target.style.color = "var(--color-steel, #787671)"; }} />
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: "calc(90vh - 80px)" }}>
-            <form onSubmit={handleBasicSubmit} className="p-5 sm:p-6" style={{ fontFamily: "var(--font-family, Inter), sans-serif" }}>
-              <div className="space-y-5">
-                <SectionDivider icon={User} title="Customer Details" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                   <div className="sm:col-span-2">
-                     <FormField label="Customer Name" required>
-                       <div className="relative">
-                         <input 
-                           type="text" 
-                           value={basicForm.customer || ""} 
-                           onChange={(e) => {
-                             setBasicForm({ ...basicForm, customer: e.target.value, customer_id: "", contract_title: "" });
-                             setSelectedBasicContract(null);
-                             if (e.target.value.length >= 2) {
-                               searchCustomers(e.target.value);
-                             } else if (e.target.value.length === 0) {
-                               setCustomerSearchResults([]);
-                             }
-                           }}
-                           onKeyPress={(e) => {
-                             if (e.key === 'Enter' && customerSearchResults.length > 0) {
-                               // Select first result on Enter
-                               const firstCustomer = customerSearchResults[0];
-                               setBasicForm({ 
-                                 ...basicForm, 
-                                 customer: firstCustomer.value,
-                                 customer_id: firstCustomer.customer_id || "",
-                                 contract_title: "",
-                                 mobile_number: firstCustomer.mobile_number || "",
-                                 email: firstCustomer.email || "",
-                                 location_city: firstCustomer.location_city || "",
-                                 gst_number: firstCustomer.gst_number || "",
-                                 company_name: firstCustomer.company_name || ""
-                               });
-                               setCustomerSearchResults([]);
-                             }
-                           }}
-                           onFocus={() => {
-                             // When clicked/focused, show all customers (search with empty string)
-                             if (basicForm.customer.length === 0) {
-                               searchCustomers("");
-                             }
-                           }}
-                           placeholder="Search customer (type and press Enter)..."
-                           className={inputBase}
-                           style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }}
-                         />
-                         {customerSearchResults.length > 0 && (
-                           <div className="absolute z-50 w-full mt-1 overflow-hidden border border-hairline rounded-md bg-white shadow-lg mt-1">
-                             {customerSearchResults.map((customer, idx) => (
-                               <div 
-                                 key={idx} 
-                                 className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/50"
-                                 onClick={() => {
-                                   setBasicForm({ 
-                                     ...basicForm, 
-                                     customer: customer.value,
-                                     customer_id: customer.customer_id || "",
-                                     contract_title: "",
-                                     mobile_number: customer.mobile_number || "",
-                                     email: customer.email || "",
-                                     location_city: customer.location_city || "",
-                                     gst_number: customer.gst_number || "",
-                                     company_name: customer.company_name || ""
-                                   });
-                                   setCustomerSearchResults([]);
-                                 }}
-                               >
-                                 {customer.label}
-                               </div>
-                             ))}
-                           </div>
-                         )}
-                       </div>
-                     </FormField>
-                   </div>
-                  <FormField label="Mobile Number" icon={PhoneIcon} required>
-                    <input type="tel" value={basicForm.mobile_number} onChange={e => setBasicForm({ ...basicForm, mobile_number: e.target.value })} className={inputBase} placeholder="Auto-filled or manual" required style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                  </FormField>
-                  <FormField label="Email" icon={Mail} required>
-                    <input type="email" value={basicForm.email} onChange={e => setBasicForm({ ...basicForm, email: e.target.value })} className={inputBase} placeholder="Auto-filled or manual" required style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                  </FormField>
-                  <FormField label="Location/City" icon={MapPin} required>
-                    <input type="text" value={basicForm.location_city} onChange={e => setBasicForm({ ...basicForm, location_city: e.target.value })} className={inputBase} placeholder="Auto-filled or manual" required style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                  </FormField>
-                  <FormField label="Company Name" icon={FileText}>
-                    <input type="text" value={basicForm.company_name} onChange={e => setBasicForm({ ...basicForm, company_name: e.target.value })} className={inputBase} placeholder="Auto-filled or manual" style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                  </FormField>
-                  <FormField label="GST Number" icon={FileText}>
-                    <input type="text" value={basicForm.gst_number} onChange={e => setBasicForm({ ...basicForm, gst_number: e.target.value })} className={inputBase} placeholder="Auto-filled or manual" style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                  </FormField>
-                </div>
-
-                <SectionDivider icon={Tag} title="Call Information" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField label="Call Type" required>
-                    <SearchableSelect options={CALL_TYPE_OPTIONS} value={basicForm.call_type} onChange={handleBasicCallTypeChange} placeholder="Select Call Type" />
-                  </FormField>
-                  <FormField label="Call Duration" required icon={Clock}>
-                    <select value={basicForm.duration} onChange={e => setBasicForm({ ...basicForm, duration: e.target.value })} className={inputBase} required style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }}>
-                      <option value="">Select duration</option>
-                      <option value="1hr">1 Hour</option>
-                      <option value="1.5hr">1.5 Hours</option>
-                      <option value="2hr">2 Hours</option>
-                    </select>
-                  </FormField>
-       {(basicForm.call_type === "AMC" || basicForm.call_type === "ALC") && (
-         <>
-            <FormField label={`${basicForm.call_type} Contract`} icon={FileText}>
-              <div className="relative">
-                <input 
-                  type="text" 
-                  value={selectedBasicContract?.label || ""} 
-                  onChange={(e) => {
-                    setBasicForm({ ...basicForm, call_type: basicForm.call_type });
-                    setSelectedBasicContract(null);
-                    if (e.target.value.length >= 2) {
-                      searchContracts(basicForm.call_type, e.target.value, "basic");
-                    } else if (e.target.value.length === 0) {
-                      setBasicContractSearchResults([]);
-                    }
-                  }}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && basicContractSearchResults.length > 0) {
-                      // Select first result on Enter
-                      const firstContract = basicContractSearchResults[0];
-                      handleBasicContractSelect(firstContract.value);
-                    }
-                  }}
-                  onFocus={() => {
-                    // When clicked/focused, show all contracts (search with empty string)
-                    if (selectedBasicContract?.label?.length === 0) {
-                      searchContracts(basicForm.call_type, "", "basic");
-                    }
-                  }}
-                  placeholder={`Search ${basicForm.call_type} contract (type and press Enter)...`}
-                  className={inputBase}
-                  style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }}
-                />
-                {basicContractSearchResults.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 overflow-hidden border border-hairline rounded-md bg-white shadow-lg mt-1">
-                    {basicContractSearchResults.map((contract, idx) => (
-                      <div 
-                        key={idx} 
-                        className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/50"
-                        onClick={() => {
-                          handleBasicContractSelect(contract.value);
-                        }}
-                      >
-                        {contract.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </FormField>
-         </>
-       )}
-                  <FormField label="Priority" required icon={AlertTriangle}>
-                    <SearchableSelect options={PRIORITY_OPTIONS} value={basicForm.priority} onChange={v => setBasicForm({ ...basicForm, priority: v })} placeholder="Select Priority" />
-                  </FormField>
-                  <FormField label="Call Referrer" required icon={Phone}>
-                    <SearchableSelect options={CALL_REFERRERS} value={basicForm.call_referrer} onChange={v => setBasicForm({ ...basicForm, call_referrer: v })} placeholder="Select Referrer" />
-                  </FormField>
-                  <div className="sm:col-span-2">
-                    <FormField label="Call Details" icon={MessageSquare} required>
-                      <textarea value={basicForm.call_details} onChange={e => setBasicForm({ ...basicForm, call_details: e.target.value })} className={`${inputBase} resize-none`} placeholder="Describe the issue or service performed" rows={3} required style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", borderRadius: "var(--radius-md, 8px)" }} />
-                    </FormField>
-                  </div>
-                </div>
-
-                <SectionDivider icon={CheckCircle} title="Status & Billing" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField label="Status" required icon={CheckCircle}>
-                    <SearchableSelect options={STATUS_OPTIONS} value={basicForm.status} onChange={v => setBasicForm({ ...basicForm, status: v })} placeholder="Select Status" />
-                  </FormField>
-                  <FormField label="Payment Type" icon={CreditCard} required>
-                    <SearchableSelect options={PAYMENT_TYPE_OPTIONS} value={basicForm.payment_type} onChange={v => setBasicForm({ ...basicForm, payment_type: v })} placeholder="Select Payment Type" />
-                  </FormField>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 pt-4" style={{ borderTop: "1px solid var(--color-hairline, #e5e3df)" }}>
-                  <button type="submit" className="flex-1 text-sm font-medium" style={{ padding: "10px 18px", borderRadius: "var(--radius-md, 8px)", backgroundColor: "var(--color-primary, #5645d4)", color: "var(--color-on-primary, #ffffff)", transition: "background-color 0.15s ease" }} onMouseEnter={e => { e.target.style.backgroundColor = "var(--color-primary-pressed, #4534b3)"; }} onMouseLeave={e => { e.target.style.backgroundColor = "var(--color-primary, #5645d4)"; }}>Save Call</button>
-                  <button type="button" onClick={() => { setModalOpen(false); }} className="text-sm font-medium" style={{ padding: "10px 18px", borderRadius: "var(--radius-md, 8px)", backgroundColor: "transparent", color: "var(--color-ink, #1a1a1a)", border: "1px solid var(--color-hairline-strong, #c8c4be)", transition: "all 0.15s ease" }} onMouseEnter={e => { e.target.style.backgroundColor = "var(--color-surface, #f6f5f4)"; e.target.style.borderColor = "var(--color-slate, #5d5b54)"; }} onMouseLeave={e => { e.target.style.backgroundColor = "transparent"; e.target.style.borderColor = "var(--color-hairline-strong, #c8c4be)"; }}>Cancel</button>
-                </div>
-              </div>
-            </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal (original full form) */}
-      {modalOpen && isEdit && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in" onClick={() => { setModalOpen(false); resetForm(); }}>
+      {/* Unified Call Report Modal — only for editors */}
+      {canEditDelete && modalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in">
           <div className="bg-white rounded-2xl w-[95%] max-w-4xl shadow-2xl my-4 relative border border-border animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-border px-4 sm:px-6 py-4 flex justify-between items-center z-20">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-accent/10">
-                  <Edit size={18} className="text-accent" />
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isEdit ? "bg-accent/10" : "bg-primary/10"}`}>
+                  {isEdit ? <Edit size={18} className="text-accent" /> : <Plus size={18} className="text-primary" />}
                 </div>
-                <h2 className="text-base sm:text-lg font-bold font-display text-foreground">Edit Call Record</h2>
+                <h2 className="text-base sm:text-lg font-bold font-display text-foreground">
+                  {isEdit ? "Edit Call Record" : "New Call Record"}
+                </h2>
               </div>
               <X className="cursor-pointer hover:text-destructive transition-colors text-muted-foreground p-1 rounded hover:bg-destructive/10" onClick={() => { setModalOpen(false); resetForm(); }} />
             </div>
@@ -2041,7 +1991,71 @@ const CallReport = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="sm:col-span-2 lg:col-span-3">
                   <FormField label="Customer Name" required>
-                    <SearchableSelect options={customerSearchResults} value={form.customer} onChange={handleCustomerSelect} placeholder="Search customer..." onSearch={(q) => searchCustomers(q)} loading={customerLoading} />
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        value={form.customer || ""} 
+                        onChange={(e) => {
+                          setForm({ ...form, customer: e.target.value, customer_id: "", contract_title: "" });
+                          setSelectedContract(null);
+                          if (e.target.value.length >= 2) {
+                            searchCustomers(e.target.value);
+                          } else if (e.target.value.length === 0) {
+                            setCustomerSearchResults([]);
+                          }
+                        }}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && customerSearchResults.length > 0) {
+                            const firstCustomer = customerSearchResults[0];
+                            setForm({ 
+                              ...form, 
+                              customer: firstCustomer.value,
+                              customer_id: firstCustomer.customer_id || "",
+                              contract_title: "",
+                              mobile_number: firstCustomer.mobile_number || "",
+                              email: firstCustomer.email || "",
+                              location_city: firstCustomer.location_city || "",
+                              gst_number: firstCustomer.gst_number || "",
+                              company_name: firstCustomer.company_name || ""
+                            });
+                            setCustomerSearchResults([]);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (form.customer.length === 0) {
+                            searchCustomers("");
+                          }
+                        }}
+                        placeholder="Search customer (type and press Enter)..."
+                        className={inputBase}
+                      />
+                      {customerSearchResults.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 overflow-hidden border border-border rounded-lg bg-white shadow-lg">
+                          {customerSearchResults.map((customer, idx) => (
+                            <div 
+                              key={idx} 
+                              className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/50 text-foreground"
+                              onClick={() => {
+                                setForm({ 
+                                  ...form, 
+                                  customer: customer.value,
+                                  customer_id: customer.customer_id || "",
+                                  contract_title: "",
+                                  mobile_number: customer.mobile_number || "",
+                                  email: customer.email || "",
+                                  location_city: customer.location_city || "",
+                                  gst_number: customer.gst_number || "",
+                                  company_name: customer.company_name || ""
+                                });
+                                setCustomerSearchResults([]);
+                              }}
+                            >
+                              {customer.label}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </FormField>
                 </div>
                 <FormField label="Mobile Number" icon={PhoneIcon} required>
@@ -2066,7 +2080,14 @@ const CallReport = () => {
               {(form.call_type === "AMC" || form.call_type === "ALC") && (
                 <div className="sm:col-span-2 lg:col-span-3">
                   <FormField label={`${form.call_type} Contract (Auto-fill)`} icon={FileText}>
-                    <SearchableSelect options={contractSearchResults} value={selectedContract?.value || ""} onChange={handleContractSelect} placeholder={`Select ${form.call_type} contract...`} loading={contractLoading} />
+                    <SearchableSelect 
+                      options={contractSearchResults} 
+                      value={form.contract_title} 
+                      onChange={handleContractSelect} 
+                      placeholder={`Select ${form.call_type} contract...`} 
+                      onSearch={(q) => searchContracts(form.call_type, q)}
+                      loading={contractLoading} 
+                    />
                   </FormField>
                 </div>
               )}
@@ -2141,7 +2162,9 @@ const CallReport = () => {
               </FormField>
 
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-border">
-                <button type="submit" className="flex-1 py-3 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all hover:opacity-90 active:scale-[0.98] shadow-md">Update Call</button>
+                <button type="submit" className="flex-1 py-3 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all hover:opacity-90 active:scale-[0.98] shadow-md">
+                  {isEdit ? "Update Call" : "Save Call"}
+                </button>
                 <button type="button" onClick={() => { setModalOpen(false); resetForm(); }} className="px-6 py-3 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-all active:scale-[0.98]">Cancel</button>
               </div>
             </form>
@@ -2150,9 +2173,9 @@ const CallReport = () => {
         </div>
       )}
 
-      {/* Step 2 - Detail Form (double-click or Complete button) */}
-      {step2ModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in" onClick={() => { setStep2ModalOpen(false); }}>
+      {/* Step 2 - Detail Form — only for editors */}
+      {canEditDelete && step2ModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in">
           <div className="bg-white rounded-2xl w-[95%] max-w-3xl shadow-2xl my-4 relative border border-border animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-border px-4 sm:px-6 py-4 flex justify-between items-center z-20">
               <div className="flex items-center gap-3">
@@ -2254,7 +2277,7 @@ const CallReport = () => {
               </div>
 
               <SectionDivider icon={DollarSign} title="Expenses & Billing" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <FormField label="Petrol (₹)">
                   <input type="number" value={step2Form.petrol_charges} onChange={e => setStep2Form({ ...step2Form, petrol_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
                 </FormField>
@@ -2266,6 +2289,12 @@ const CallReport = () => {
                 </FormField>
                 <FormField label="Invoice Value (₹)" icon={DollarSign}>
                   <input type="number" value={step2Form.invoice_value} onChange={e => setStep2Form({ ...step2Form, invoice_value: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
+                </FormField>
+                <FormField label="Payment Type" icon={CreditCard} required>
+                  <SearchableSelect options={PAYMENT_TYPE_OPTIONS} value={step2Form.payment_type} onChange={v => setStep2Form({ ...step2Form, payment_type: v })} placeholder="Select Payment Type" />
+                </FormField>
+                <FormField label="Payment Status" icon={CheckCircle} required>
+                  <SearchableSelect options={PAYMENT_STATUS_OPTIONS} value={step2Form.payment_status} onChange={v => setStep2Form({ ...step2Form, payment_status: v })} placeholder="Select Payment Status" />
                 </FormField>
               </div>
 

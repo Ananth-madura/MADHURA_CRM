@@ -16,6 +16,15 @@ const PAYMENT_OPTIONS = ["100% Advance", "Payment Against Delivery", "15 Days", 
 const WARRANTY_OPTIONS = ["No Warranty", "Testing Warranty", "1 Month", "3 Months", "6 Months", "12 Months", "24 Months", "36 Months", "OEM Warranty", "Supplier Warranty", "OEM Hardware Warranty", "No Software Warranty"];
 const GST_STATE_MAP = { "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "25": "Dadra and Nagar Haveli and Daman and Diu", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" };
 
+const GST_MODES = ["Exclusive", "Inclusive", "Exempt"];
+const QUOTATION_STATUS = ["Send", "Pending", "Close", "Billed", "Cancel"];
+const QUOTATION_STATUS_COLORS = {
+  Send: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
+  Pending: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
+  Close: { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" },
+  Billed: { bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
+  Cancel: { bg: "bg-red-100", text: "text-red-700", border: "border-red-200" },
+};
 const emptyExtra = () => ({
   from_address_id: "", from_address_custom: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004 | GSTIN: 33AAHFA7876M1ZX", client_company: "", client_address1: "", client_address2: "",
   client_city: "", client_state: "", client_pincode: "", client_country: "India",
@@ -25,6 +34,7 @@ const emptyExtra = () => ({
   terms_payment: "", terms_payment_custom: "", terms_warranty: "", supplier_branch: "Coimbatore",
   bank_details_id: "hdfc", bank_company: "ACHME COMMUNICATION", bank_name: "HDFC BANK",
   bank_account: "00312320005822", bank_ifsc: "HDFC0000031", bank_branch: "Coimbatore", custom_terms: "",
+  gst_mode: "Exclusive",
 });
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
@@ -102,7 +112,8 @@ const Quotation = () => {
             client_address1: v.address || ex.client_address1,
             client_city: v.location_city || ex.client_city,
             client_state: v.state || ex.client_state,
-            client_pincode: v.pincode || ex.client_pincode
+            client_pincode: v.pincode || ex.client_pincode,
+            gst_mode: v.gst_mode || "Exclusive"
           }));
           if (v.contract_id) {
             setQuotationData(qd => ({ ...qd, reference_no: v.contract_title || "", quotation_date: v.start_date || todayStr() }));
@@ -141,13 +152,14 @@ const Quotation = () => {
       setQuotationData({ quotation_date: h.quotation_date?.split("T")[0] || h.invoice_date?.split("T")[0] || "" });
       const li = rows.map(r => ({ name: r.description, brand_model: r.brand_model || "", hsn_sac: r.hsn_sac || "", uom: r.uom || "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: 18, discount: Number(r.discount) || 0 }));
       setItems(li); setDescInput(li.map(i => i.name).join(", ")); setBrandInput(li[0]?.brand_model || "");
-      setExtra({ from_address_id: h.from_address_id || "", from_address_custom: h.from_address_custom || (BRANCH_DATA[h.supplier_branch || "Coimbatore"] ? `${BRANCH_DATA[h.supplier_branch || "Coimbatore"].address} | GSTIN: ${BRANCH_DATA[h.supplier_branch || "Coimbatore"].gstin}` : ""), client_company: h.client_company || "", client_address1: h.client_address1 || "", client_address2: h.client_address2 || "", client_city: h.client_city || "", client_state: h.client_state || "", client_pincode: h.client_pincode || "", client_country: h.client_country || "India", tax_type: h.tax_type || "GST18", custom_tax: h.custom_tax || "", exec_name: h.exec_name || "", exec_phone: h.exec_phone || "", exec_email: h.exec_email || "", terms_general: !!h.terms_general, terms_tax: !!h.terms_tax, terms_project_period: h.terms_project_period || "30-60 days from Purchase Order date", terms_validity: h.terms_validity || "15 days", terms_separate_orders: h.terms_separate_orders ? JSON.parse(h.terms_separate_orders) : { material: false, installation: false, usd: false, boq: false }, terms_payment: h.terms_payment || "", terms_payment_custom: h.terms_payment_custom || "", terms_warranty: h.terms_warranty || "", supplier_branch: h.supplier_branch || "Coimbatore", bank_details_id: h.bank_details_id || "hdfc", bank_company: h.bank_company || "ACHME COMMUNICATION", bank_name: h.bank_name || "HDFC BANK", bank_account: h.bank_account || "00312320005822", bank_ifsc: h.bank_ifsc || "HDFC0000031", bank_branch: h.bank_branch || "Coimbatore", custom_terms: h.custom_terms || "" });
+      setExtra({ from_address_id: h.from_address_id || "", from_address_custom: h.from_address_custom || (BRANCH_DATA[h.supplier_branch || "Coimbatore"] ? `${BRANCH_DATA[h.supplier_branch || "Coimbatore"].address} | GSTIN: ${BRANCH_DATA[h.supplier_branch || "Coimbatore"].gstin}` : ""), client_company: h.client_company || "", client_address1: h.client_address1 || "", client_address2: h.client_address2 || "", client_city: h.client_city || "", client_state: h.client_state || "", client_pincode: h.client_pincode || "", client_country: h.client_country || "India", tax_type: h.tax_type || "GST18", custom_tax: h.custom_tax || "", exec_name: h.exec_name || "", exec_phone: h.exec_phone || "", exec_email: h.exec_email || "", terms_general: !!h.terms_general, terms_tax: !!h.terms_tax, terms_project_period: h.terms_project_period || "30-60 days from Purchase Order date", terms_validity: h.terms_validity || "15 days", terms_separate_orders: h.terms_separate_orders ? JSON.parse(h.terms_separate_orders) : { material: false, installation: false, usd: false, boq: false }, terms_payment: h.terms_payment || "", terms_payment_custom: h.terms_payment_custom || "", terms_warranty: h.terms_warranty || "", supplier_branch: h.supplier_branch || "Coimbatore", bank_details_id: h.bank_details_id || "hdfc", bank_company: h.bank_company || "ACHME COMMUNICATION", bank_name: h.bank_name || "HDFC BANK", bank_account: h.bank_account || "00312320005822", bank_ifsc: h.bank_ifsc || "HDFC0000031", bank_branch: h.bank_branch || "Coimbatore", custom_terms: h.custom_terms || "", gst_mode: h.gst_mode || "Exclusive" });
       setEditId(id); setOpen(true);
     } catch (e) { alert("Failed to load quotation"); }
   };
 
   const getTotals = () => {
-    if (extra.terms_tax) {
+    const gstMode = extra.gst_mode || "Exclusive";
+    if (extra.terms_tax || gstMode === "Exempt") {
       const sub = items.reduce((a, i) => a + (i.price * (i.qty || 0)), 0);
       const disc = items.reduce((a, i) => a + (i.discount || 0), 0);
       return { subtotal: sub, total_discount: disc, total_cgst: 0, total_sgst: 0, total_igst: 0, grand_total: sub - disc };
@@ -156,8 +168,22 @@ const Quotation = () => {
     const cState = (extra.client_state || "").toLowerCase().trim();
     const same = bState === cState && cState !== "";
     let sub = 0, disc = 0, cgst = 0, sgst = 0, igst = 0;
-    items.forEach(i => { const s = i.price * i.qty; const d = i.discount || 0; const t = ((s - d) * (i.tax || 0)) / 100; sub += s; disc += d; if (same) { cgst += t / 2; sgst += t / 2; } else { igst += t; } });
-    return { subtotal: sub, total_discount: disc, total_cgst: cgst, total_sgst: sgst, total_igst: igst, grand_total: sub - disc + cgst + sgst + igst };
+    items.forEach(i => {
+      const s = i.price * i.qty;
+      const d = i.discount || 0;
+      const afterDisc = s - d;
+      if (gstMode === "Inclusive") {
+        const taxableValue = afterDisc / (1 + (i.tax || 0) / 100);
+        const t = afterDisc - taxableValue;
+        sub += s; disc += d;
+        if (same) { cgst += t / 2; sgst += t / 2; } else { igst += t; }
+      } else {
+        const t = (afterDisc * (i.tax || 0)) / 100;
+        sub += s; disc += d;
+        if (same) { cgst += t / 2; sgst += t / 2; } else { igst += t; }
+      }
+    });
+    return { subtotal: sub, total_discount: disc, total_cgst: cgst, total_sgst: sgst, total_igst: igst, grand_total: gstMode === "Inclusive" ? sub - disc : sub - disc + cgst + sgst + igst };
   };
 
   const handleSubmit = async (e) => {
@@ -274,6 +300,13 @@ const Quotation = () => {
     }
   };
 
+  const handleStatusUpdate = async (id, status) => {
+    try {
+      await axios.patch(`${API}/api/quotations/${id}`, { status }, getAuthConfig());
+      fetchList();
+    } catch (err) { alert("Failed to update status: " + (err.response?.data?.message || err.message)); }
+  };
+
   useEffect(() => { document.body.classList.toggle("modal-open", open || mailOpen); return () => document.body.classList.remove("modal-open"); }, [open, mailOpen]);
 
   const filtered = list.filter(q => q.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -334,12 +367,14 @@ const Quotation = () => {
                 <th className="px-4 py-4 border-r">Mobile</th>
                 <th className="px-4 py-4 border-r">Date</th>
                 <th className="px-4 py-4 border-r">Total</th>
-                <th className="px-4 py-4 border-r">City</th>
-                <th className="px-4 py-4">History</th>
+                <th className="px-4 py-4 border-r">Status</th>
+                <th className="px-4 py-4">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(p => (
+              {filtered.map(p => {
+                const sc = QUOTATION_STATUS_COLORS[p.status] || QUOTATION_STATUS_COLORS.Pending;
+                return (
                 <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
                   <td className="px-4 py-4 border-r font-medium text-blue-600">{fmtQT(p.id, p.quotation_date || p.invoice_date)}</td>
                   <td className="px-4 py-4 border-r">{p.customer_name}</td>
@@ -347,10 +382,29 @@ const Quotation = () => {
                   <td className="px-4 py-4 border-r">{p.mobile_number}</td>
                   <td className="px-4 py-4 border-r">{fmtDate(p.quotation_date || p.invoice_date)}</td>
                   <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                  <td className="px-4 py-4 border-r">{p.location_city}</td>
-                  <td className="px-4 py-4"><button onClick={e => openHistory(e, p.id, p.customer_name)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition"><History size={13} /> History</button></td>
+                  <td className="px-4 py-4 border-r">
+                    <select
+                      value={p.status || "Pending"}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => handleStatusUpdate(p.id, e.target.value)}
+                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
+                    >
+                      {QUOTATION_STATUS.map(s => (
+                        <option key={s} value={s} className="bg-white text-gray-700 font-normal">
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View" className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1"><Eye size={12} /> View</button>
+                      <button onClick={e => { e.stopPropagation(); handleEdit(p.id); }} title="Edit" className="px-2 py-1 rounded text-xs font-bold bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition flex items-center gap-1"><Edit2 size={12} /> Edit</button>
+                      <button onClick={e => { e.stopPropagation(); setSelectedId(p.id); openHistory(e, p.id, p.customer_name); }} title="History" className="px-2 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1"><History size={12} /> History</button>
+                    </div>
+                  </td>
                 </tr>
-              ))}
+              );})}
               {filtered.length === 0 && (<tr><td colSpan="8" className="py-10 text-gray-400 italic">No quotations found</td></tr>)}
             </tbody>
           </table>
@@ -631,16 +685,22 @@ const Quotation = () => {
 
             <div className="flex justify-end pt-2">
               <div className="w-72 border rounded-xl p-4 bg-gray-50 shadow-sm">
-                {(() => {
-                  const t = getTotals(); return (<>
-                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
-                    <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
-                  </>);
-                })()}
+                  {(() => {
+                    const t = getTotals();
+                    const gstMode = extra.gst_mode || "Exclusive";
+                    const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
+                    return (<>
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
+                      {gstMode === "Inclusive" && (
+                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
+                      )}
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
+                      <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
+                    </>);
+                  })()}
               </div>
             </div>
 
@@ -674,8 +734,21 @@ const Quotation = () => {
               </div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={extra.terms_tax} onChange={e => setExtra(ex => ({ ...ex, terms_tax: e.target.checked }))} className="mt-1 accent-blue-600 w-4 h-4" />
-                <div><p className="text-sm font-semibold text-gray-700">Tax</p><p className="text-xs text-gray-500">Prices quoted are exclusive of Sales and Service Tax (SEZ - NIL Tax applicable)</p></div>
+                <div><p className="text-sm font-semibold text-gray-700">Tax Exempt</p><p className="text-xs text-gray-500">Prices quoted are exclusive of Sales and Service Tax (SEZ - NIL Tax applicable)</p></div>
               </label>
+              {!extra.terms_tax && (
+                <div className="ml-7">
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">GST Mode</label>
+                  <div className="flex flex-wrap gap-3">
+                    {GST_MODES.map(mode => (
+                      <label key={mode} className={`flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 transition text-sm ${extra.gst_mode === mode ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200"}`}>
+                        <input type="radio" name="gst_mode" value={mode} checked={extra.gst_mode === mode} onChange={e => setExtra(ex => ({ ...ex, gst_mode: e.target.value }))} className="accent-blue-600" />
+                        <span>{mode} — {mode === "Exclusive" ? "GST added to price" : mode === "Inclusive" ? "GST included in price" : "No GST charged"}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Project Period</label>
                 <input type="text" value={extra.terms_project_period} onChange={e => setExtra(ex => ({ ...ex, terms_project_period: e.target.value }))} className="border rounded-lg px-3 py-2 outline-none text-sm bg-white" />

@@ -39,7 +39,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   router.get("/", verifyToken, (req, res) => {
     const { id: user_id, role } = req.user;
     const sql = `
-      SELECT t.id, t.${dateField}, t.grand_total, t.reference_no,
+      SELECT t.id, t.${dateField}, t.grand_total, t.reference_no, t.status,
              c.customer_name, c.mobile_number, c.email,
              COALESCE(t.client_city, c.location_city) AS location_city,
              t.version, t.parent_id,
@@ -71,7 +71,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
              t.terms_general, t.terms_tax, t.terms_project_period, t.terms_validity,
              t.terms_separate_orders, t.terms_payment, t.terms_payment_custom, t.terms_warranty,
              t.hsn_sac_code, t.supplier_branch,
-             t.bank_details_id, t.bank_company, t.bank_name, t.bank_account, t.bank_ifsc, t.bank_branch, t.custom_terms,
+             t.bank_details_id, t.bank_company, t.bank_name, t.bank_account, t.bank_ifsc, t.bank_branch, t.custom_terms, t.gst_mode, t.status,
              c.customer_name, c.mobile_number, c.email, c.gst_number, c.location_city,
              i.product_number, i.description, i.brand_model, i.uom,
              i.price, i.quantity, i.tax, i.discount, i.subtotal AS item_subtotal,
@@ -116,8 +116,8 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
               tax_type, custom_tax, exec_name, exec_phone, exec_email,
               terms_general, terms_tax, terms_project_period, terms_validity, terms_separate_orders,
               terms_payment, terms_payment_custom, terms_warranty, hsn_sac_code, supplier_branch,
-              bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, gst_mode, created_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               customerId, invoice.invoice_date,
               invoice.total_cgst || 0, invoice.total_sgst || 0, invoice.total_igst || 0, invoice.subtotal || 0,
@@ -131,8 +131,8 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
               ex.terms_validity || ex.terms_validity_days || null, ex.terms_separate_orders ? JSON.stringify(ex.terms_separate_orders) : null,
               ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
               ex.hsn_sac_code || null, ex.supplier_branch || null,
-              ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
-              req.user.id,
+               ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null, ex.gst_mode || "Exclusive",
+               req.user.id,
             ],
             (err, iRes) => {
               if (err) return db.rollback(() => res.status(500).json(err));
@@ -213,9 +213,9 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
                   tax_type, custom_tax, exec_name, exec_phone, exec_email,
                   terms_general, terms_tax, terms_project_period, terms_validity, terms_separate_orders,
                   terms_payment, terms_payment_custom, terms_warranty,
-                  hsn_sac_code, supplier_branch, bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms,
+                  hsn_sac_code, supplier_branch, bank_details_id, bank_company, bank_name, bank_account, bank_ifsc, bank_branch, custom_terms, gst_mode,
                   parent_id, version, is_latest, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
                 [
                   current.customer_id, invoice.invoice_date,
                   invoice.total_cgst || 0, invoice.total_sgst || 0, invoice.total_igst || 0, invoice.subtotal || 0,
@@ -231,8 +231,8 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
                   ex.terms_validity || null, ex.terms_separate_orders ? JSON.stringify(ex.terms_separate_orders) : null,
                   ex.terms_payment || null, ex.terms_payment_custom || null, ex.terms_warranty || null,
                   ex.hsn_sac_code || null, ex.supplier_branch || null,
-                  ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null,
-                  rootId, newVersion, 1, req.user.id
+                   ex.bank_details_id || null, ex.bank_company || null, ex.bank_name || null, ex.bank_account || null, ex.bank_ifsc || null, ex.bank_branch || null, ex.custom_terms || null, ex.gst_mode || "Exclusive",
+                   rootId, newVersion, 1, req.user.id
                 ],
                 (err, result) => {
                   if (err) return db.rollback(() => res.status(500).json(err));
@@ -259,6 +259,25 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
           });
         }
       );
+    });
+  });
+
+  // ── PATCH STATUS ───────────────────────────────────────────────────────────
+  router.patch("/:id", verifyToken, (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: "Status is required" });
+
+    db.query(`SELECT created_by FROM ${table} WHERE id = ?`, [id], (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (results.length === 0) return res.status(404).json({ message: "Not found" });
+      if (req.user.role !== "admin" && results[0].created_by !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      db.query(`UPDATE ${table} SET status = ? WHERE id = ?`, [status, id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: "Status updated", status });
+      });
     });
   });
 

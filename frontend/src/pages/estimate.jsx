@@ -9,6 +9,7 @@ const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", 
 const VALIDITY_OPTIONS = ["2 days", "5 days", "10 days", "15 days", "30 days"];
 const PAYMENT_OPTIONS = ["100% Advance", "Payment Against Delivery", "15 Days", "30 Days", "45 Days", "Custom"];
 const WARRANTY_OPTIONS = ["No Warranty", "Testing Warranty", "1 Month", "3 Months", "6 Months", "12 Months", "24 Months", "36 Months", "OEM Warranty", "Supplier Warranty", "OEM Hardware Warranty", "No Software Warranty"];
+const GST_MODES = ["Exclusive", "Inclusive", "Exempt"];
 
 const SectionTitle = ({ children }) => (
   <div className="flex items-center gap-2 mb-4 mt-6">
@@ -74,6 +75,7 @@ const Estimate = () => {
   const [extra, setExtra] = useState({
     terms_general: false,
     terms_tax: false,
+    gst_mode: "Exclusive",
     terms_project_period: "30-60 days from Purchase Order date",
     terms_validity: "15 days",
     terms_separate_orders: { material: false, installation: false, usd: false, boq: false },
@@ -144,6 +146,7 @@ const Estimate = () => {
     setExtra({
       terms_general: false,
       terms_tax: false,
+      gst_mode: "Exclusive",
       terms_project_period: "30-60 days from Purchase Order date",
       terms_validity: "15 days",
       terms_separate_orders: { material: false, installation: false, usd: false, boq: false },
@@ -167,6 +170,14 @@ const Estimate = () => {
       return { subtotal, total_discount: totalDiscount, total_cgst: 0, total_sgst: 0, total_igst: 0, grand_total: grandTotal };
     }
 
+    const gstMode = extra.gst_mode || "Exclusive";
+
+    if (gstMode === "Exempt") {
+      const subtotal = items.reduce((acc, i) => acc + (i.price * (i.qty || 0)), 0);
+      const totalDiscount = items.reduce((acc, i) => acc + (i.discount || 0), 0);
+      return { subtotal, total_discount: totalDiscount, total_cgst: 0, total_sgst: 0, total_igst: 0, grand_total: subtotal - totalDiscount };
+    }
+
     const isSameState = true; // Splitting to CGST/SGST by default
     let totalCGST = 0;
     let totalSGST = 0;
@@ -177,22 +188,35 @@ const Estimate = () => {
     items.forEach(item => {
       const itemSubtotal = item.price * item.qty;
       const discountAmount = item.discount || 0;
-      const taxableAmount = itemSubtotal - discountAmount;
       const taxRate = item.tax || 0;
-      const taxAmount = (taxableAmount * taxRate) / 100;
 
       subtotal += itemSubtotal;
       totalDiscount += discountAmount;
 
-      if (isSameState) {
-        totalCGST += taxAmount / 2;
-        totalSGST += taxAmount / 2;
+      if (gstMode === "Inclusive") {
+        const taxableValue = itemSubtotal / (1 + taxRate / 100);
+        const taxAmount = itemSubtotal - taxableValue;
+        const discTaxRatio = discountAmount / itemSubtotal;
+        const actualTax = taxAmount * (1 - discTaxRatio);
+        if (isSameState) {
+          totalCGST += actualTax / 2;
+          totalSGST += actualTax / 2;
+        } else {
+          totalIGST += actualTax;
+        }
       } else {
-        totalIGST += taxAmount;
+        const taxableAmount = itemSubtotal - discountAmount;
+        const taxAmount = (taxableAmount * taxRate) / 100;
+        if (isSameState) {
+          totalCGST += taxAmount / 2;
+          totalSGST += taxAmount / 2;
+        } else {
+          totalIGST += taxAmount;
+        }
       }
     });
 
-    const grandTotal = subtotal - totalDiscount + totalCGST + totalSGST + totalIGST;
+    const grandTotal = gstMode === "Inclusive" ? subtotal - totalDiscount : subtotal - totalDiscount + totalCGST + totalSGST + totalIGST;
     return { subtotal, total_discount: totalDiscount, total_cgst: totalCGST, total_sgst: totalSGST, total_igst: totalIGST, grand_total: grandTotal };
   };
 
@@ -328,11 +352,13 @@ const Estimate = () => {
     }
     if (est.extra) {
       try {
-        setExtra(typeof est.extra === "string" ? JSON.parse(est.extra) : est.extra);
+        const parsed = typeof est.extra === "string" ? JSON.parse(est.extra) : est.extra;
+        setExtra({ ...parsed, gst_mode: parsed.gst_mode || "Exclusive" });
       } catch {
         setExtra({
           terms_general: false,
           terms_tax: false,
+          gst_mode: "Exclusive",
           terms_project_period: "30-60 days from Purchase Order date",
           terms_validity: "15 days",
           terms_separate_orders: { material: false, installation: false, usd: false, boq: false },
@@ -743,6 +769,8 @@ const Estimate = () => {
                 <div className="w-full max-w-[320px] border border-gray-200 rounded-2xl bg-white p-5 shadow-sm">
                   {(() => {
                     const t = getTaxCalculations();
+                    const gstMode = extra.gst_mode || "Exclusive";
+                    const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
                     return (
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm text-gray-600 py-1">
@@ -753,6 +781,9 @@ const Estimate = () => {
                           <span>Discount</span>
                           <span className="font-medium text-slate-800">-&#8377;{t.total_discount.toLocaleString()}</span>
                         </div>
+                        {gstMode === "Inclusive" && (
+                          <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
+                        )}
                         <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}>
                           <span>CGST</span>
                           <span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span>
@@ -814,6 +845,20 @@ const Estimate = () => {
                     <p className="text-xs text-gray-500">Prices quoted are exclusive of Sales and Service Tax (SEZ – NIL Tax applicable)</p>
                   </div>
                 </label>
+
+                {!extra.terms_tax && (
+                  <div className="ml-7">
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">GST Mode</label>
+                    <div className="flex flex-wrap gap-3">
+                      {GST_MODES.map(mode => (
+                        <label key={mode} className={`flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 transition text-sm ${extra.gst_mode === mode ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200"}`}>
+                          <input type="radio" name="gst_mode_est" value={mode} checked={extra.gst_mode === mode} onChange={e => setExtra(ex => ({ ...ex, gst_mode: e.target.value }))} className="accent-blue-600" />
+                          <span>{mode} — {mode === "Exclusive" ? "GST added to price" : mode === "Inclusive" ? "GST included in price" : "No GST charged"}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Project Period */}
                 <div className="flex flex-col gap-1">

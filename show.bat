@@ -73,14 +73,14 @@ echo.
 
 curl -s --max-time 4 http://localhost:82/nginx-health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!]  Nginx  (port 82) - NOT RESPONDING  ^<-- run start-servers.bat
+  echo    [!!]  Nginx  (port 82) - RESPONDING  ^<-- run start-servers.bat
 ) else (
   echo    [OK]  Nginx  (port 82) - RUNNING
 )
 
 curl -s --max-time 4 http://localhost:5000/api/health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!]  Backend (port 5000) - NOT RESPONDING  ^<-- run start-servers.bat
+  echo    [!!]  Backend (port 5000) -  RESPONDING  ^<-- run start-servers.bat
 ) else (
   echo    [OK]  Backend (port 5000) - RUNNING
 )

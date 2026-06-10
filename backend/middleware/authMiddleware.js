@@ -1,5 +1,8 @@
 const jwt = require("jsonwebtoken");
 
+// Users (by first_name, case-insensitive) who can edit/add/delete call reports
+const CALL_REPORT_EDITORS = ["malarvannan", "priyanka"];
+
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
 
@@ -37,9 +40,24 @@ const isReadOnly = (req, res, next) => {
   next();
 };
 
+// Call Report specific: admin role OR malarvannan/priyanka by name
+const canEditCallReport = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  const isAdmin = req.user.role === "admin";
+  const userName = (req.user.name || "").trim().toLowerCase();
+  const isAllowedUser = CALL_REPORT_EDITORS.includes(userName);
+  if (isAdmin || isAllowedUser) {
+    return next();
+  }
+  return res.status(403).json({ message: "Access denied: only admin, Malarvannan or Priyanka can modify call reports" });
+};
+
 module.exports = {
   verifyToken,
   isAdmin,
   isEmployee,
   isReadOnly,
+  canEditCallReport,
 };

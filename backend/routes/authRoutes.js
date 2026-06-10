@@ -182,7 +182,7 @@ router.post("/admin-login", (req, res) => {
             }
           );
         } else {
-          const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "14d" });
+          const token = jwt.sign({ id: user.id, role: user.role, name: user.first_name }, process.env.JWT_SECRET, { expiresIn: "14d" });
           return res.json({ token, user: { id: user.id, name: user.first_name, email: user.email, role: user.role } });
         }
       });
@@ -237,7 +237,7 @@ router.post("/login", (req, res) => {
               }
             );
           } else {
-            const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "14d" });
+            const token = jwt.sign({ id: user.id, role: user.role, name: user.first_name }, process.env.JWT_SECRET, { expiresIn: "14d" });
             return res.json({ token, user: { id: user.id, name: user.first_name, email: user.email, role: user.role } });
           }
         });
@@ -249,7 +249,7 @@ router.post("/login", (req, res) => {
       db.query(`SELECT * FROM email_otp WHERE email=? AND otp=? AND expires_at > NOW()`, [emailLower, otp], (err2, otpRows) => {
         if (err2 || !otpRows.length) return res.status(401).json({ message: "Invalid or expired OTP" });
         db.query(`DELETE FROM email_otp WHERE email=?`, [emailLower]);
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "14d" });
+        const token = jwt.sign({ id: user.id, role: user.role, name: user.first_name }, process.env.JWT_SECRET, { expiresIn: "14d" });
         return res.json({ token, user: { id: user.id, name: user.first_name, email: user.email, role: user.role } });
       });
     }
@@ -1068,7 +1068,7 @@ router.post("/verify-2fa", (req, res) => {
             return res.status(403).json({ message: "Account is not active" });
           }
 
-          const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "14d" });
+          const token = jwt.sign({ id: user.id, role: user.role, name: user.first_name }, process.env.JWT_SECRET, { expiresIn: "14d" });
           res.json({
             token,
             user: { id: user.id, name: user.first_name, email: user.email, role: user.role }

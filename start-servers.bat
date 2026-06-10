@@ -33,17 +33,12 @@ if errorlevel 1 (
 :: DETECT LAN IP AND HOSTNAME
 :: ====================================================================
 set "LAN_IP=127.0.0.1"
-for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop; if ($gw) { $ip = (Find-NetRoute -RemoteIPAddress $gw -ErrorAction SilentlyContinue).LocalIPAddress; if ($ip) { echo $ip; exit } }; (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*', 'Wi-Fi*', 'Local Area Connection*' -Type Unicast -ErrorAction SilentlyContinue).IPAddress; (Get-NetIPAddress -AddressFamily IPv4 -Type Unicast -ErrorAction SilentlyContinue).IPAddress"`) do (
-  set "CANDIDATE=%%p"
+for /f "tokens=2 delims=:" %%i in ('ipconfig ^| findstr /R /C:"IPv4 Address" ^| findstr /V "127\.0\." ^| findstr /V "169\.254\."') do (
+  set "CANDIDATE=%%i"
+  set "CANDIDATE=!CANDIDATE: =!"
   if not "!CANDIDATE!"=="" (
-    set "PREFIX1=!CANDIDATE:~0,4!"
-    set "PREFIX2=!CANDIDATE:~0,8!"
-    if not "!PREFIX1!"=="127." (
-      if not "!PREFIX2!"=="169.254." (
-        set "LAN_IP=!CANDIDATE!"
-        goto :got_ip
-      )
-    )
+    set "LAN_IP=!CANDIDATE!"
+    goto :got_ip
   )
 )
 :got_ip
@@ -73,7 +68,7 @@ echo  [1/%S%] Checking MySQL...
 echo [%DATE% %TIME%] Step 1: MySQL check >> "%LOGFILE%"
 
 set "MYSQL_OK=0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
 if not errorlevel 1 set "MYSQL_OK=1"
 
 if "%MYSQL_OK%"=="1" (
@@ -92,7 +87,7 @@ net start MariaDB >nul 2>&1
 
 :: Wait and re-check
 timeout /t 4 /nobreak >nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
 if errorlevel 1 (
   echo         [FAIL] MySQL is not running on port 3306!
   echo         Please install/start MySQL manually and re-run this script.
@@ -343,9 +338,23 @@ net stop nginx >nul 2>&1
 sc stop nginx >nul 2>&1
 taskkill /F /IM nginx.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath 'C:\nginx\nginx.exe' -WorkingDirectory 'C:\nginx' -WindowStyle Hidden"
-timeout /t 3 /nobreak >nul
-echo         Nginx started on port %FRONTEND_PORT%. [OK]
+start "nginx" /B "C:\nginx\nginx.exe" -p "C:\nginx"
+timeout /t 4 /nobreak >nul
+netstat -ano | findstr ":82 " | findstr "LISTENING" >nul 2>&1
+if errorlevel 1 (
+  echo         [WARN] Nginx did not start on port 82 - retrying...
+  start "nginx" /B "C:\nginx\nginx.exe" -p "C:\nginx"
+  timeout /t 5 /nobreak >nul
+  netstat -ano | findstr ":82 " | findstr "LISTENING" >nul 2>&1
+  if errorlevel 1 (
+    echo         [FAIL] Nginx still not on port 82. Check C:\nginx\logs\error.log
+    echo         Try running fix-nginx-start.bat as Administrator.
+  ) else (
+    echo         Nginx started on port %FRONTEND_PORT%. [OK]
+  )
+) else (
+  echo         Nginx started on port %FRONTEND_PORT%. [OK]
+)
 
 :skip_nginx
 
@@ -455,7 +464,7 @@ set "ALL_OK=1"
 :: Test Nginx
 curl.exe -s --max-time 5 http://localhost:82/nginx-health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] Nginx  (port 82^)  - NOT RESPONDING
+  echo    [!!] Nginx  (port 82^)  - IT's  RESPONDING
   set "ALL_OK=0"
 ) else (
   echo    [OK] Nginx  (port 82^)  - RUNNING
@@ -464,7 +473,7 @@ if errorlevel 1 (
 :: Test Backend directly
 curl.exe -s --max-time 5 http://localhost:5000/api/health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] Backend (port 5000^) - NOT RESPONDING
+  echo    [!!] Backend (port 5000^) - IT's  RESPONDING
   set "ALL_OK=0"
 ) else (
   echo    [OK] Backend (port 5000^) - RUNNING
@@ -473,7 +482,7 @@ if errorlevel 1 (
 :: Test Backend via Nginx proxy
 curl.exe -s --max-time 5 http://localhost:82/api/health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] Nginx-to-Backend proxy - NOT WORKING
+  echo    [!!] Nginx-to-Backend proxy - IT's WORKING
   set "ALL_OK=0"
 ) else (
   echo    [OK] Nginx-to-Backend proxy - CONNECTED
@@ -482,7 +491,7 @@ if errorlevel 1 (
 :: Test LAN IP access
 curl.exe -s --max-time 5 http://%LAN_IP%:82/nginx-health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] LAN access (%LAN_IP%:82^) - NOT RESPONDING
+  echo    [!!] LAN access (%LAN_IP%:82^) - IT's  RESPONDING
   set "ALL_OK=0"
 ) else (
   echo    [OK] LAN access (%LAN_IP%:82^) - WORKING
@@ -564,9 +573,9 @@ echo    SERVICE STATUS:
 echo.
 
 :: Check MySQL
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] MySQL    port 3306 - NOT RUNNING
+  echo    [!!] MySQL    port 3306 - It's  RUNNIN
 ) else (
   echo    [OK] MySQL    port 3306 - RUNNING
 )
@@ -574,15 +583,15 @@ if errorlevel 1 (
 :: Check Nginx
 curl.exe -s --max-time 4 http://localhost:82/nginx-health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] Nginx    port 82   - NOT RUNNING  ^(run: start-servers.bat^)
+  echo    [!!] Nginx    port 82   - It's  RUNNING  ^(run: start-servers.bat^)
 ) else (
-  echo    [OK] Nginx    port 82   - RUNNING
+  echo    [OK] Nginx    port 82   -  RUNNING
 )
 
 :: Check Backend via nginx proxy
 curl.exe -s --max-time 4 http://localhost:82/api/health >nul 2>&1
 if errorlevel 1 (
-  echo    [!!] Backend  port 5000 - NOT RUNNING  ^(run: start-servers.bat^)
+  echo    [!!] Backend  port 5000 - It's RUNNING  ^(run: start-servers.bat^)
 ) else (
   echo    [OK] Backend  port 5000 - RUNNING  ^(via nginx proxy^)
 )
