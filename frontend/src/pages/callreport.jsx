@@ -73,7 +73,7 @@ const PAYMENT_STATUS_COLORS = {
   Pending: { bg: "hsl(0 72% 51% / 0.1)", text: "hsl(0 72% 51%)", border: "hsl(0 72% 51% / 0.2)" },
 };
 
-const SearchableSelect = ({ options, value, onChange, placeholder, label, onSearch, loading }) => {
+const SearchableSelect = ({ options, value, onChange, placeholder, label, onSearch, loading, disabled }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const searchTimeoutRef = React.useRef(null);
@@ -106,16 +106,16 @@ const SearchableSelect = ({ options, value, onChange, placeholder, label, onSear
     <div className="relative">
       {label && <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--color-slate, #5d5b54)" }}>{label}</label>}
       <div
-        className="flex items-center justify-between px-3 py-2 cursor-pointer transition-all duration-150"
-        style={{ backgroundColor: "var(--color-canvas, #ffffff)", color: "var(--color-ink, #1a1a1a)", border: `1px solid ${isOpen ? "var(--color-primary, #5645d4)" : "var(--color-hairline-strong, #c8c4be)"}`, borderRadius: "var(--radius-md, 8px)", boxShadow: isOpen ? "0 0 0 2px rgba(86, 69, 212, 0.2)" : "none" }}
-        onClick={() => { setIsOpen(!isOpen); setSearch(""); if (onSearch && !isOpen) onSearch(""); }}
+        className={`flex items-center justify-between px-3 py-2 transition-all duration-150 ${disabled ? "cursor-not-allowed opacity-60 bg-gray-50" : "cursor-pointer bg-white"}`}
+        style={{ color: "var(--color-ink, #1a1a1a)", border: `1px solid ${isOpen && !disabled ? "var(--color-primary, #5645d4)" : "var(--color-hairline-strong, #c8c4be)"}`, borderRadius: "var(--radius-md, 8px)", boxShadow: isOpen && !disabled ? "0 0 0 2px rgba(86, 69, 212, 0.2)" : "none" }}
+        onClick={() => { if (!disabled) { setIsOpen(!isOpen); setSearch(""); if (onSearch && !isOpen) onSearch(""); } }}
       >
         <span className="text-sm truncate" style={{ color: value ? "var(--color-ink, #1a1a1a)" : "var(--color-muted, #bbb8b1)" }}>
           {displayValue || placeholder}
         </span>
-        {isOpen ? <ChevronUp size={14} style={{ color: "var(--color-steel, #787671)" }} /> : <ChevronDown size={14} style={{ color: "var(--color-steel, #787671)" }} />}
+        {isOpen && !disabled ? <ChevronUp size={14} style={{ color: "var(--color-steel, #787671)" }} /> : <ChevronDown size={14} style={{ color: "var(--color-steel, #787671)" }} />}
       </div>
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-1 overflow-hidden animate-scale-in" style={{ backgroundColor: "var(--color-canvas, #ffffff)", border: "1px solid var(--color-hairline, #e5e3df)", borderRadius: "var(--radius-md, 8px)", boxShadow: "var(--shadow-level-2, 0 4px 12px rgba(15,15,15,0.08))" }}>
           {onSearch && (
             <div className="p-2" style={{ borderBottom: "1px solid var(--color-hairline, #e5e3df)" }}>
@@ -688,6 +688,7 @@ const CallReport = () => {
   };
 
   const step2Duration = calculateStep2Duration();
+  const step2TotalExpenses = (parseFloat(step2Form.petrol_charges) || 0) + (parseFloat(step2Form.spare_parts_price) || 0) + (parseFloat(step2Form.labour_charges) || 0);
 
   const resetForm = () => {
     setForm({
@@ -768,6 +769,7 @@ const CallReport = () => {
   };
 
   const openStep2Form = async (call) => {
+    if (!canEditDelete) return;
     setStep2CallId(call.id);
     const durLimit = call.duration_limit || call.assigned_time || 30;
     const durStr = durLimit === 60 ? "1hr" : durLimit === 90 ? "1.5hr" : durLimit === 120 ? "2hr" : "";
@@ -837,11 +839,17 @@ const CallReport = () => {
 
   const handleStep2Submit = async (e) => {
     e.preventDefault();
-    if (!step2Form.engineer) return alert("Engineer is required");
+    if (!step2Form.engineer) {
+      return alert("Engineer is required and must be assigned in Form 1 first!");
+    }
 
-    const payVal = parseFloat(step2Form.invoice_value);
-    if (isNaN(payVal) || payVal <= 0) {
-      return alert("Pay (invoice value) cannot be 0 or empty!");
+    const payVal = isNaN(parseFloat(step2Form.invoice_value)) ? 0 : parseFloat(step2Form.invoice_value);
+    if (payVal < 0) {
+      return alert("Invoice value cannot be negative!");
+    }
+    if (payVal === 0) {
+      const confirmZero = window.confirm("Invoice value is ₹0. Are you sure you want to save with ₹0?");
+      if (!confirmZero) return;
     }
 
     let finalPaymentStatus = step2Form.payment_status;
@@ -1413,8 +1421,8 @@ const CallReport = () => {
                               <tr
                                 key={c.id}
                                 className="border-b border-border hover:bg-amber-50/40 transition-colors cursor-pointer select-none"
-                                onDoubleClick={() => openStep2Form(c)}
-                                title="Double-click to open Step 2 details form"
+                                onDoubleClick={() => canEditDelete && openStep2Form(c)}
+                                title={canEditDelete ? "Double-click to open Step 2 details form" : ""}
                               >
                                 <td className="px-4 py-3 font-mono font-bold text-xs text-primary">
                                   <div className="text-primary font-black text-sm">Call #{c.call_sequence || 1}</div>
@@ -2176,9 +2184,9 @@ const CallReport = () => {
                 </div>
                 <div>
                   <h2 className="text-base sm:text-lg font-bold font-display text-foreground">
-                    Call #{calls.find(c => c.id === step2CallId)?.call_sequence || 1} ID: {String(step2CallId).padStart(3, '0')}
+                    Call #{calls.find(c => c.id === step2CallId)?.call_sequence || 1} ID: {String(step2CallId).padStart(3, '0')} {!canEditDelete && <span className="text-xs font-normal text-destructive">(View Only)</span>}
                   </h2>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">Step 2: Engineer assignment & expenses</p>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">Step 2: Time, Travel & Expenses</p>
                 </div>
               </div>
               <X className="cursor-pointer hover:text-destructive transition-colors text-muted-foreground p-1 rounded hover:bg-destructive/10" onClick={() => { setStep2ModalOpen(false); }} />
@@ -2200,7 +2208,7 @@ const CallReport = () => {
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: pc.bg, color: pc.text, border: `1px solid ${pc.border}` }}>{call.priority}</span>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Customer</p>
                           <p className="font-semibold text-xs sm:text-sm truncate text-foreground">{call.customer_name || call.client_name || "—"}</p>
@@ -2212,6 +2220,10 @@ const CallReport = () => {
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Location</p>
                           <p className="font-semibold text-xs sm:text-sm text-foreground">{call.location_city || call.location || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Assigned Engineer</p>
+                          <p className="font-semibold text-xs sm:text-sm text-primary font-bold truncate">{call.engineer || call.staff_name || "—"}</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Type</p>
@@ -2231,51 +2243,26 @@ const CallReport = () => {
                 })()}
               </div>
 
-              <SectionDivider icon={Users} title="Engineer Assignment" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <FormField label="Engineer" required icon={User}>
-                    <select value={step2Form.engineer} onChange={e => setStep2Form({ ...step2Form, engineer: e.target.value })} className={inputBase} required>
-                      <option value="">Select engineer</option>
-                      {ENGINEERS.map(e => {
-                        const isBusy = busyEngineers.includes(e.value);
-                        return (
-                          <option key={e.value} value={e.value} disabled={isBusy}>
-                            {e.label} {isBusy ? "(On Call)" : "(Free)"}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </FormField>
-                  {freeEngineers.length > 0 && (
-                    <p className="text-[10px] mt-1 flex items-center gap-1 text-accent">
-                      <CheckCircle size={10} /> {freeEngineers.length} engineer(s) available
-                    </p>
-                  )}
-                  {busyEngineers.length > 0 && (
-                    <p className="text-[10px] mt-1 flex items-center gap-1 text-destructive">
-                      <AlertCircle size={10} /> {busyEngineers.length} engineer(s) currently on call
-                    </p>
-                  )}
-                </div>
+              <SectionDivider icon={CheckCircle} title="Call Status" />
+              <div className="grid grid-cols-1 gap-4">
                 <FormField label="Status" icon={CheckCircle}>
-                  <SearchableSelect options={STATUS_OPTIONS} value={step2Form.status} onChange={v => setStep2Form({ ...step2Form, status: v })} placeholder="Select Status" />
+                  <SearchableSelect options={STATUS_OPTIONS} value={step2Form.status} onChange={v => setStep2Form({ ...step2Form, status: v })} placeholder="Select Status" disabled={!canEditDelete} />
                 </FormField>
               </div>
 
               <SectionDivider icon={Clock} title="Time & Travel" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <FormField label="Start Time">
-                  <input type="time" value={step2Form.start_time} onChange={e => setStep2Form({ ...step2Form, start_time: e.target.value })} className={inputBase} />
+                  <input type="time" value={step2Form.start_time} onChange={e => setStep2Form({ ...step2Form, start_time: e.target.value })} className={inputBase} disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="End Time">
-                  <input type="time" value={step2Form.end_time} onChange={e => setStep2Form({ ...step2Form, end_time: e.target.value })} className={inputBase} />
+                  <input type="time" value={step2Form.end_time} onChange={e => setStep2Form({ ...step2Form, end_time: e.target.value })} className={inputBase} disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Kilometers (KM)" icon={MapPin}>
-                  <input type="number" value={step2Form.km} onChange={e => setStep2Form({ ...step2Form, km: e.target.value })} className={inputBase} placeholder="0" min="0" step="0.1" />
+                  <input type="number" value={step2Form.km} onChange={e => setStep2Form({ ...step2Form, km: e.target.value })} className={inputBase} placeholder="0" min="0" step="0.1" disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Duration Limit">
-                  <select value={step2Form.duration || ""} onChange={e => setStep2Form({ ...step2Form, duration: e.target.value })} className={inputBase}>
+                  <select value={step2Form.duration || ""} onChange={e => setStep2Form({ ...step2Form, duration: e.target.value })} className={inputBase} disabled={!canEditDelete}>
                     <option value="">30 min (default)</option>
                     <option value="1hr">1 Hour</option>
                     <option value="1.5hr">1.5 Hours</option>
@@ -2298,22 +2285,28 @@ const CallReport = () => {
               <SectionDivider icon={DollarSign} title="Expenses & Billing" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <FormField label="Petrol (₹)">
-                  <input type="number" value={step2Form.petrol_charges} onChange={e => setStep2Form({ ...step2Form, petrol_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
+                  <input type="number" value={step2Form.petrol_charges} onChange={e => setStep2Form({ ...step2Form, petrol_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Spare Parts (₹)">
-                  <input type="number" value={step2Form.spare_parts_price} onChange={e => setStep2Form({ ...step2Form, spare_parts_price: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
+                  <input type="number" value={step2Form.spare_parts_price} onChange={e => setStep2Form({ ...step2Form, spare_parts_price: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Labour Charges (₹)">
-                  <input type="number" value={step2Form.labour_charges} onChange={e => setStep2Form({ ...step2Form, labour_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
+                  <input type="number" value={step2Form.labour_charges} onChange={e => setStep2Form({ ...step2Form, labour_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" disabled={!canEditDelete} />
                 </FormField>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <div className="p-3 rounded-lg bg-orange-100 border border-orange-300 flex justify-between items-center">
+                    <span className="text-xs font-bold uppercase tracking-wide text-orange-700">Live Total Expenses</span>
+                    <span className="text-sm font-black text-orange-800">{formatCurrency(step2TotalExpenses)}</span>
+                  </div>
+                </div>
                 <FormField label="Invoice Value (₹)" icon={DollarSign}>
-                  <input type="number" value={step2Form.invoice_value} onChange={e => setStep2Form({ ...step2Form, invoice_value: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
+                  <input type="number" value={step2Form.invoice_value} onChange={e => setStep2Form({ ...step2Form, invoice_value: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Payment Type" icon={CreditCard} required>
-                  <SearchableSelect options={PAYMENT_TYPE_OPTIONS} value={step2Form.payment_type} onChange={v => setStep2Form({ ...step2Form, payment_type: v })} placeholder="Select Payment Type" />
+                  <SearchableSelect options={PAYMENT_TYPE_OPTIONS} value={step2Form.payment_type} onChange={v => setStep2Form({ ...step2Form, payment_type: v })} placeholder="Select Payment Type" disabled={!canEditDelete} />
                 </FormField>
                 <FormField label="Payment Status" icon={CheckCircle} required>
-                  <SearchableSelect options={PAYMENT_STATUS_OPTIONS} value={step2Form.payment_status} onChange={v => setStep2Form({ ...step2Form, payment_status: v })} placeholder="Select Payment Status" />
+                  <SearchableSelect options={PAYMENT_STATUS_OPTIONS} value={step2Form.payment_status} onChange={v => setStep2Form({ ...step2Form, payment_status: v })} placeholder="Select Payment Status" disabled={!canEditDelete} />
                 </FormField>
               </div>
 
@@ -2329,12 +2322,19 @@ const CallReport = () => {
                   placeholder={step2Duration.exceeded ? "Please explain why the service time exceeded the limit..." : "Additional notes"} 
                   rows={2} 
                   required={step2Duration.exceeded}
+                  disabled={!canEditDelete}
                 />
               </FormField>
 
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-border">
-                <button type="submit" className="flex-1 py-3 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all hover:opacity-90 active:scale-[0.98] shadow-md">Save Details</button>
-                <button type="button" onClick={() => { setStep2ModalOpen(false); }} className="px-6 py-3 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-all active:scale-[0.98]">Cancel</button>
+                {canEditDelete ? (
+                  <>
+                    <button type="submit" className="flex-1 py-3 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all hover:opacity-90 active:scale-[0.98] shadow-md">Save Details</button>
+                    <button type="button" onClick={() => { setStep2ModalOpen(false); }} className="px-6 py-3 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-all active:scale-[0.98]">Cancel</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => { setStep2ModalOpen(false); }} className="flex-1 py-3 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-all active:scale-[0.98]">Close (View Only)</button>
+                )}
               </div>
             </form>
             </div>
