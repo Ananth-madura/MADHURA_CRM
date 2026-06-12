@@ -460,13 +460,32 @@
     border: 0;
     box-shadow: none;
     padding: 8mm;
+    overflow: visible;
   }
 
+  /* Fixed header repeats on every printed page */
+  .ft-header {
+    position: fixed;
+    top: 0;
+    left: 8mm;
+    right: 8mm;
+    background: #fff;
+    z-index: 100;
+    padding-bottom: 8px;
+  }
+
+  /* Push all page content below the fixed header */
+  .ft-content {
+    padding-top: 35mm;
+  }
+
+  /* Fixed watermark repeats centered on every printed page */
   .ft-watermark {
+    position: fixed;
     max-width: 130mm;
     width: auto;
     height: auto;
-    top: 50%;
+    top: 50vh;
     left: 50%;
     transform: translate(-50%, -50%);
     opacity: 0.12;

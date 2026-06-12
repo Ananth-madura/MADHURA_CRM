@@ -200,18 +200,26 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
 
     .qw {
       position: relative; width: 210mm; min-height: 297mm;
-      background: #fff; padding: 9mm; overflow: hidden;
+      background: #fff; padding: 9mm;
     }
-    .qw::before {
-      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 6px;
-      background: linear-gradient(to right, #1f0779e0, #340285, #1b03a1); z-index: 10;
+    /* Fixed top color bar — appears on every page */
+    .top-bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 6px;
+      background: linear-gradient(to right, #1f0779e0, #340285, #1b03a1); z-index: 110;
     }
+    /* Fixed watermark — appears centered on every page */
     .wm {
-      position: absolute; top: 50%; left: 50%; max-width: 55%; max-height: 55%;
+      position: fixed; top: 50vh; left: 50%; max-width: 55%; max-height: 55%;
       transform: translate(-50%, -50%); opacity: 0.07; pointer-events: none;
-      z-index: 9998; object-fit: contain;
+      z-index: 50; object-fit: contain;
     }
-    .ct { position: relative; z-index: 1; }
+    /* Fixed page header — appears on every page */
+    .page-header {
+      position: fixed; top: 6px; left: 0; right: 0; background: #fff; z-index: 100;
+      padding: 6px 9mm 0;
+    }
+    /* Content pushed down to clear fixed header (~30mm tall) */
+    .ct { position: relative; z-index: 1; padding-top: 30mm; }
 
     .hdr {
       display: table; width: 100%; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px;
@@ -304,27 +312,35 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   </style>
 </head>
 <body>
-  <div class="qw">
-    ${LOGO_SRC ? `<img class="wm" src="${LOGO_SRC}" alt="watermark">` : ""}
-    <div class="ct">
+  <!-- Fixed top color bar — repeats on every PDF page -->
+  <div class="top-bar"></div>
 
-      <!-- HEADER -->
-      <div class="hdr">
-        <div class="hdr-left">
-          <div class="brand">
-            ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication">` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
-          </div>
+  <!-- Fixed watermark — repeats centered on every PDF page -->
+  ${LOGO_SRC ? `<img class="wm" src="${LOGO_SRC}" alt="watermark">` : ""}
+
+  <!-- Fixed page header — repeats on every PDF page -->
+  <div class="page-header">
+    <div class="hdr">
+      <div class="hdr-left">
+        <div class="brand">
+          ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication">` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
         </div>
-        <div class="hdr-right">
-          <div class="qt">
-            <h2>${docLabel}</h2>
-            <div class="db">
-              <span class="db-item"><span>Doc No:</span> ${docNumber}</span>
-              <span class="db-item"><span>Date:</span> ${fmtDate(invoiceDate)}</span>
-            </div>
+      </div>
+      <div class="hdr-right">
+        <div class="qt">
+          <h2>${docLabel}</h2>
+          <div class="db">
+            <span class="db-item"><span>Doc No:</span> ${docNumber}</span>
+            <span class="db-item"><span>Date:</span> ${fmtDate(invoiceDate)}</span>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Main paginated content -->
+  <div class="qw">
+    <div class="ct">
 
       <!-- FROM / BILLED TO -->
       <div class="tb">
@@ -342,8 +358,8 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
         <div class="tb-cell">
           <div class="ib">
             <div class="bt">BILLED TO</div>
-            <h3>${esc(h.customer_name || "---")}</h3>
-            ${h.client_company ? `<div class="cp">${esc(h.client_company)}</div>` : ""}
+            <h3>${esc(h.client_company || h.customer_name || "---")}</h3>
+            ${h.client_company ? `<div class="cp" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}
             ${(clientAddr || h.client_pincode) ? `<div class="cp" style="margin-top:6px;">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
             ${h.mobile_number ? `<div class="cl" style="margin-top:6px;"><span class="cl-label">Ph:</span><span class="cl-value">${esc(h.mobile_number)}</span></div>` : ""}
             ${h.email ? `<div class="cl"><span class="cl-label">Email:</span><span class="cl-value">${esc(h.email)}</span></div>` : ""}

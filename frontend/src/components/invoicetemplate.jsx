@@ -218,8 +218,8 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
 
             <div className="ft-info-box">
               <div className="ft-box-title">BILLED TO</div>
-              <h3>{h.customer_name || "---"}</h3>
-              {h.client_company && <div className="ft-compact">{h.client_company}</div>}
+              <h3>{h.client_company || h.customer_name || "---"}</h3>
+              {h.client_company && <div className="ft-compact" style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>{h.customer_name}</div>}
               {h.gst_number && <div className="ft-gst">GSTIN: {h.gst_number}</div>}
               {(clientAddr || h.client_pincode) && (
                 <div className="ft-compact">
