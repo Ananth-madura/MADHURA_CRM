@@ -18,6 +18,7 @@ const Clients = () => {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [isEdit, setIsEdit] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
 
   const N = {
     primary: "#5645d4",
@@ -61,6 +62,14 @@ const Clients = () => {
     fetchClients();
     const handleRefresh = () => fetchClients();
     window.addEventListener("refresh-clients", handleRefresh);
+
+    // Fetch team members
+    const token = localStorage.getItem("token");
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    axios.get(`${API}/api/teammember`, config)
+      .then(r => setTeamMembers(r.data))
+      .catch(e => console.error("Error fetching team members:", e));
+
     return () => window.removeEventListener("refresh-clients", handleRefresh);
   }, []);
 
@@ -90,6 +99,7 @@ const Clients = () => {
     gst_number: "",
     notes: "",
     client_status: "active",
+    assigned_teammember_id: "",
   });
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -131,7 +141,8 @@ const Clients = () => {
     setForm({
       name: "", company_name: "", email: "", phone: "", alternate_phone: "",
       address: "", city: "", state: "", pincode: "",
-      service: "", gst_number: "", notes: "", client_status: "active"
+      service: "", gst_number: "", notes: "", client_status: "active",
+      assigned_teammember_id: ""
     });
     setIsEdit(false);
     setSelectedClientId(null);
@@ -152,6 +163,7 @@ const Clients = () => {
       gst_number: selectedClient.gst_number || "",
       notes: selectedClient.notes || "",
       client_status: selectedClient.client_status || "active",
+      assigned_teammember_id: selectedClient.assigned_teammember_id || "",
     });
     setSelectedClientId(selectedClient.id);
     setIsEdit(true);
@@ -593,6 +605,17 @@ const Clients = () => {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                   <option value="prospect">Prospect</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: N.slate }}>Assigned Staff</label>
+                <select name="assigned_teammember_id" value={form.assigned_teammember_id} onChange={handleChange}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white outline-none" style={{ borderColor: N.hairlineStrong, color: N.ink }}>
+                  <option value="">Unassigned</option>
+                  {teamMembers.map(t => (
+                    <option key={t.id} value={t.id}>{t.first_name} {t.last_name || ""} ({t.emp_role || "Staff"})</option>
+                  ))}
                 </select>
               </div>
 

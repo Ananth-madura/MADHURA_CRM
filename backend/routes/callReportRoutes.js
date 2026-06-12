@@ -223,12 +223,20 @@ router.post("/", verifyToken, canEditCallReport, (req, res) => {
 
   const customerName = c.customer || c.customer_name || c.client_name || "";
 
-  const params = [
-    // session
-    sessionId,
-    c.call_sequence || 1,
-    // customer identity
-    c.customer_id || null,
+  db.query(
+    "SELECT COUNT(*) as prevCount FROM call_reports WHERE customer_name = ?",
+    [customerName],
+    (err, countResult) => {
+      if (err) return res.status(500).json({ error: "Failed to determine call sequence: " + err.message });
+      
+      const sequence = (countResult[0].prevCount || 0) + 1;
+
+      const params = [
+        // session
+        sessionId,
+        sequence,
+        // customer identity
+        c.customer_id || null,
     customerName,
     customerName,
     customerName,
@@ -285,8 +293,9 @@ router.post("/", verifyToken, canEditCallReport, (req, res) => {
       console.error("POST /call-reports error:", err.message);
       return res.status(500).json({ error: err.message });
     }
-    res.json({ message: "Call report created", id: result.insertId, sessionId });
+    res.status(201).json({ message: "Call report created successfully", id: result.insertId, sequence });
   });
+  }); // End sequence query callback
 });
 
 // ── PUT — update call report (full edit OR Step 2 partial update) ────────────

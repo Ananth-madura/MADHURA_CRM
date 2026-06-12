@@ -1676,7 +1676,7 @@ const CallReport = () => {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr className="text-muted-foreground font-bold uppercase text-xs border-b border-border">
-                    <th className="px-4 py-3 text-left w-[80px]">ID</th>
+                    <th className="px-4 py-3 text-left w-[100px]">ID</th>
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">Engineer</th>
                     <th className="px-4 py-3 text-center w-[80px]">Duration</th>
@@ -1722,7 +1722,10 @@ const CallReport = () => {
                           </tr>
                           {group.calls.map(c => (
                             <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onDoubleClick={() => setDetailCall(c)} title="Double-click to view full details">
-                              <td className="px-4 py-3 font-mono text-xs font-bold text-primary">#{String(c.id).padStart(3,'0')}</td>
+                              <td className="px-4 py-3 font-mono font-bold text-xs text-primary">
+                                <div className="text-primary font-black text-sm">Call #{c.call_sequence || 1}</div>
+                                <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">ID: {String(c.id).padStart(3, '0')}</div>
+                              </td>
                               <td className="px-4 py-3">
                                 <p className="font-semibold text-sm text-foreground">{c.customer_name || c.client_name || "—"}</p>
                                 <p className="text-[10px] text-muted-foreground">{c.location_city || ""}</p>
@@ -2223,12 +2226,6 @@ const CallReport = () => {
                           <p className="font-semibold text-xs sm:text-sm text-foreground truncate">{call.email || "—"}</p>
                         </div>
                       </div>
-                      {(call.call_details || call.complaint || call.description) && (
-                        <div className="mt-3 pt-3 border-t border-primary/20">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Details / Complaint</p>
-                          <p className="text-xs sm:text-sm mt-1 text-muted-foreground">{call.call_details || call.complaint || call.description}</p>
-                        </div>
-                      )}
                     </>
                   );
                 })()}
