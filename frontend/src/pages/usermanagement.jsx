@@ -32,7 +32,7 @@ const [formData, setFormData] = useState({
       const res = await axios.get(`${API}/api/auth/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setUsers(res.data);
+      setUsers(res.data.users || res.data);
     } catch (err) {
       console.error("Fetch users error:", err);
     } finally {
@@ -129,12 +129,12 @@ const [formData, setFormData] = useState({
     if (!newPassword) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.put(`${API}/api/auth/reset-password/${userId}`, { new_password: newPassword }, {
+      await axios.post(`${API}/api/auth/reset-password/${userId}`, { new_password: newPassword }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert("Password reset successfully");
     } catch (err) {
-      alert("Failed to reset password");
+      alert(err.response?.data?.message || "Failed to reset password");
     }
   };
 
@@ -213,17 +213,17 @@ const [formData, setFormData] = useState({
                   <td className="px-4 py-3">{user.position || "-"}</td>
 <td className="px-4 py-3">
                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                       user.systemRole === "admin" ? "bg-purple-100 text-purple-700" :
-                       user.systemRole === "subadmin" ? "bg-orange-100 text-orange-700" :
+                       user.role === "admin" ? "bg-purple-100 text-purple-700" :
+                       user.role === "subadmin" ? "bg-orange-100 text-orange-700" :
                        "bg-gray-100 text-gray-600"
                      }`}>
-                       {user.systemRole || "employee"}
+                       {user.role || "employee"}
                      </span>
                    </td>
                   <td className="px-4 py-3 text-center">{getStatusBadge(user.status)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
-                      {user.systemRole === "admin" ? (
+                      {user.role === "admin" ? (
                         <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">🔒 Admin</span>
                       ) : (
                         <>

@@ -86,7 +86,7 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   const hasBrandModel = (items || []).some((r) => r.brand_model && String(r.brand_model).trim() !== "");
 
   const terms = [];
-  if (h.terms_general) terms.push("General Terms & Conditions apply.");
+  if (h.terms_general) terms.push("General Terms &amp; Conditions apply.");
   if (h.terms_tax) terms.push("Prices quoted are exclusive of Sales and Service Tax.");
   if (h.terms_project_period) terms.push(`Project Period: ${esc(h.terms_project_period)}`);
   if (h.terms_validity) terms.push(`Quote valid for ${esc(h.terms_validity)} from quotation date.`);
@@ -123,8 +123,8 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   const clientPin = h.client_pincode ? `, Pin: ${esc(h.client_pincode)}` : "";
   const clientCountry = h.client_country && h.client_country !== "India" ? `, ${esc(h.client_country)}` : "";
 
-  const execName = esc(h.exec_name || "KRISHNA KUMAR M");
-  const execPhone = esc(h.exec_phone || "9842235515");
+  const execName = esc(h.exec_name || "");
+  const execPhone = esc(h.exec_phone || "");
   const execEmail = h.exec_email ? esc(h.exec_email) : "";
 
   const otherBranches = Object.entries(BRANCHES)
@@ -143,47 +143,44 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
       const heading = desc.substring(0, commaIndex + 1);
       const body = desc.substring(commaIndex + 1);
       descHtml = `<div style="display:flex;flex-direction:column;gap:2px;text-align:left;">
-        <span style="font-weight:700;color:#1e293b;font-size:11px;">${esc(heading)}</span>
-        <span style="font-weight:400;color:#64748b;font-size:10px;margin-top:2px;display:block;">${esc(body.trim())}</span>
+        <span style="font-weight:700;color:#1e293b;font-size:12px;">${esc(heading)}</span>
+        <span style="font-weight:400;color:#64748b;font-size:10.5px;margin-top:2px;">${esc(body.trim())}</span>
       </div>`;
     } else {
       descHtml = `<strong>${esc(desc)}</strong>`;
     }
 
     return `<tr>
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#1a1f2e;vertical-align:top;">${i + 1}</td>
-      ${hasBrandModel ? `<td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#444;vertical-align:top;">${esc(item.brand_model || "---")}</td>` : ""}
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#1a1f2e;vertical-align:top;">
-        ${descHtml}
-      </td>
-      ${hasHSN ? `<td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#444;vertical-align:top;">${esc(item.hsn_sac || "---")}</td>` : ""}
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#1a1f2e;vertical-align:top;text-align:center;">${qty}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#1a1f2e;vertical-align:top;">${esc(item.uom || "Nos")}</td>
-      ${hasGST ? `<td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#444;vertical-align:top;text-align:right;">${item.tax || taxRate}%</td>` : ""}
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#444;vertical-align:top;text-align:right;">Rs. ${fmtNum(price)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#1a1f2e;vertical-align:top;text-align:right;"><strong>Rs. ${fmtNum(lineTotal)}</strong></td>
+      <td>${i + 1}</td>
+      ${hasBrandModel ? `<td>${esc(item.brand_model || "---")}</td>` : ""}
+      <td>${descHtml}</td>
+      ${hasHSN ? `<td>${esc(item.hsn_sac || "---")}</td>` : ""}
+      <td>${qty}</td>
+      <td>${esc(item.uom || "Nos")}</td>
+      ${hasGST ? `<td>${item.tax || taxRate}%</td>` : ""}
+      <td>Rs. ${fmtNum(price)}</td>
+      <td><strong>Rs. ${fmtNum(lineTotal)}</strong></td>
     </tr>`;
   }).join("");
 
   const termsListItems = terms.map((t) => `<li style="margin-bottom:4px;">${t}</li>`).join("");
 
   const summaryRows = `
-    <tr><td style="padding:10px 8px;font-size:12px;color:#64748b;width:50%;">Subtotal</td><td style="padding:10px 8px;font-size:12px;color:#1a1f2e;text-align:right;font-weight:700;width:50%;">Rs. ${fmtNum(subtotal)}</td></tr>
-    ${showDiscount ? `<tr><td style="padding:10px 8px;font-size:12px;color:#64748b;width:50%;">Discount</td><td style="padding:10px 8px;font-size:12px;color:#1a1f2e;text-align:right;font-weight:700;width:50%;">Rs. ${fmtNum(totalDiscount)}</td></tr>` : ""}
-    ${showCGST ? `<tr><td style="padding:10px 8px;font-size:12px;color:#64748b;width:50%;">CGST (${taxRate / 2}%)</td><td style="padding:10px 8px;font-size:12px;color:#1a1f2e;text-align:right;font-weight:700;width:50%;">Rs. ${fmtNum(totalCGST)}</td></tr>` : ""}
-    ${showSGST ? `<tr><td style="padding:10px 8px;font-size:12px;color:#64748b;width:50%;">SGST (${taxRate / 2}%)</td><td style="padding:10px 8px;font-size:12px;color:#1a1f2e;text-align:right;font-weight:700;width:50%;">Rs. ${fmtNum(totalSGST)}</td></tr>` : ""}
-    ${showIGST ? `<tr><td style="padding:10px 8px;font-size:12px;color:#64748b;width:50%;">IGST (${taxRate}%)</td><td style="padding:10px 8px;font-size:12px;color:#1a1f2e;text-align:right;font-weight:700;width:50%;">Rs. ${fmtNum(totalIGST)}</td></tr>` : ""}
-    ${!hasGST ? `<tr><td style="padding:10px 8px;font-size:10px;color:#64748b;width:50%;">Without GST</td><td style="padding:10px 8px;width:50%;"></td></tr>` : ""}
-    <tr><td style="padding:10px 8px;font-size:14px;color:#1e3a8a;font-weight:700;background:#f0f4ff;width:50%;">GRAND TOTAL</td><td style="padding:10px 8px;font-size:14px;color:#1e3a8a;text-align:right;font-weight:700;background:#f0f4ff;width:50%;">Rs. ${fmtNum(grandTotal)}</td></tr>`;
+    <tr><td style="width:50%">Subtotal</td><td style="width:50%">Rs. ${fmtNum(subtotal)}</td></tr>
+    ${showDiscount ? `<tr><td>Discount</td><td>Rs. ${fmtNum(totalDiscount)}</td></tr>` : ""}
+    ${showCGST ? `<tr><td>CGST (${taxRate / 2}%)</td><td>Rs. ${fmtNum(totalCGST)}</td></tr>` : ""}
+    ${showSGST ? `<tr><td>SGST (${taxRate / 2}%)</td><td>Rs. ${fmtNum(totalSGST)}</td></tr>` : ""}
+    ${showIGST ? `<tr><td>IGST (${taxRate}%)</td><td>Rs. ${fmtNum(totalIGST)}</td></tr>` : ""}
+    ${!hasGST ? `<tr><td style="color:#64748b;font-size:10px;">Without GST</td><td></td></tr>` : ""}
+    <tr class="ft-grand-total"><td style="width:50%">GRAND TOTAL</td><td style="width:50%">Rs. ${fmtNum(grandTotal)}</td></tr>`;
 
   const branchesHtml = otherBranches.length > 0 ? `
-    <div class="brb">
-      <div class="sh">OUR BRANCHES</div>
-      <div style="font-size:11.5px;line-height:1.6;color:#1a1f2e;">
-        ${otherBranches.map((b) => `<div style="margin-bottom:4px;"><strong>${esc(b.name)}:</strong> ${esc(b.address)} | <strong>GSTIN:</strong> ${esc(b.gstin)}</div>`).join("")}
-      </div>
+    <div class="ft-branch-box">
+      <div class="ft-section-heading">OUR BRANCHES</div>
+      ${otherBranches.map((b, i) => `<span><strong>${esc(b.name)}:</strong> ${esc(b.address)} | <strong>GSTIN:</strong> ${esc(b.gstin)}${i < otherBranches.length - 1 ? "<br>" : ""}</span>`).join("")}
     </div>` : "";
 
+  // ─── HTML: uses the EXACT SAME class names and structure as form-template.css ───
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -193,208 +190,198 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 8mm 9mm 12mm 9mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html, body { margin: 0; padding: 0; width: 100%; background: #fff; }
-    body { font-family: "Poppins", Arial, sans-serif; color: #1a1f2e; }
+    /* ─── Exact copy of form-template.css (PDF-mode) ─── */
+    :root {
+      --ink: #1a1f2e; --muted: #64748b; --line: #cbd5e1; --line-soft: #e2e8f0;
+      --brand: #1e3a8a; --brand-deep: #1e293b; --paper: #ffffff;
+      --shadow-sm: 0 2px 8px rgba(30,41,59,0.08); --card-bg: rgba(255,255,255,0.96);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: "Poppins", Arial, sans-serif; color: var(--ink); background: #fff; margin: 0; padding: 0; }
 
-    .qw {
+    /* ── Wrapper (no ::before bar — pdf-lib draws it at page edge) ── */
+    .ft-quotation-wrapper {
       position: relative; width: 100%; min-height: auto;
-      background: #fff; padding: 24px 0 0 0;
-    }
-    /* Fixed top color bar — appears on every PDF page */
-    .top-bar {
-      position: fixed; top: 0; left: 0; right: 0; height: 6px;
-      background: linear-gradient(to right, #1f0779e0, #340285, #1b03a1); z-index: 110;
-    }
-    /* Fixed watermark — repeats centered on every PDF page behind text */
-    .wm {
-      position: fixed; top: 50%; left: 50%; max-width: 130mm; width: auto; height: auto;
-      transform: translate(-50%, -50%); opacity: 0.07; pointer-events: none;
-      z-index: -1; object-fit: contain;
-    }
-    .page-header {
-      position: relative; background: #fff; z-index: 100;
-      padding: 0;
-    }
-    .ct { position: relative; z-index: 1; padding-top: 0; }
-
-    .hdr {
-      display: table; width: 100%; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px;
-    }
-    .hdr-left { display: table-cell; vertical-align: top; width: 55%; }
-    .hdr-right { display: table-cell; vertical-align: top; width: 45%; text-align: right; }
-    .brand img { display: block; max-width: 330px; height: auto; }
-    .qt h2 { color: #1e3a8a; font-size: 22px; font-weight: 500; line-height: 1; margin-bottom: 10px; }
-    .db {
-      display: inline-block; border: 1px solid #cbd5e1; border-radius: 8px;
-      padding: 10px 14px; background: #f8fafc; color: #64748b; font-size: 12px;
-    }
-    .db span { color: #1a1f2e; font-weight: 600; }
-    .db-item { display: inline-block; margin-right: 14px; }
-
-    .tb { display: table; width: 100%; margin-top: 14px; border-spacing: 12px 0; }
-    .tb-cell { display: table-cell; width: 50%; vertical-align: top; }
-
-    .ib {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      padding: 12px; min-height: 160px; box-shadow: 0 2px 8px rgba(30,41,59,0.08);
-    }
-    .bt { color: #1e3a8a; font-weight: 700; font-size: 13px; margin-bottom: 8px; }
-    .ib h3 { font-size: 15px; font-weight: 700; color: #2c2c2c; margin-bottom: 3px; line-height: 1.25; }
-    .gst-line { color: #64748b; font-size: 11px; font-weight: 600; margin-bottom: 9px; }
-    .cp { font-size: 11.5px; line-height: 1.55; color: #1a1f2e; }
-    .cl { display: table; width: 100%; margin-top: 7px; font-size: 11.5px; line-height: 1.55; }
-    .cl-label { display: table-cell; color: #1e293b; font-weight: 600; min-width: 44px; }
-    .cl-value { display: table-cell; color: #1a1f2e; word-break: break-word; }
-
-    .tw {
-      width: 100%; margin-top: 14px; border: 1px solid #cbd5e1; border-radius: 10px;
-      background: #fff; box-shadow: 0 2px 8px rgba(30,41,59,0.08); overflow: hidden;
-    }
-    .tw table { width: 100%; border-collapse: collapse; }
-    .tw th {
-      padding: 10px 8px; border-bottom: 2px solid #1e3a8a; color: #1e293b;
-      font-size: 10.5px; font-weight: 700; text-align: left; white-space: nowrap; background: #f8fafc;
-    }
-    .tw td {
-      padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;
-      vertical-align: top; color: #1a1f2e;
-    }
-    .tw tbody tr:last-child td { border-bottom: none; }
-
-    .ms { margin-top: 12px; }
-    .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-
-    .box {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      padding: 14px; box-shadow: 0 2px 8px rgba(30,41,59,0.08);
-      min-height: 100px;
-    }
-    .sh { color: #1e3a8a; font-weight: 700; font-size: 13px; margin-bottom: 8px; }
-
-    .st-wrap {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(30,41,59,0.08); overflow: hidden;
-      min-height: 100px;
-    }
-    .st {
-      width: 100%; border-collapse: collapse; table-layout: fixed;
-    }
-    .st td { padding: 10px 8px; font-size: 12px; }
-    .st tr:last-child td { border-bottom: none; }
-
-    .bb {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      padding: 14px; box-shadow: 0 2px 8px rgba(30,41,59,0.08);
-      min-height: 100px;
+      background: var(--paper); padding: 0;
     }
 
-    .bg { display: grid; grid-template-columns: 88px 1fr; gap: 7px 10px; }
-    .bg-label { color: #64748b; font-size: 11.5px; }
-    .bg-value { font-weight: 700; font-size: 11.5px; color: #1a1f2e; }
+    /* Watermark + top bar hidden in HTML — added by pdf-lib post-processing */
+    .ft-watermark { display: none; }
+    .ft-top-bar { display: none; }
 
-    .brb {
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      padding: 14px; margin-top: 14px; box-shadow: 0 2px 8px rgba(30,41,59,0.08);
-    }
+    .ft-content { position: relative; z-index: 1; }
 
-    .ft {
-      display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: flex-end;
-      align-items: center; margin-top: 12px; padding: 10px 12px;
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(30,41,59,0.08);
+    /* ── Header ── */
+    .ft-header {
+      display: grid; grid-template-columns: minmax(210px,1fr) auto;
+      gap: 18px; align-items: start;
+      padding-bottom: 12px; border-bottom: 3px solid var(--brand);
     }
-    .ft span { color: #1e3a8a; font-weight: 600; }
-    .ft div { font-size: 11.5px; line-height: 1.55; }
+    .ft-brand img { display: block; width: min(100%,330px); height: auto; }
+    .ft-quotation-title { display: grid; justify-items: end; gap: 10px; text-align: right; }
+    .ft-quotation-title h2 { color: var(--brand); font-size: 22px; font-weight: 500; line-height: 0.98; }
+    .ft-doc-box {
+      display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: flex-end;
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+      background: #f8fafc; color: var(--muted); font-size: 12px;
+    }
+    .ft-doc-box span { color: var(--ink); font-weight: 600; }
 
-    /* Page break controls for Puppeteer PDF generator */
-    tr, .box, .st-wrap, .bb, .brb {
-      page-break-inside: avoid;
+    /* ── FROM / BILLED TO boxes – EQUAL SIZE via grid stretch ── */
+    .ft-top-boxes {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; margin-top: 14px; align-items: stretch;
     }
+    .ft-info-box,
+    .ft-terms-box, .ft-summary-box, .ft-notes-box,
+    .ft-bank-box, .ft-branch-box, .ft-footer {
+      background: var(--card-bg); border: 1px solid var(--line);
+      border-radius: 10px; box-shadow: var(--shadow-sm);
+    }
+    .ft-info-box {
+      min-height: 176px; padding: 12px; height: 100%; text-align: left;
+    }
+    .ft-box-title, .ft-section-heading { color: var(--brand); font-weight: 700; }
+    .ft-box-title { margin-bottom: 8px; font-size: 13px; }
+    .ft-info-box h3 { margin-bottom: 3px; font-size: 15px; line-height: 1.25; font-weight: 700; }
+    .ft-gst { margin-bottom: 9px; color: var(--muted); font-size: 11px; font-weight: 600; }
+    .ft-compact, .ft-contact-line, .ft-terms-box li,
+    .ft-notes-box, .ft-bank-grid, .ft-branch-box, .ft-footer {
+      font-size: 11.5px; line-height: 1.55;
+    }
+    .ft-contact-line { display: flex; gap: 7px; align-items: baseline; margin-top: 7px; word-break: break-word; }
+    .ft-contact-line .label { min-width: 40px; color: var(--brand-deep); font-weight: 600; }
+
+    /* ── Items table ── */
+    .ft-table-wrap {
+      width: 100%; margin-top: 14px;
+      border: 1px solid var(--line); border-radius: 10px;
+      background: var(--paper); box-shadow: var(--shadow-sm); overflow: hidden;
+    }
+    .ft-table-wrap table { width: 100%; border-collapse: collapse; }
+    .ft-table-wrap th {
+      padding: 10px 8px; border-bottom: 2px solid var(--brand);
+      color: var(--brand-deep); font-size: 10.5px; font-weight: 700;
+      text-align: left; white-space: nowrap; background: #f8fafc;
+    }
+    .ft-table-wrap td {
+      padding: 10px 8px; border-bottom: 1px solid var(--line-soft);
+      font-size: 11px; vertical-align: top; color: var(--ink);
+    }
+    .ft-table-wrap tbody tr:last-child td,
+    .ft-summary-table tr:last-child td { border-bottom: 0; }
+    .ft-table-wrap td:last-child, .ft-table-wrap th:last-child,
+    .ft-summary-table td:last-child { text-align: right; }
+
+    /* ── Mid section 2×2 grid ── */
+    .ft-mid-section { display: block; margin-top: 12px; }
+    .ft-grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .ft-terms-box, .ft-summary-box, .ft-notes-box, .ft-bank-box, .ft-branch-box { padding: 12px; }
+    .ft-section-heading { margin-bottom: 8px; font-size: 13px; }
+    .ft-terms-box ul { padding-left: 16px; }
+
+    /* ── Summary table ── */
+    .ft-summary-table {
+      border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
+      box-shadow: var(--shadow-sm); table-layout: fixed; width: 100%;
+    }
+    .ft-summary-table td { padding: 9px 6px; font-size: 12px; }
+    .ft-grand-total td { color: var(--brand); font-size: 14px; font-weight: 700; background: #f0f4ff; }
+
+    /* ── Bank grid ── */
+    .ft-bank-grid { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 7px 10px; }
+    .ft-bank-grid div:nth-child(odd) { color: var(--muted); }
+
+    /* ── Branches ── */
+    .ft-branch-box { margin-top: 12px; }
+
+    /* ── Footer ── */
+    .ft-footer {
+      display: flex; flex-wrap: wrap; gap: 8px 20px;
+      justify-content: flex-end; align-items: center;
+      margin-top: 12px; padding: 10px 12px;
+    }
+    .ft-footer span { color: var(--brand); font-weight: 600; }
+
+    /* ── Page break controls ── */
+    tr, .ft-terms-box, .ft-summary-box, .ft-notes-box,
+    .ft-bank-box, .ft-branch-box { page-break-inside: avoid; }
+
+    @page { size: A4 portrait; margin: 8mm 8mm 12mm 8mm; }
   </style>
 </head>
 <body>
-  <!-- Fixed top color bar — repeats on every PDF page -->
-  <div class="top-bar"></div>
+  <!-- Fixed top bar (repeats on every page) -->
+  <div class="ft-top-bar"></div>
 
-  <!-- Fixed watermark — repeats centered on every PDF page -->
-  ${LOGO_SRC ? `<img class="wm" src="${LOGO_SRC}" alt="watermark">` : ""}
+  <!-- Fixed watermark (repeats centered on every page) -->
+  ${LOGO_SRC ? `<img class="ft-watermark" src="${LOGO_SRC}" alt="" />` : ""}
 
-  <!-- Main paginated content wrapper -->
-  <div class="qw">
-    <div class="ct">
-      <table style="width: 100%; border-collapse: collapse; border: none;">
+  <main class="ft-quotation-wrapper" style="padding-top:0;">
+    <div class="ft-content">
+      <table style="width:100%;border-collapse:collapse;border:none;">
         <thead>
           <tr>
-            <td style="padding: 0; border: none;">
-              <!-- Page Header -->
-              <div class="page-header">
-                <div class="hdr">
-                  <div class="hdr-left">
-                    <div class="brand">
-                      ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication">` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
-                    </div>
-                  </div>
-                  <div class="hdr-right">
-                    <div class="qt">
-                      <h2>${docLabel}</h2>
-                      <div class="db">
-                        <span class="db-item"><span>Doc No:</span> ${docNumber}</span>
-                        <span class="db-item"><span>Date:</span> ${fmtDate(invoiceDate)}</span>
-                      </div>
-                    </div>
+            <td style="padding:0;border:none;">
+              <!-- HEADER -->
+              <header class="ft-header">
+                <div class="ft-brand">
+                  ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication" />` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
+                </div>
+                <div class="ft-quotation-title">
+                  <h2>${docLabel}</h2>
+                  <div class="ft-doc-box">
+                    <div><span>Doc No:</span> ${docNumber}</div>
+                    <div><span>Date:</span> ${fmtDate(invoiceDate)}</div>
                   </div>
                 </div>
-              </div>
-              <div style="height: 14px;"></div>
+              </header>
+              <div style="height:14px;"></div>
             </td>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td style="padding: 0; border: none;">
-              <!-- FROM / BILLED TO -->
-              <div class="tb">
-                <div class="tb-cell">
-                  <div class="ib">
-                    <div class="bt">FROM</div>
-                    <h3>Achme Communication</h3>
-                    <div class="gst-line">GSTIN: ${fromGstin}</div>
-                    <div class="cp">${fromAddress}</div>
-                    <div class="cl"><span class="cl-label">Ph:</span><span class="cl-value">0422-2569966, 4376555</span></div>
-                    <div class="cl"><span class="cl-label">Email:</span><span class="cl-value">info@achmecommunication.com</span></div>
-                    <div class="cl"><span class="cl-label">Web:</span><span class="cl-value">www.achmecommunication.com</span></div>
-                  </div>
+            <td style="padding:0;border:none;">
+
+              <!-- FROM / BILLED TO (equal-height grid) -->
+              <section class="ft-top-boxes">
+                <div class="ft-info-box">
+                  <div class="ft-box-title">FROM</div>
+                  <h3>Achme Communication</h3>
+                  <div class="ft-gst">GSTIN: ${fromGstin}</div>
+                  <div class="ft-compact">${fromAddress}</div>
+                  <div class="ft-contact-line"><span class="label">Ph:</span><span>0422-2569966, 4376555</span></div>
+                  <div class="ft-contact-line"><span class="label">Email:</span><span>info@achmecommunication.com</span></div>
+                  <div class="ft-contact-line"><span class="label">Web:</span><span>www.achmecommunication.com</span></div>
                 </div>
-                <div class="tb-cell">
-                  <div class="ib">
-                    <div class="bt">BILLED TO</div>
-                    ${(() => {
-                      const clientCompany = (h.client_company || "").trim();
-                      return `<h3>${esc(clientCompany || h.customer_name || "---")}</h3>
-                      ${clientCompany ? `<div class="cp" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}`;
-                    })()}
-                    ${(clientAddr || h.client_pincode) ? `<div class="cp" style="margin-top:6px;">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
-                    ${h.mobile_number ? `<div class="cl" style="margin-top:6px;"><span class="cl-label">Ph:</span><span class="cl-value">${esc(h.mobile_number)}</span></div>` : ""}
-                    ${h.email ? `<div class="cl"><span class="cl-label">Email:</span><span class="cl-value">${esc(h.email)}</span></div>` : ""}
-                    ${h.gst_number ? `<div class="cl"><span class="cl-label">GST:</span><span class="cl-value">${esc(h.gst_number)}</span></div>` : ""}
-                  </div>
+                <div class="ft-info-box">
+                  <div class="ft-box-title">BILLED TO</div>
+                  ${(() => {
+                    const clientCompany = (h.client_company || "").trim();
+                    return `<h3>${esc(clientCompany || h.customer_name || "---")}</h3>
+                    ${clientCompany ? `<div class="ft-compact" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}`;
+                  })()}
+                  ${h.gst_number ? `<div class="ft-gst">GSTIN: ${esc(h.gst_number)}</div>` : ""}
+                  ${(clientAddr || h.client_pincode) ? `<div class="ft-compact">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
+                  ${h.mobile_number ? `<div class="ft-contact-line"><span class="label">Ph:</span><span>${esc(h.mobile_number)}</span></div>` : ""}
+                  ${h.email ? `<div class="ft-contact-line"><span class="label">Email:</span><span>${esc(h.email)}</span></div>` : ""}
                 </div>
-              </div>
+              </section>
 
               <!-- ITEMS TABLE -->
-              <div class="tw">
+              <div class="ft-table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th style="width:30px;">S.NO</th>
+                      <th style="width:32px;">S.NO</th>
                       ${hasBrandModel ? "<th>BRAND / MODEL</th>" : ""}
                       <th>DESCRIPTION</th>
                       ${hasHSN ? "<th>HSN/SAC</th>" : ""}
-                      <th style="width:40px;text-align:center;">QTY</th>
+                      <th style="width:40px;">QTY</th>
                       <th style="width:50px;">UOM</th>
-                      ${hasGST ? '<th style="width:45px;text-align:right;">GST%</th>' : ""}
+                      ${hasGST ? '<th style="width:48px;">GST%</th>' : ""}
                       <th style="width:80px;text-align:right;">PRICE</th>
                       <th style="width:90px;text-align:right;">TOTAL</th>
                     </tr>
@@ -403,56 +390,64 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
                 </table>
               </div>
 
-              <!-- MID SECTION: 4 boxes in 2x2 grid -->
-              <div class="ms">
-                <div class="g2">
-                  <!-- Top-Left: Terms -->
-                  <div class="box">
-                    <div class="sh">TERMS &amp; CONDITIONS</div>
-                    ${terms.length > 0 ? `<ul style="padding-left:18px;margin:0;font-size:11.5px;line-height:1.6;color:#1a1f2e;">${termsListItems}</ul>` : '<div style="font-size:11.5px;color:#94a3b8;">No terms specified</div>'}
+              <!-- MID SECTION: 2×2 grid -->
+              <section class="ft-mid-section">
+                <div class="ft-grid-2x2">
+                  <!-- Terms -->
+                  ${terms.length > 0 ? `
+                  <div class="ft-terms-box">
+                    <div class="ft-section-heading">TERMS &amp; CONDITIONS</div>
+                    <ul style="font-size:11.5px;line-height:1.55;">${termsListItems}</ul>
+                  </div>` : `<div class="ft-terms-box"><div class="ft-section-heading">TERMS &amp; CONDITIONS</div><div style="font-size:11.5px;color:#94a3b8;">No terms specified</div></div>`}
+
+                  <!-- Summary -->
+                  <div class="ft-summary-box">
+                    <table class="ft-summary-table">
+                      <tbody>${summaryRows}</tbody>
+                    </table>
                   </div>
-                  <!-- Top-Right: Summary (fixed size box) -->
-                  <div class="st-wrap">
-                    <table class="st"><tbody>${summaryRows}</tbody></table>
-                  </div>
-                  <!-- Bottom-Left: Notes -->
-                  <div class="box">
-                    <div class="sh">IMPORTANT NOTES</div>
-                    <div style="font-size:11.5px;line-height:1.6;color:#1a1f2e;">
-                      <div style="margin-bottom:6px;"><strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE &amp; ACCESSORIES AS PER ACTUALS.</div>
-                      <div style="margin-bottom:6px;"><strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.</div>
-                      <div><strong>NOTE:</strong> Civil, Electrical &amp; Interior Works not included.</div>
+
+                  <!-- Notes -->
+                  <div class="ft-notes-box">
+                    <div class="ft-section-heading">IMPORTANT NOTES</div>
+                    <div style="font-size:11.5px;line-height:1.55;">
+                      <strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE &amp; ACCESSORIES AS PER ACTUALS.<br><br>
+                      <strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.<br><br>
+                      <strong>NOTE:</strong> Civil, Electrical &amp; Interior Works not included.
                     </div>
                   </div>
-                  <!-- Bottom-Right: Bank -->
-                  <div class="bb">
-                    <div class="sh">BANK DETAILS</div>
-                    <div class="bg">
-                      <div class="bg-label">Company</div><div class="bg-value">${bank.company}</div>
-                      <div class="bg-label">Bank</div><div class="bg-value">${bank.bank}</div>
-                      <div class="bg-label">Account</div><div class="bg-value">${bank.account}</div>
-                      <div class="bg-label">IFSC</div><div class="bg-value">${bank.ifsc}</div>
-                      <div class="bg-label">Branch</div><div class="bg-value">${bank.branch}</div>
+
+                  <!-- Bank -->
+                  <div class="ft-bank-box">
+                    <div class="ft-section-heading">BANK DETAILS</div>
+                    <div class="ft-bank-grid">
+                      <div>Company</div><div><strong>${bank.company}</strong></div>
+                      <div>Bank</div><div><strong>${bank.bank}</strong></div>
+                      <div>Account</div><div><strong>${bank.account}</strong></div>
+                      <div>IFSC</div><div><strong>${bank.ifsc}</strong></div>
+                      <div>Branch</div><div><strong>${bank.branch}</strong></div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <!-- BRANCHES (other 2 branches) -->
+              <!-- BRANCHES -->
               ${branchesHtml}
 
               <!-- FOOTER -->
-              <div class="ft">
-                <div><span>Executive:</span> ${execName}</div>
-                <div><span>PH:</span> ${execPhone}</div>
+              ${(execName || execPhone || execEmail) ? `
+              <footer class="ft-footer">
+                ${execName ? `<div><span>Executive:</span> ${execName}</div>` : ""}
+                ${execPhone ? `<div><span>PH:</span> ${execPhone}</div>` : ""}
                 ${execEmail ? `<div><span>Email:</span> ${execEmail}</div>` : ""}
-              </div>
+              </footer>` : ""}
+
             </td>
           </tr>
         </tbody>
       </table>
     </div>
-  </div>
+  </main>
 </body>
 </html>`;
 
@@ -509,12 +504,58 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
         i.complete ? Promise.resolve() : new Promise((r) => { i.addEventListener("load", r); i.addEventListener("error", r); })
       ));
     });
-    const pdfBuffer = await page.pdf({
+    const basePdf = await page.pdf({
       format: "A4",
-      preferCSSPageSize: true,
       printBackground: true,
+      margin: { top: "8mm", bottom: "12mm", left: "8mm", right: "8mm" },
     });
-    return pdfBuffer;
+
+    // ── Post-process with pdf-lib: stamp watermark + top bar on EVERY page ──
+    const { PDFDocument, rgb } = require("pdf-lib");
+    const pdfDoc = await PDFDocument.load(basePdf);
+    const pages = pdfDoc.getPages();
+
+    // Embed watermark image
+    let wmImage = null;
+    if (LOGO_B64) {
+      try {
+        const wmBytes = Buffer.from(LOGO_B64, "base64");
+        wmImage = await pdfDoc.embedJpg(wmBytes);
+      } catch (e) {
+        console.warn("Could not embed watermark:", e.message);
+      }
+    }
+
+    for (const pdfPage of pages) {
+      const { width, height } = pdfPage.getSize();
+
+      // Draw top gradient bar at VERY TOP of page, edge-to-edge (corner to corner)
+      const barHeight = 5; // ~6px on screen
+      pdfPage.drawRectangle({
+        x: 0, y: height - barHeight, width, height: barHeight,
+        color: rgb(0.12, 0.03, 0.47), // #1e0779
+        opacity: 1,
+      });
+
+      // Draw watermark centered on page
+      if (wmImage) {
+        const wmNatWidth = wmImage.width;
+        const wmNatHeight = wmImage.height;
+        const maxWm = 340; // max width in points (~120mm)
+        const scale = Math.min(maxWm / wmNatWidth, maxWm / wmNatHeight);
+        const wmW = wmNatWidth * scale;
+        const wmH = wmNatHeight * scale;
+        const wmX = (width - wmW) / 2;
+        const wmY = (height - wmH) / 2;
+        pdfPage.drawImage(wmImage, {
+          x: wmX, y: wmY, width: wmW, height: wmH,
+          opacity: 0.07,
+        });
+      }
+    }
+
+    const finalPdf = await pdfDoc.save();
+    return Buffer.from(finalPdf);
   } finally {
     await browser.close();
   }

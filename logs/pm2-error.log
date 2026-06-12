@@ -11,3 +11,6 @@
 2026-06-12T13:45:07:   hostname: 'hgy.jbb.hsu',
 2026-06-12T13:45:07:   command: 'CONN'
 2026-06-12T13:45:07: }
+2026-06-12T15:24:52: OTP email transporter verification failed: getaddrinfo ENOTFOUND smtp.gmail.com
+2026-06-12T15:41:01: ❌ Port 5000 is already in use. Either stop the process currently listening on port 5000 or set a different PORT in backend/.env.
+2026-06-12T15:56:57: ❌ Port 5000 is already in use. Either stop the process currently listening on port 5000 or set a different PORT in backend/.env.

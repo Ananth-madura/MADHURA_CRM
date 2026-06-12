@@ -257,25 +257,33 @@ router.post("/login", (req, res) => {
 });
 
 /* ================= ADMIN: CREATE USER ================= */
-router.post("/create-user", isAdmin, (req, res) => {
-  const { first_name, email, emp_id, job_title, emp_role, mobile_number, emp_address, user_password, system_role } = req.body;
+router.post("/create-user", verifyToken, isAdmin, (req, res) => {
+  const { first_name, last_name, email, emp_id, job_title, emp_role, mobile_number, emp_address, user_password, system_role } = req.body;
   if (!first_name || !email || !user_password) return res.status(400).json({ message: "Name, email and password required" });
 
   const role = system_role || "employee";
   bcrypt.hash(user_password, 10, (err, hash) => {
     if (err) return res.status(500).json({ message: "Password hash failed" });
 
-    db.query(`INSERT INTO users (first_name, email, user_password, role, status) VALUES (?, ?, ?, ?, ?)`,
-      [first_name, email.toLowerCase(), hash, role, "active"], (err2, result) => {
+    db.query(`INSERT INTO users (first_name, last_name, email, user_password, role, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      [first_name, last_name || "", email.toLowerCase(), hash, role, "active"], (err2, result) => {
         if (err2) {
           if (err2.code === "ER_DUP_ENTRY") return res.status(400).json({ message: "Email already exists" });
           return res.status(500).json({ message: "User creation failed" });
         }
 
-        db.query(`INSERT INTO teammember (first_name, last_name, emp_email, emp_id, job_title, emp_role, mobile_number, emp_address) VALUES (?, '', ?, ?, ?, ?, ?, ?)`,
-          [first_name, email.toLowerCase(), emp_id || null, job_title || "Developer", emp_role || "Developer", mobile_number || null, emp_address || null]);
+        const newUserId = result.insertId;
+        db.query(
+          `INSERT INTO teammember (first_name, last_name, emp_email, emp_id, job_title, emp_role, mobile_number, emp_address, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [first_name, last_name || "", email.toLowerCase(), emp_id || null, job_title || "Developer", emp_role || "Developer", mobile_number || null, emp_address || null, newUserId],
+          (err3) => {
+            if (err3) {
+              console.error("Teammember insert error after user creation:", err3);
+            }
+          }
+        );
 
-        res.json({ message: "User created successfully", userId: result.insertId });
+        res.json({ message: "User created successfully", userId: newUserId });
       });
   });
 });
@@ -356,7 +364,7 @@ router.delete("/delete-user/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 /* ================= ADMIN: RESET PASSWORD ================= */
-router.post("/reset-password/:id", isAdmin, (req, res) => {
+router.post("/reset-password/:id", verifyToken, isAdmin, (req, res) => {
   const { new_password } = req.body;
   if (!new_password) return res.status(400).json({ message: "New password required" });
 
