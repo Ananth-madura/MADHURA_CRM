@@ -45,35 +45,74 @@ CREATE TABLE IF NOT EXISTS `amc_alc_services` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `call_reports` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `session_id` varchar(50) DEFAULT NULL,
-  `client_name` varchar(150) DEFAULT NULL,
-  `staff_name` varchar(150) DEFAULT NULL,
-  `executive_name` varchar(150) DEFAULT '',
-  `call_sequence` int DEFAULT '1',
-  `name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `location` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `complaint` text COLLATE utf8mb4_unicode_ci,
-  `time_spent` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `km` decimal(10,2) DEFAULT NULL,
-  `report_date` date DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `start_time` time DEFAULT NULL,
-  `end_time` time DEFAULT NULL,
-  `assigned_time` int DEFAULT '30',
-  `actual_duration` int DEFAULT '0',
-  `is_exceeded` tinyint(1) DEFAULT '0',
-  `remarks` text COLLATE utf8mb4_unicode_ci,
-  `technician` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `sales_person` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_by` int DEFAULT NULL,
-  `amount_collected` decimal(10,2) DEFAULT '0.00',
-  `payment_mode` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `gst_number` varchar(50) DEFAULT NULL,
-  `company_name` varchar(150) DEFAULT NULL,
+  -- identity
+  `id`                int NOT NULL AUTO_INCREMENT,
+  `session_id`        varchar(50)   DEFAULT NULL,
+  `call_sequence`     int           DEFAULT 1,
+  `created_by`        int           DEFAULT NULL,
+  `created_at`        timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+
+  -- customer / contact (Form 1)
+  `customer_id`       int           DEFAULT NULL,
+  `customer_name`     varchar(150)  DEFAULT NULL,
+  `client_name`       varchar(150)  DEFAULT NULL,
+  `name`              varchar(150)  NOT NULL DEFAULT '',
+  `mobile_number`     varchar(20)   DEFAULT NULL,
+  `phone`             varchar(20)   DEFAULT NULL,
+  `email`             varchar(150)  DEFAULT NULL,
+  `location_city`     varchar(150)  DEFAULT NULL,
+  `location`          varchar(150)  DEFAULT NULL,
+  `gst_number`        varchar(50)   DEFAULT NULL,
+  `company_name`      varchar(150)  DEFAULT NULL,
+
+  -- staff / engineer (Form 2)
+  `staff_name`        varchar(150)  DEFAULT NULL,
+  `technician`        varchar(150)  DEFAULT NULL,
+  `executive_name`    varchar(150)  DEFAULT '',
+  `sales_person`      varchar(150)  DEFAULT NULL,
+
+  -- call classification (Form 1)
+  `call_type`         varchar(50)   DEFAULT NULL,
+  `service_type`      varchar(50)   DEFAULT NULL,
+  `contract_title`    varchar(150)  DEFAULT NULL,
+  `call_referrer`     varchar(150)  DEFAULT NULL,
+  `call_details`      text          DEFAULT NULL,
+  `complaint`         text          DEFAULT NULL,
+  `description`       text          DEFAULT NULL,
+  `priority`          varchar(50)   DEFAULT 'Medium',
+  `status`            varchar(50)   DEFAULT 'Pending',
+  `report_date`       date          DEFAULT NULL,
+
+  -- time & duration (Form 1)
+  `start_time`        time          DEFAULT NULL,
+  `end_time`          time          DEFAULT NULL,
+  `assigned_time`     int           DEFAULT 30,
+  `actual_duration`   int           DEFAULT 0,
+  `duration_limit`    int           DEFAULT 30,
+  `is_exceeded`       tinyint(1)    DEFAULT 0,
+
+  -- travel & expenses (Form 1 + Form 2)
+  `km`                decimal(10,2) DEFAULT NULL,
+  `petrol_charges`    decimal(10,2) DEFAULT 0.00,
+  `spare_parts_price` decimal(10,2) DEFAULT 0.00,
+  `labour_charges`    decimal(10,2) DEFAULT 0.00,
+  `total_expenses`    decimal(10,2) DEFAULT 0.00,
+
+  -- payment (Form 2)
+  `payment_type`      varchar(50)   DEFAULT NULL,
+  `invoice_value`     decimal(10,2) DEFAULT 0.00,
+  `payment_status`    varchar(50)   DEFAULT 'Pending',
+  `amount_collected`  decimal(10,2) DEFAULT 0.00,
+  `payment_mode`      varchar(50)   DEFAULT NULL,
+
+  -- step 2 / completion
+  `remarks`           text          DEFAULT NULL,
+  `step2_completed`   tinyint(1)    DEFAULT 0,
+  `completed_at`      datetime      DEFAULT NULL,
+
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE IF NOT EXISTS `clientinvoices` (
   `id` int NOT NULL AUTO_INCREMENT,

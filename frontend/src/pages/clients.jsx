@@ -381,77 +381,125 @@ const Clients = () => {
 
       {/* Client Details Modal */}
       {showDetailsModal && selectedClientDetails && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="rounded-xl shadow-xl w-full max-w-lg" style={{ background: N.canvas }}>
-            <div className="flex justify-between items-center p-4 border-b" style={{ borderColor: N.hairline }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg" style={{ background: N.lavender, color: N.primary }}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden border border-gray-200 animate-scale-in">
+            {/* Header */}
+            <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-xl" style={{ background: N.lavender, color: N.primary }}>
                   {(selectedClientDetails.name || "?").charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-semibold" style={{ color: N.ink }}>{selectedClientDetails.name}</h3>
-                  <p className="text-xs" style={{ color: N.stone }}>Client #{selectedClientDetails.id}</p>
+                  <h2 className="text-xl font-bold font-display text-gray-900">{selectedClientDetails.name}</h2>
+                  <p className="text-sm font-mono text-gray-500">Client ID: #{String(selectedClientDetails.id).padStart(3, '0')} &nbsp;·&nbsp; {getStatusBadge(selectedClientDetails.client_status)}</p>
                 </div>
               </div>
-              <button onClick={() => setShowDetailsModal(false)} style={{ color: N.steel }}><X size={20} /></button>
+              <button onClick={() => setShowDetailsModal(false)} className="p-2 rounded-lg hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors">
+                <X size={20} />
+              </button>
             </div>
-            <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: "Phone", value: selectedClientDetails.phone, icon: <Phone size={14} /> },
-                  { label: "Email", value: selectedClientDetails.email || "-", icon: <Mail size={14} /> },
-                  { label: "Company", value: selectedClientDetails.company_name || "-", icon: <Building size={14} /> },
-                  { label: "City", value: selectedClientDetails.address || selectedClientDetails.lead_city || "-", icon: <MapPin size={14} /> },
-                ].map(item => (
-                  <div key={item.label}>
-                    <label className="text-xs font-medium flex items-center gap-1" style={{ color: N.stone }}>{item.icon} {item.label}</label>
-                    <p className="text-sm font-medium mt-0.5" style={{ color: N.ink }}>{item.value}</p>
-                  </div>
-                ))}
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: "Service", value: selectedClientDetails.service || "-" },
-                  { label: "GST Number", value: selectedClientDetails.gst_number || "-" },
-                  { label: "Source", value: getSourceBadge(selectedClientDetails.original_lead_type) },
-                  { label: "Status", value: getStatusBadge(selectedClientDetails.client_status) },
-                ].map(item => (
-                  <div key={item.label}>
-                    <label className="text-xs font-medium" style={{ color: N.stone }}>{item.label}</label>
-                    <p className="text-sm mt-0.5">{item.value}</p>
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Basic Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                  <Phone size={18} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Primary Phone</p>
+                    <p className="text-sm font-semibold mt-1 text-gray-900">{selectedClientDetails.phone || "—"}</p>
                   </div>
-                ))}
-              </div>
-
-              <div className="border-t pt-4">
-                <label className="text-xs font-medium" style={{ color: N.stone }}>Conversion Details</label>
-                <div className="grid grid-cols-2 gap-3 mt-1">
-                  <div><span className="text-xs" style={{ color: N.steel }}>Lead ID: </span><span className="text-xs font-mono" style={{ color: N.charcoal }}>{selectedClientDetails.original_lead_id ? `${selectedClientDetails.original_lead_type?.toUpperCase()}-${selectedClientDetails.original_lead_id}` : "Direct Client"}</span></div>
-                  <div><span className="text-xs" style={{ color: N.steel }}>Created By: </span><span className="text-xs" style={{ color: N.charcoal }}>{selectedClientDetails.creator_name || "Admin"}</span></div>
-                  <div><span className="text-xs" style={{ color: N.steel }}>Created Date: </span><span className="text-xs" style={{ color: N.charcoal }}>{selectedClientDetails.created_at ? new Date(selectedClientDetails.created_at).toLocaleDateString("en-IN") : "-"}</span></div>
-                  {selectedClientDetails.original_lead_type && (
-                    <div><span className="text-xs" style={{ color: N.steel }}>Source: </span><span className="text-xs" style={{ color: N.charcoal }}>{selectedClientDetails.original_lead_type.charAt(0).toUpperCase() + selectedClientDetails.original_lead_type.slice(1)}</span></div>
-                  )}
+                </div>
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                  <Mail size={18} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Email Address</p>
+                    <p className="text-sm font-semibold mt-1 text-gray-900">{selectedClientDetails.email || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                  <Building size={18} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Company / Organization</p>
+                    <p className="text-sm font-semibold mt-1 text-gray-900">{selectedClientDetails.company_name || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                  <MapPin size={18} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Location</p>
+                    <p className="text-sm font-semibold mt-1 text-gray-900">
+                      {[selectedClientDetails.address, selectedClientDetails.city, selectedClientDetails.state, selectedClientDetails.pincode].filter(Boolean).join(", ") || selectedClientDetails.lead_city || "—"}
+                    </p>
+                  </div>
                 </div>
               </div>
 
+              {/* Service & Tax */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/50">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-blue-600 mb-1">Service Interest</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedClientDetails.service || "—"}</p>
+                </div>
+                <div className="p-4 rounded-xl border border-purple-100 bg-purple-50/50">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-purple-600 mb-1">GST Number</p>
+                  <p className="text-sm font-mono text-gray-900">{selectedClientDetails.gst_number || "—"}</p>
+                </div>
+              </div>
+
+              {/* Conversion & Staff Details */}
+              <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-5">
+                <h3 className="text-xs font-black uppercase tracking-widest text-amber-800 mb-4 flex items-center gap-2">
+                  <FileSignature size={16} /> Origin & Assignment Details
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-500 uppercase">Source Type</p>
+                    <div className="mt-1">{getSourceBadge(selectedClientDetails.original_lead_type)}</div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-500 uppercase">Lead ID</p>
+                    <p className="text-sm font-mono text-gray-900 mt-1">{selectedClientDetails.original_lead_id ? `${selectedClientDetails.original_lead_type?.toUpperCase()}-${selectedClientDetails.original_lead_id}` : "Direct"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-500 uppercase">Converted / Created By</p>
+                    <p className="text-sm font-semibold text-gray-900 mt-1 flex items-center gap-1">
+                      <User size={14} className="text-gray-400" /> {selectedClientDetails.creator_name || "Admin"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-500 uppercase">Assigned Staff</p>
+                    <p className="text-sm font-semibold text-gray-900 mt-1 flex items-center gap-1">
+                      <User size={14} className="text-amber-500" /> {selectedClientDetails.assigned_staff_name || "Unassigned"}
+                    </p>
+                    {selectedClientDetails.assigned_staff_role && (
+                      <p className="text-[10px] text-gray-500 mt-0.5">{selectedClientDetails.assigned_staff_role}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 pt-3 border-t border-amber-200/50">
+                  <p className="text-[11px] text-gray-500">Created Date: {selectedClientDetails.created_at ? new Date(selectedClientDetails.created_at).toLocaleString("en-IN") : "—"}</p>
+                </div>
+              </div>
+
+              {/* Notes */}
               {selectedClientDetails.notes && (
-                <div className="border-t pt-4">
-                  <label className="text-xs font-medium" style={{ color: N.stone }}>Notes</label>
-                  <p className="text-sm mt-1 whitespace-pre-wrap" style={{ color: N.charcoal }}>{selectedClientDetails.notes}</p>
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">Remarks / Notes</p>
+                  <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedClientDetails.notes}</p>
                 </div>
               )}
             </div>
-            <div className="p-4 border-t flex gap-2" style={{ borderColor: N.hairline }}>
+
+            {/* Footer */}
+            <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
               {canEditDelete && (
-              <button onClick={() => { setShowDetailsModal(false); openEditModal(selectedClientDetails); }}
-                className="flex-1 py-2 rounded-lg text-sm font-medium text-white" style={{ background: N.orange }}>
-                Edit
-              </button>
+                <button onClick={() => { setShowDetailsModal(false); openEditModal(selectedClientDetails); }}
+                  className="px-6 py-2.5 rounded-lg text-sm font-bold text-white transition-all shadow-sm hover:shadow-md" style={{ background: N.primary }}>
+                  Edit Client
+                </button>
               )}
               <button onClick={() => setShowDetailsModal(false)}
-                className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ background: N.surface, color: N.slate }}>
+                className="px-6 py-2.5 rounded-lg text-sm font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition-all">
                 Close
               </button>
             </div>

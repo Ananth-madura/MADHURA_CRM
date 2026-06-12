@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import "../Styles/tailwind.css";
-import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench, Users } from "lucide-react";
+import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench, Users, Layers } from "lucide-react";
 import axios from "axios";
 import socket from "../socket/socket";
 import { API } from "../config";
@@ -194,137 +194,181 @@ const DetailModal = ({ call, onClose, formatCurrency }) => {
   const pc = PRIORITY_COLORS[call.priority] || PRIORITY_COLORS.Medium;
   const psc = PAYMENT_STATUS_COLORS[call.payment_status] || PAYMENT_STATUS_COLORS.Pending;
 
-  const DetailItem = ({ icon: Icon, label, value, valueColor }) => (
-    <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-      {Icon && <Icon size={16} className="text-primary mt-0.5" />}
-      <div className="flex-1">
+  const DetailItem = ({ icon: Icon, label, value, valueColor, badge, badgeBg, badgeText, badgeBorder }) => (
+    <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/40 border border-border/50 hover:bg-muted/60 transition-colors">
+      {Icon && <Icon size={15} className="text-primary mt-0.5 shrink-0" />}
+      <div className="flex-1 min-w-0">
         <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium mt-0.5" style={{ color: valueColor || "hsl(var(--foreground))" }}>{value || "—"}</p>
+        {badge ? (
+          <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: badgeBg, color: badgeText, border: `1px solid ${badgeBorder}` }}>
+            {value || "—"}
+          </span>
+        ) : (
+          <p className="text-sm font-semibold mt-0.5 truncate" style={{ color: valueColor || "hsl(var(--foreground))" }}>{value || "—"}</p>
+        )}
       </div>
     </div>
   );
 
+  const SectionHeader = ({ title, color = "text-primary" }) => (
+    <div className={`flex items-center gap-2 mb-3 pb-2 border-b border-border`}>
+      <h3 className={`text-xs font-black uppercase tracking-widest ${color}`}>{title}</h3>
+    </div>
+  );
+
+  const totalExpenses = (parseFloat(call.petrol_charges) || 0) + (parseFloat(call.spare_parts_price) || 0) + (parseFloat(call.labour_charges) || 0);
+  const displayTotal = call.total_expenses || totalExpenses;
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl max-h-[90vh] overflow-y-auto border border-border animate-scale-in" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b border-border px-6 py-4 flex justify-between items-center z-10">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-6 overflow-y-auto animate-fade-in" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl border border-border animate-scale-in mb-6" onClick={e => e.stopPropagation()}>
+
+        {/* ── Header ── */}
+        <div className="sticky top-0 bg-white border-b border-border px-6 py-4 flex justify-between items-center z-10 rounded-t-2xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary/10">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/10">
               <FileText size={18} className="text-primary" />
             </div>
             <div>
-              <h2 className="text-lg font-bold font-display text-foreground">Call Report Details</h2>
-              <p className="text-xs font-mono text-primary">Call #{call.call_sequence || 1} ID: {String(call.id).padStart(3, '0')}</p>
+              <h2 className="text-lg font-black font-display text-foreground">Call Report Details</h2>
+              <p className="text-[11px] font-mono text-primary">Call #{call.call_sequence || 1} &nbsp;·&nbsp; ID: {String(call.id).padStart(3, '0')} &nbsp;·&nbsp; {safeFormatDate(call.report_date || call.created_at)}</p>
             </div>
           </div>
-          <X className="cursor-pointer hover:text-destructive transition-colors text-muted-foreground" onClick={onClose} />
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 rounded-full text-xs font-bold border" style={{ background: sc.bg, color: sc.text, borderColor: sc.border }}>{call.status || "Pending"}</span>
+            <span className="px-3 py-1 rounded-full text-xs font-bold border" style={{ background: pc.bg, color: pc.text, borderColor: pc.border }}>{call.priority || "Medium"}</span>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 space-y-5">
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Customer Information</h3>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-               <DetailItem icon={User} label="Customer Name" value={call.customer || call.client_name} />
-               <DetailItem icon={PhoneIcon} label="Mobile" value={call.mobile_number || call.phone} />
-               <DetailItem icon={Mail} label="Email" value={call.email} />
-               <DetailItem icon={MapPin} label="Location" value={call.location_city || call.location} />
-               <DetailItem icon={FileText} label="GST Number" value={call.gst_number || "—"} />
-               <DetailItem icon={FileText} label="Company Name" value={call.company_name || "—"} />
-             </div>
+        <div className="p-6 space-y-6">
+
+          {/* ── FORM 1: Customer Details ── */}
+          <div className="rounded-xl border border-primary/20 bg-primary/3 p-4">
+            <SectionHeader title="① Customer Details (Form 1)" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <DetailItem icon={User} label="Customer Name" value={call.customer_name || call.client_name || call.name} />
+              <DetailItem icon={PhoneIcon} label="Mobile Number" value={call.mobile_number || call.phone} />
+              <DetailItem icon={Mail} label="Email" value={call.email} />
+              <DetailItem icon={MapPin} label="Location / City" value={call.location_city || call.location} />
+              <DetailItem icon={FileText} label="Company Name" value={call.company_name} />
+              <DetailItem icon={FileText} label="GST Number" value={call.gst_number} />
+            </div>
           </div>
 
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Call Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* ── FORM 1: Call Classification ── */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-4">
+            <SectionHeader title="① Call Classification (Form 1)" color="text-amber-700" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <DetailItem icon={Tag} label="Call Type" value={call.call_type} />
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                <Tag size={16} className="text-primary mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Priority</p>
-                  <Badge bg={pc.bg} text={pc.text} border={pc.border}>{call.priority || "—"}</Badge>
-                </div>
-              </div>
-              <DetailItem icon={Wrench} label="Engineer" value={call.engineer || call.staff_name} />
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                <Calendar size={16} className="text-primary mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Status</p>
-                  <Badge bg={sc.bg} text={sc.text} border={sc.border}>{call.status || "—"}</Badge>
-                </div>
-              </div>
-              <DetailItem icon={MessageSquare} label="Call Referrer" value={call.call_referrer} />
+              <DetailItem icon={Tag} label="Contract Title" value={call.contract_title} />
+              <DetailItem icon={Phone} label="Call Referrer" value={call.call_referrer} />
+              <DetailItem icon={Tag} label="Priority" value={call.priority} badge badgeBg={pc.bg} badgeText={pc.text} badgeBorder={pc.border} />
+              <DetailItem icon={CheckCircle} label="Status" value={call.status} badge badgeBg={sc.bg} badgeText={sc.text} badgeBorder={sc.border} />
               <DetailItem icon={Calendar} label="Report Date" value={safeFormatDate(call.report_date || call.created_at)} />
             </div>
+            {(call.call_details || call.complaint || call.description) && (
+              <div className="mt-3 p-3 rounded-lg bg-white border border-amber-100">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Call Details / Issue Description</p>
+                <p className="text-sm text-foreground leading-relaxed">{call.call_details || call.complaint || call.description}</p>
+              </div>
+            )}
           </div>
 
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Description</h3>
-            <div className="p-3 rounded-lg bg-muted/50">
-              <p className="text-sm text-muted-foreground">{call.call_details || call.complaint || call.description || "—"}</p>
+          {/* ── FORM 2: Engineer Assignment ── */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4">
+            <SectionHeader title="② Engineer Assignment (Form 2)" color="text-blue-700" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <DetailItem icon={User} label="Engineer / Technician" value={call.staff_name || call.technician || call.engineer} />
+              <DetailItem icon={User} label="Executive / Referrer" value={call.executive_name || call.call_referrer} />
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/40 border border-border/50">
+                <CheckCircle size={15} className="text-blue-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Step 2 Status</p>
+                  <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${call.step2_completed ? "bg-green-100 text-green-700 border border-green-200" : "bg-blue-100 text-blue-700 border border-blue-200"}`}>
+                    {call.step2_completed ? "✓ Complete" : "Basic (Pending)"}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Time & Duration</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* ── FORM 2: Time & Travel ── */}
+          <div className="rounded-xl border border-green-200 bg-green-50/30 p-4">
+            <SectionHeader title="② Time & Travel (Form 2)" color="text-green-700" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <DetailItem icon={Clock} label="Start Time" value={formatTimeOnly(call.start_time)} />
               <DetailItem icon={Clock} label="End Time" value={formatTimeOnly(call.end_time)} />
-              <div className={`p-3 rounded-lg border ${call.is_exceeded ? "bg-destructive/5 border-destructive/20" : "bg-accent/5 border-accent/20"}`}>
-                <Clock size={16} className={`mt-0.5 ${call.is_exceeded ? "text-destructive" : "text-accent"}`} />
-                <div className="flex-1">
+              <div className={`flex items-start gap-3 p-3 rounded-xl border ${call.is_exceeded ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
+                <Clock size={15} className={`mt-0.5 ${call.is_exceeded ? "text-red-600" : "text-green-600"}`} />
+                <div>
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Duration</p>
-                  <p className={`text-sm font-bold mt-0.5 ${call.is_exceeded ? "text-destructive" : "text-accent"}`}>{call.actual_duration || 0} min</p>
+                  <p className={`text-sm font-bold mt-0.5 ${call.is_exceeded ? "text-red-600" : "text-green-700"}`}>{call.actual_duration || 0} min</p>
                   <p className="text-[10px] text-muted-foreground">Limit: {call.duration_limit || call.assigned_time || 30} min</p>
                   {call.is_exceeded && (
-                    <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-destructive">
-                      <AlertTriangle size={10} /> Overflow: +{call.actual_duration - (call.duration_limit || call.assigned_time || 30)} min
+                    <span className="text-[10px] font-bold text-red-600 flex items-center gap-1 mt-0.5">
+                      <AlertTriangle size={9} /> +{(call.actual_duration || 0) - (call.duration_limit || call.assigned_time || 30)} min over
                     </span>
                   )}
                 </div>
               </div>
+              <DetailItem icon={MapPin} label="Kilometers (KM)" value={call.km != null && call.km !== "" ? `${call.km} km` : "0 km"} />
             </div>
           </div>
 
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Expenses</h3>
+          {/* ── FORM 2: Expenses ── */}
+          <div className="rounded-xl border border-orange-200 bg-orange-50/30 p-4">
+            <SectionHeader title="② Expenses (Form 2)" color="text-orange-700" />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <DetailItem icon={MapPin} label="Kilometers" value={(call.km !== null && call.km !== undefined && call.km !== "") ? `${call.km} km` : "0 km"} />
               <DetailItem icon={DollarIcon} label="Petrol Charges" value={formatCurrency(call.petrol_charges)} />
               <DetailItem icon={DollarIcon} label="Spare Parts" value={formatCurrency(call.spare_parts_price)} />
               <DetailItem icon={DollarIcon} label="Labour Charges" value={formatCurrency(call.labour_charges)} />
-            </div>
-            <div className="mt-3 p-3 rounded-lg flex justify-between items-center bg-primary/10 border border-primary/20">
-              <span className="text-xs font-bold text-primary">Total Expenses</span>
-              <span className="text-lg font-bold font-display text-primary">{formatCurrency(call.total_expenses)}</span>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Payment</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <DetailItem icon={DollarIcon} label="Invoice Value" value={formatCurrency(call.invoice_value)} />
-              <DetailItem icon={CreditCard} label="Payment Type" value={call.payment_type} />
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                <CreditCard size={16} className="text-primary mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Payment Status</p>
-                  <Badge bg={psc.bg} text={psc.text} border={psc.border}>{call.payment_status || "—"}</Badge>
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-orange-100 border border-orange-300">
+                <DollarIcon size={15} className="text-orange-700 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Total Expenses</p>
+                  <p className="text-lg font-black text-orange-800 font-display">{formatCurrency(displayTotal)}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {call.remarks && (
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wide mb-3 text-primary">Remarks</h3>
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm text-muted-foreground">{call.remarks}</p>
+          {/* ── FORM 2: Payment ── */}
+          <div className="rounded-xl border border-purple-200 bg-purple-50/30 p-4">
+            <SectionHeader title="② Payment (Form 2)" color="text-purple-700" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-100 border border-purple-300 md:col-span-1">
+                <DollarIcon size={15} className="text-purple-700 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700">Invoice Value</p>
+                  <p className="text-xl font-black text-purple-900 font-display">{formatCurrency(call.invoice_value)}</p>
+                </div>
               </div>
+              <DetailItem icon={CreditCard} label="Payment Type" value={call.payment_type || call.payment_mode} />
+              <DetailItem icon={CheckCircle} label="Payment Status" value={call.payment_status} badge badgeBg={psc.bg} badgeText={psc.text} badgeBorder={psc.border} />
+            </div>
+          </div>
+
+          {/* ── Remarks ── */}
+          {call.remarks && (
+            <div className="p-4 rounded-xl bg-muted/40 border border-border">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">Remarks / Notes</p>
+              <p className="text-sm text-foreground leading-relaxed">{call.remarks}</p>
             </div>
           )}
+
+          {/* ── Footer metadata ── */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[11px] text-muted-foreground border-t border-border pt-4">
+            <div><span className="font-bold">Session ID:</span> {call.session_id || "—"}</div>
+            <div><span className="font-bold">Created:</span> {safeFormatDate(call.created_at)}</div>
+            <div><span className="font-bold">Completed At:</span> {call.completed_at ? safeFormatDate(call.completed_at) : "—"}</div>
+          </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-border px-6 py-4 flex justify-end gap-3">
+        {/* ── Footer ── */}
+        <div className="sticky bottom-0 bg-white border-t border-border px-6 py-4 flex justify-end gap-3 rounded-b-2xl">
           <button onClick={onClose} className="px-6 py-2.5 border border-border rounded-lg text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-colors">Close</button>
         </div>
       </div>
@@ -364,7 +408,7 @@ const CallReport = () => {
   });
 
   const [step2Form, setStep2Form] = useState({
-    engineer: "", start_time: "", end_time: "", km: "",
+    engineer: "", start_time: "", end_time: "", km: "", duration: "",
     petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
     status: "", invoice_value: "",
     payment_status: "Pending",
@@ -631,7 +675,8 @@ const CallReport = () => {
   const calculateStep2Duration = () => {
     if (!step2Form.start_time || !step2Form.end_time) return { actual: 0, limit: 0, exceeded: false, overflow: 0 };
     const currentCall = calls.find(c => c.id === step2CallId);
-    const limit = currentCall?.duration_limit || currentCall?.assigned_time || 30;
+    const durMap = { "1hr": 60, "1.5hr": 90, "2hr": 120 };
+    const limit = (step2Form.duration && durMap[step2Form.duration]) || currentCall?.duration_limit || currentCall?.assigned_time || 30;
     const [sh, sm] = step2Form.start_time.split(":").map(Number);
     const [eh, em] = step2Form.end_time.split(":").map(Number);
     const startMins = sh * 60 + sm;
@@ -656,7 +701,7 @@ const CallReport = () => {
       step2_completed: 0
     });
     setStep2Form({
-      engineer: "", start_time: "", end_time: "", km: "",
+      engineer: "", start_time: "", end_time: "", km: "", duration: "",
       petrol_charges: "", spare_parts_price: "", labour_charges: "", remarks: "",
       status: "", invoice_value: "",
       payment_status: "Pending",
@@ -724,11 +769,14 @@ const CallReport = () => {
 
   const openStep2Form = async (call) => {
     setStep2CallId(call.id);
+    const durLimit = call.duration_limit || call.assigned_time || 30;
+    const durStr = durLimit === 60 ? "1hr" : durLimit === 90 ? "1.5hr" : durLimit === 120 ? "2hr" : "";
     setStep2Form({
       engineer: call.engineer || call.staff_name || "",
       start_time: call.start_time || "",
       end_time: call.end_time || "",
       km: call.km || "",
+      duration: durStr,
       petrol_charges: call.petrol_charges || "",
       spare_parts_price: call.spare_parts_price || "",
       labour_charges: call.labour_charges || "",
@@ -752,14 +800,9 @@ const CallReport = () => {
     if (!form.priority) return alert("Priority is required");
     if (!form.call_referrer) return alert("Call referrer is required");
     if (!form.status) return alert("Status is required");
-    if (!form.payment_type) return alert("Payment type is required");
-    if (form.invoice_value === "" || isNaN(parseFloat(form.invoice_value))) return alert("Invoice value is required");
-    if (!form.payment_status) return alert("Payment status is required");
 
-    let finalPaymentStatus = form.payment_status;
-    let finalStatus = form.status;
-
-    if (finalStatus === "Closed") {
+    // Closing a call requires Step 2 to be filled
+    if (form.status === "Closed") {
       const hasEngineer = !!(form.engineer);
       const isStep2Completed = form.step2_completed || hasEngineer;
       if (!isStep2Completed) {
@@ -767,36 +810,15 @@ const CallReport = () => {
       }
     }
 
-    if (finalStatus === "Closed" && finalPaymentStatus !== "Collected") {
-      const confirmCollect = window.confirm("Cannot close call unless payment is Collected. Would you like to mark it as Collected now?");
-      if (confirmCollect) {
-        finalPaymentStatus = "Collected";
-        setForm(prev => ({ ...prev, payment_status: "Collected" }));
-      } else {
-        return;
-      }
-    }
-
-    if (finalPaymentStatus === "Pending" && finalStatus === "Closed") {
-      const confirmStatus = window.confirm("A closed call must have its payment marked as 'Collected'. Do you want to set the call status to 'Pending'?");
-      if (confirmStatus) {
-        finalStatus = "Pending";
-        setForm(prev => ({ ...prev, status: "Pending" }));
-      } else {
-        return;
-      }
-    }
-
     const durVal = calculateDuration();
     if (durVal.exceeded && !form.remarks?.trim()) {
-      return alert(`Duration exceeded by ${durVal.overflow} min. Please specify the reason why the time was exceeded in the remarks field!`);
+      return alert(`Duration exceeded by ${durVal.overflow} min. Please specify the reason in the remarks!`);
     }
 
     try {
       const payload = {
         ...form,
-        status: finalStatus,
-        payment_status: finalPaymentStatus,
+        status: form.status,
         invoice_value: parseFloat(form.invoice_value) || 0,
         duration_limit: form.duration === "1hr" ? 60 : form.duration === "1.5hr" ? 90 : form.duration === "2hr" ? 120 : 30,
         assigned_time: form.duration === "1hr" ? 60 : form.duration === "1.5hr" ? 90 : form.duration === "2hr" ? 120 : 30,
@@ -851,12 +873,15 @@ const CallReport = () => {
     }
 
     try {
+      const durLimit = step2Form.duration === "1hr" ? 60 : step2Form.duration === "1.5hr" ? 90 : step2Form.duration === "2hr" ? 120 : 30;
       const payload = {
         engineer: step2Form.engineer,
         staff_name: step2Form.engineer,
         start_time: step2Form.start_time,
         end_time: step2Form.end_time,
         km: step2Form.km,
+        duration_limit: durLimit,
+        assigned_time: durLimit,
         petrol_charges: step2Form.petrol_charges,
         spare_parts_price: step2Form.spare_parts_price,
         labour_charges: step2Form.labour_charges,
@@ -1003,6 +1028,7 @@ const CallReport = () => {
     closed: calls.filter(c => c.status === "Closed").length,
     pending: calls.filter(c => c.status === "Pending").length,
     live: calls.filter(c => c.status === "Live").length,
+    observation: calls.filter(c => c.status === "Observation").length,
     exceeded: calls.filter(c => c.is_exceeded).length,
     step2Complete: calls.filter(c => c.step2_completed).length,
     step2Pending: calls.filter(c => !c.step2_completed).length,
@@ -1273,10 +1299,10 @@ const CallReport = () => {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
             {[
-              { label: "Total Calls", value: stats.total, icon: Phone, color: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.1)" },
-              { label: "Closed", value: stats.closed, icon: CheckCircle, color: "hsl(var(--accent))", bg: "hsl(var(--accent) / 0.1)" },
+              { label: "Total Active", value: stats.total, icon: Phone, color: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.1)" },
               { label: "Pending", value: stats.pending, icon: Clock, color: "hsl(38 92% 50%)", bg: "hsl(38 92% 50% / 0.1)" },
               { label: "Live", value: stats.live, icon: AlertCircle, color: "hsl(217 91% 60%)", bg: "hsl(217 91% 60% / 0.1)" },
+              { label: "Observation", value: stats.observation, icon: Activity, color: "hsl(271 81% 56%)", bg: "hsl(271 81% 56% / 0.1)" },
               { label: "Exceeded", value: stats.exceeded, icon: AlertTriangle, color: "hsl(var(--destructive))", bg: "hsl(var(--destructive) / 0.1)" },
               { label: "Complete", value: stats.step2Complete, icon: CheckCircle, color: "hsl(var(--accent))", bg: "hsl(var(--accent) / 0.1)" },
               { label: "Basic Only", value: stats.step2Pending, icon: Clock, color: "hsl(38 92% 50%)", bg: "hsl(38 92% 50% / 0.1)" },
@@ -1322,6 +1348,9 @@ const CallReport = () => {
           </div>
 
           <div className="bg-card rounded-xl border border-border overflow-hidden">
+            <div className="px-4 pt-3 pb-1 text-[10px] text-muted-foreground flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full text-amber-700 font-semibold">👆 Double-click any call row to open the details form (Step 2)</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
@@ -1381,7 +1410,12 @@ const CallReport = () => {
                             const dur = c.actual_duration || 0;
                             const isComplete = c.step2_completed;
                             return (
-                              <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                              <tr
+                                key={c.id}
+                                className="border-b border-border hover:bg-amber-50/40 transition-colors cursor-pointer select-none"
+                                onDoubleClick={() => openStep2Form(c)}
+                                title="Double-click to open Step 2 details form"
+                              >
                                 <td className="px-4 py-3 font-mono font-bold text-xs text-primary">
                                   <div className="text-primary font-black text-sm">Call #{c.call_sequence || 1}</div>
                                   <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">ID: {String(c.id).padStart(3, '0')}</div>
@@ -1400,6 +1434,8 @@ const CallReport = () => {
                                     <select
                                       value={c.status || "Pending"}
                                       onChange={(e) => handleInlineUpdate(c.id, { status: e.target.value })}
+                                      onDoubleClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => e.stopPropagation()}
                                       className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
                                       style={{
                                         background: sc.bg,
@@ -1467,6 +1503,8 @@ const CallReport = () => {
                                     <select
                                       value={c.payment_status || "Pending"}
                                       onChange={(e) => handleInlineUpdate(c.id, { payment_status: e.target.value })}
+                                      onDoubleClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => e.stopPropagation()}
                                       className="px-2 py-1 text-[11px] font-bold rounded-full border outline-none cursor-pointer shadow-sm transition-all focus:ring-1 focus:ring-primary"
                                       style={{
                                         background: psc.bg,
@@ -1648,6 +1686,7 @@ const CallReport = () => {
                     <th className="px-4 py-3 text-center w-[120px]">Completed At</th>
                   </tr>
                 </thead>
+                <caption className="text-[10px] text-muted-foreground pb-1 caption-bottom">Double-click any row to view full call details</caption>
                 <tbody>
                   {historyLoading ? (
                     <tr><td colSpan="8" className="text-center py-12 text-muted-foreground">Loading...</td></tr>
@@ -1682,7 +1721,7 @@ const CallReport = () => {
                             </td>
                           </tr>
                           {group.calls.map(c => (
-                            <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors">
+                            <tr key={c.id} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onDoubleClick={() => setDetailCall(c)} title="Double-click to view full details">
                               <td className="px-4 py-3 font-mono text-xs font-bold text-primary">#{String(c.id).padStart(3,'0')}</td>
                               <td className="px-4 py-3">
                                 <p className="font-semibold text-sm text-foreground">{c.customer_name || c.client_name || "—"}</p>
@@ -2111,56 +2150,6 @@ const CallReport = () => {
                 </FormField>
               </div>
 
-              <SectionDivider icon={Clock} title="Time & Duration" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <FormField label="Start Time">
-                  <input type="time" value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} className={inputBase} />
-                </FormField>
-                <FormField label="End Time">
-                  <input type="time" value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} className={inputBase} />
-                </FormField>
-                {duration.actual > 0 && (
-                  <div className={`p-3 rounded-lg border flex flex-col justify-center ${duration.exceeded ? "bg-destructive/5 border-destructive/20" : "bg-accent/5 border-accent/20"}`}>
-                    <span className={`text-xs font-semibold ${duration.exceeded ? "text-destructive" : "text-accent"}`}>Duration: {duration.actual} min</span>
-                    <span className="text-[10px] text-muted-foreground">Limit: {duration.limit} min</span>
-                    {duration.exceeded && (
-                      <span className="text-[10px] font-bold text-destructive flex items-center gap-1 mt-1">
-                        <AlertTriangle size={10} /> Overflow: +{duration.overflow} min
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <SectionDivider icon={DollarSign} title="Expenses & Payment" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <FormField label="Kilometers (KM)" icon={MapPin}>
-                  <input type="number" value={form.km} onChange={e => setForm({ ...form, km: e.target.value })} className={inputBase} placeholder="0" min="0" step="0.1" />
-                </FormField>
-                <FormField label="Petrol Charges (₹)">
-                  <input type="number" value={form.petrol_charges} onChange={e => setForm({ ...form, petrol_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
-                </FormField>
-                <FormField label="Spare Parts (₹)">
-                  <input type="number" value={form.spare_parts_price} onChange={e => setForm({ ...form, spare_parts_price: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
-                </FormField>
-                <FormField label="Labour Charges (₹)">
-                  <input type="number" value={form.labour_charges} onChange={e => setForm({ ...form, labour_charges: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" />
-                </FormField>
-                <FormField label="Payment Type" icon={CreditCard} required>
-                  <SearchableSelect options={PAYMENT_TYPE_OPTIONS} value={form.payment_type} onChange={v => setForm({ ...form, payment_type: v })} placeholder="Select Payment Type" />
-                </FormField>
-                <FormField label="Invoice Value (₹)" icon={DollarSign} required>
-                  <input type="number" value={form.invoice_value} onChange={e => setForm({ ...form, invoice_value: e.target.value })} className={inputBase} placeholder="0.00" min="0" step="0.01" required />
-                </FormField>
-                <FormField label="Payment Status" icon={CheckCircle} required>
-                  <SearchableSelect options={PAYMENT_STATUS_OPTIONS} value={form.payment_status} onChange={v => setForm({ ...form, payment_status: v })} placeholder="Select Payment Status" />
-                </FormField>
-              </div>
-
-              <FormField label="Remarks" icon={MessageSquare}>
-                <textarea value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} className={`${inputBase} resize-none`} placeholder="Additional notes" rows={2} />
-              </FormField>
-
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-border">
                 <button type="submit" className="flex-1 py-3 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-all hover:opacity-90 active:scale-[0.98] shadow-md">
                   {isEdit ? "Update Call" : "Save Call"}
@@ -2173,8 +2162,8 @@ const CallReport = () => {
         </div>
       )}
 
-      {/* Step 2 - Detail Form — only for editors */}
-      {canEditDelete && step2ModalOpen && (
+      {/* Step 2 - Detail Form */}
+      {step2ModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center overflow-y-auto pt-4 pb-4 animate-fade-in">
           <div className="bg-white rounded-2xl w-[95%] max-w-3xl shadow-2xl my-4 relative border border-border animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-border px-4 sm:px-6 py-4 flex justify-between items-center z-20">
@@ -2194,30 +2183,55 @@ const CallReport = () => {
             <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
             <form onSubmit={handleStep2Submit} className="p-4 sm:p-6 space-y-5">
               <div className="p-3 sm:p-4 rounded-xl border bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Customer</p>
-                    <p className="font-semibold text-xs sm:text-sm truncate text-foreground">{calls.find(c => c.id === step2CallId)?.customer_name || calls.find(c => c.id === step2CallId)?.client_name || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Type</p>
-                    <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{calls.find(c => c.id === step2CallId)?.call_type || "—"}</span>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Priority</p>
-                    <p className="font-semibold text-xs sm:text-sm text-foreground">{calls.find(c => c.id === step2CallId)?.priority || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Invoice</p>
-                    <p className="font-semibold text-xs sm:text-sm text-accent">{formatCurrency(calls.find(c => c.id === step2CallId)?.invoice_value)}</p>
-                  </div>
-                </div>
-                {(calls.find(c => c.id === step2CallId)?.call_details || calls.find(c => c.id === step2CallId)?.complaint || calls.find(c => c.id === step2CallId)?.description) && (
-                  <div className="mt-3 pt-3 border-t border-primary/20">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Details</p>
-                    <p className="text-xs sm:text-sm mt-1 text-muted-foreground">{calls.find(c => c.id === step2CallId)?.call_details || calls.find(c => c.id === step2CallId)?.complaint || calls.find(c => c.id === step2CallId)?.description}</p>
-                  </div>
-                )}
+                {(() => {
+                  const call = calls.find(c => c.id === step2CallId);
+                  if (!call) return null;
+                  const sc = STATUS_COLORS[call.status] || STATUS_COLORS.Pending;
+                  const pc = PRIORITY_COLORS[call.priority] || PRIORITY_COLORS.Medium;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wide text-primary">Customer Details</h3>
+                        <div className="flex gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>{call.status}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: pc.bg, color: pc.text, border: `1px solid ${pc.border}` }}>{call.priority}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Customer</p>
+                          <p className="font-semibold text-xs sm:text-sm truncate text-foreground">{call.customer_name || call.client_name || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Mobile</p>
+                          <p className="font-semibold text-xs sm:text-sm text-foreground">{call.mobile_number || call.phone || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Location</p>
+                          <p className="font-semibold text-xs sm:text-sm text-foreground">{call.location_city || call.location || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Type</p>
+                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{call.call_type || "—"}</span>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Invoice</p>
+                          <p className="font-semibold text-xs sm:text-sm text-accent">{formatCurrency(call.invoice_value)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Email</p>
+                          <p className="font-semibold text-xs sm:text-sm text-foreground truncate">{call.email || "—"}</p>
+                        </div>
+                      </div>
+                      {(call.call_details || call.complaint || call.description) && (
+                        <div className="mt-3 pt-3 border-t border-primary/20">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Call Details / Complaint</p>
+                          <p className="text-xs sm:text-sm mt-1 text-muted-foreground">{call.call_details || call.complaint || call.description}</p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <SectionDivider icon={Users} title="Engineer Assignment" />
@@ -2253,7 +2267,7 @@ const CallReport = () => {
               </div>
 
               <SectionDivider icon={Clock} title="Time & Travel" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <FormField label="Start Time">
                   <input type="time" value={step2Form.start_time} onChange={e => setStep2Form({ ...step2Form, start_time: e.target.value })} className={inputBase} />
                 </FormField>
@@ -2263,8 +2277,16 @@ const CallReport = () => {
                 <FormField label="Kilometers (KM)" icon={MapPin}>
                   <input type="number" value={step2Form.km} onChange={e => setStep2Form({ ...step2Form, km: e.target.value })} className={inputBase} placeholder="0" min="0" step="0.1" />
                 </FormField>
+                <FormField label="Duration Limit">
+                  <select value={step2Form.duration || ""} onChange={e => setStep2Form({ ...step2Form, duration: e.target.value })} className={inputBase}>
+                    <option value="">30 min (default)</option>
+                    <option value="1hr">1 Hour</option>
+                    <option value="1.5hr">1.5 Hours</option>
+                    <option value="2hr">2 Hours</option>
+                  </select>
+                </FormField>
                 {step2Duration.actual > 0 && (
-                  <div className={`p-3 rounded-lg border flex flex-col justify-center sm:col-span-2 lg:col-span-3 ${step2Duration.exceeded ? "bg-red-50 border-red-200 text-red-700" : "bg-accent/5 border-accent/20"}`}>
+                  <div className={`p-3 rounded-lg border flex flex-col justify-center sm:col-span-2 lg:col-span-4 ${step2Duration.exceeded ? "bg-red-50 border-red-200 text-red-700" : "bg-accent/5 border-accent/20"}`}>
                     <span className={`text-xs font-semibold ${step2Duration.exceeded ? "text-red-600" : "text-accent"}`}>Actual Duration: {step2Duration.actual} min</span>
                     <span className="text-[10px] text-muted-foreground">Assigned Limit: {step2Duration.limit} min</span>
                     {step2Duration.exceeded && (
