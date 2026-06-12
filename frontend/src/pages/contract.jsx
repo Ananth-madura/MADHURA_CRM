@@ -320,15 +320,13 @@ const Contracts = () => {
                       <button onClick={() => convertToQuotation(inv)} title="Convert to Quotation" className="text-blue-600 hover:text-blue-800 transition">
                         <FileText size={18} />
                       </button>
-                      {canEditDelete && (
-                      <>
                       <button onClick={() => openEditModal(inv)} className="text-amber-600 hover:text-amber-800 transition">
                         <Edit size={18} />
                       </button>
-                      <button onClick={() => deletePayment(inv.id)} className="text-red-500 hover:text-red-700 transition">
-                        <Trash2 size={18} />
-                      </button>
-                      </>
+                      {canEditDelete && (
+                        <button onClick={() => deletePayment(inv.id)} className="text-red-500 hover:text-red-700 transition">
+                          <Trash2 size={18} />
+                        </button>
                       )}
                     </div>
                   </td>

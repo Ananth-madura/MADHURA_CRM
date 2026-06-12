@@ -461,7 +461,7 @@ const createClientFromLead = (lead, leadType, callback) => {
 };
 
 // PUT convert telecall
-router.put("/telecall/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/telecall/:id", verifyToken, (req, res) => {
   const { call_outcome } = req.body;
   db.query(
     "UPDATE telecalls SET call_outcome=? WHERE id=?",
@@ -496,7 +496,7 @@ router.put("/telecall/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 // PUT convert walkin
-router.put("/walkin/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/walkin/:id", verifyToken, (req, res) => {
   const { walkin_status } = req.body;
   db.query(
     "UPDATE walkins SET walkin_status=? WHERE id=?",
@@ -531,7 +531,7 @@ router.put("/walkin/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 // PUT convert field
-router.put("/field/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/field/:id", verifyToken, (req, res) => {
   const { field_outcome } = req.body;
   db.query(
     "UPDATE fields SET field_outcome=? WHERE id=?",

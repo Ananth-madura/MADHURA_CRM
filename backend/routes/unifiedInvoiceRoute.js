@@ -180,7 +180,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   });
 
   // ── UPDATE — creates new version ───────────────────────────────────────────
-  router.put("/:id", verifyToken, isAdmin, (req, res) => {
+  router.put("/:id", verifyToken, (req, res) => {
     const { id } = req.params;
     const { customer, invoice, items, extra } = req.body;
     const ex = extra || {};

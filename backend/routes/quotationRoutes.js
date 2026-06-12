@@ -290,7 +290,7 @@ router.post("/create", verifyToken, (req, res) => {
 });
 
 // Update — creates a NEW version instead of overwriting, preserving history
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const error = validateQuotation(req.body);
   if (error) return res.status(400).json({ message: error });
 

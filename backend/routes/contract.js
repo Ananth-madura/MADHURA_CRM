@@ -122,7 +122,7 @@ router.get("/", verifyToken, (req, res) => {
 });
 
 /* UPDATE */
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const { id } = req.params;
   const {
     client_company,
@@ -155,8 +155,8 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
       mobile_number=?,
       location_city=?,
       email=?
-     WHERE id=? AND (created_by=? OR 'admin'=?)`,
-    [client_company || null, template_names || null, contract_title || null, start_date || null, end_date || null, parsedAmount, category || "Default", contract_type || "Service", quotation_id || null, mobile_number || null, location_city || null, email || null, id, req.user.id, req.user.role],
+     WHERE id=?`,
+    [client_company || null, template_names || null, contract_title || null, start_date || null, end_date || null, parsedAmount, category || "Default", contract_type || "Service", quotation_id || null, mobile_number || null, location_city || null, email || null, id],
     (err) => {
       if (err) return res.status(500).json(err);
       res.json({ message: "Updated" });

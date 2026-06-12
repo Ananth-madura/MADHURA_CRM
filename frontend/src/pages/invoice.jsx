@@ -277,9 +277,9 @@ const Invoice = () => {
                   <td className="px-4 py-3 border">{inv.project_names || "---"}</td>
                   <td className="px-4 py-3 border text-center">
                     <div className="flex justify-center gap-3">
-                      {canEditDelete && <button onClick={() => openEdit(inv)} className="text-amber-600 hover:text-amber-800 transition">
+                      <button onClick={() => openEdit(inv)} className="text-amber-600 hover:text-amber-800 transition">
                         <Edit2 size={16} />
-                      </button>}
+                      </button>
                       {canEditDelete && <button onClick={() => handleDelete(inv.id)} className="text-red-500 hover:text-red-700 transition">
                         <Trash2 size={16} />
                       </button>}

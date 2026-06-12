@@ -504,7 +504,7 @@ const Team = () => {
                     </div>
 
                     <div className={`absolute left-0 right-0 top-full mt-1 bg-white border border-[#cfcfcf] z-30 transition-all duration-200 ${roleDropdownOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
-                      {["Developer", "BDM", "Manager", "Sales"].map((item) => (
+                      {["Admin dept", "BDM sales", "service", "custome"].map((item) => (
                         <div key={item} onClick={() => { setRoleDropdownOpen(false); setForm({ ...form, emp_role: item }); if (formErrors.emp_role) setFormErrors({ ...formErrors, emp_role: null }); }} className="px-3 py-2 cursor-pointer hover:bg-blue-600 hover:text-white text-left">
                           {item}
                         </div>
@@ -594,11 +594,12 @@ const Team = () => {
                     <td className="p-4 border">{E.emp_role || "---"}</td>
                     <td className="p-4 border">{E.quotation_count || 0}</td>
                     <td className="p-4 border">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${E.user_role === "admin" ? "bg-purple-100 text-purple-700" :
-                          E.user_role === "subadmin" ? "bg-orange-100 text-orange-700" :
-                            "bg-gray-100 text-gray-600"
-                        }`}>
-                        {E.user_role || "employee"}
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                        (E.emp_email === 'malarvannan@technostore.co.in' || E.user_role === "subadmin") ? "bg-orange-100 text-orange-700" :
+                        E.user_role === "admin" ? "bg-purple-100 text-purple-700" :
+                        "bg-gray-100 text-gray-600"
+                      }`}>
+                        {E.emp_email === 'malarvannan@technostore.co.in' ? "subadmin" : (E.user_role || "employee")}
                       </span>
                     </td>
                     <td className="p-4 border">
@@ -620,7 +621,11 @@ const Team = () => {
                           </>
                         )}
                         {(currentUser?.role === "admin" && E.user_role === "admin") && (
-                          <span className="text-xs text-purple-600 font-semibold px-2 py-1 bg-purple-50 rounded-full">Admin</span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                            E.emp_email === 'malarvannan@technostore.co.in' ? "bg-orange-50 text-orange-700" : "bg-purple-50 text-purple-600"
+                          }`}>
+                            {E.emp_email === 'malarvannan@technostore.co.in' ? "Sub-Admin" : "Admin"}
+                          </span>
                         )}
                         {currentUser?.role === "subadmin" && (
                           <button type="button" onClick={() => openAssignModal(E)} className="text-blue-600 hover:text-blue-800 transition" title="Assign Task/Target">

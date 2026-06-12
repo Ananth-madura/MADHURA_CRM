@@ -103,22 +103,103 @@ router.get("/session/:sessionId", verifyToken, (req, res) => {
   }
 });
 
-// ── GET staff performance stats ──────────────────────────────────────────────
+// ── GET staff performance stats (comprehensive, with filters) ────────────────
 router.get("/performance", verifyToken, (req, res) => {
+  const { from, to, month, year, engineer } = req.query;
+
+  let where = "WHERE staff_name IS NOT NULL AND staff_name != ''";
+  const params = [];
+
+  if (from && to) { where += " AND report_date BETWEEN ? AND ?"; params.push(from, to); }
+  else if (from) { where += " AND report_date >= ?"; params.push(from); }
+  else if (to)   { where += " AND report_date <= ?"; params.push(to); }
+
+  if (month && year) { where += " AND MONTH(report_date) = ? AND YEAR(report_date) = ?"; params.push(parseInt(month), parseInt(year)); }
+  else if (month) { where += " AND MONTH(report_date) = ?"; params.push(parseInt(month)); }
+  else if (year)  { where += " AND YEAR(report_date) = ?"; params.push(parseInt(year)); }
+
+  if (engineer && engineer !== "All") { where += " AND (staff_name = ? OR technician = ?)"; params.push(engineer, engineer); }
+
   const sql = `
-    SELECT 
-      staff_name,
-      COUNT(*) as total_calls,
-      SUM(CASE WHEN is_exceeded = 1 THEN 1 ELSE 0 END) as exceeded_calls,
-      SUM(actual_duration) as total_duration,
-      SUM(assigned_time) as total_assigned_time,
-      ROUND((SUM(CASE WHEN is_exceeded = 0 THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2) as performance_rating
+    SELECT
+      COALESCE(staff_name, technician) AS engineer_name,
+      COUNT(*)                                                       AS total_calls,
+      SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)            AS closed_calls,
+      SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END)           AS pending_calls,
+      SUM(CASE WHEN status = 'Live' THEN 1 ELSE 0 END)              AS live_calls,
+      SUM(CASE WHEN status = 'Observation' THEN 1 ELSE 0 END)       AS observation_calls,
+      COALESCE(SUM(COALESCE(km, 0)), 0)                              AS total_km,
+      COALESCE(SUM(COALESCE(petrol_charges, 0)), 0)                  AS total_petrol,
+      COALESCE(SUM(COALESCE(spare_parts_price, 0)), 0)              AS total_spare_parts,
+      COALESCE(SUM(COALESCE(labour_charges, 0)), 0)                  AS total_labour,
+      COALESCE(SUM(COALESCE(total_expenses, 0)), 0)                  AS total_expenses,
+      COALESCE(SUM(COALESCE(invoice_value, 0)), 0)                   AS total_revenue,
+      COALESCE(SUM(CASE WHEN payment_status = 'Collected' THEN COALESCE(invoice_value, 0) ELSE 0 END), 0) AS collected_revenue,
+      COALESCE(SUM(CASE WHEN payment_status = 'Pending' THEN COALESCE(invoice_value, 0) ELSE 0 END), 0)   AS pending_revenue,
+      COALESCE(SUM(COALESCE(actual_duration, 0)), 0)                 AS total_minutes,
+      SUM(CASE WHEN is_exceeded = 1 THEN 1 ELSE 0 END)              AS exceeded_calls,
+      ROUND(COALESCE(SUM(COALESCE(actual_duration, 0)), 0) / 60, 2) AS total_hours,
+      ROUND(AVG(COALESCE(actual_duration, 0)), 1)                    AS avg_duration_per_call,
+      ROUND((SUM(CASE WHEN is_exceeded = 0 THEN 1 ELSE 0 END) / GREATEST(COUNT(*), 1)) * 100, 1) AS on_time_rate
     FROM call_reports
-    GROUP BY staff_name
+    ${where}
+    GROUP BY COALESCE(staff_name, technician)
+    ORDER BY total_calls DESC
   `;
-  db.query(sql, (err, results) => {
+
+  db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
+
+    // Compute derived fields per engineer
+    const engineers = (results || []).map(r => {
+      const totalHours = parseFloat(r.total_hours) || 0;
+      const totalCalls = parseInt(r.total_calls) || 0;
+      const callsPerHour = totalHours > 0 ? parseFloat((totalCalls / totalHours).toFixed(2)) : 0;
+      const profit = parseFloat(r.total_revenue) - parseFloat(r.total_expenses);
+      const profitMargin = parseFloat(r.total_revenue) > 0
+        ? parseFloat(((profit / parseFloat(r.total_revenue)) * 100).toFixed(1))
+        : 0;
+      return {
+        ...r,
+        total_km: parseFloat(r.total_km) || 0,
+        total_petrol: parseFloat(r.total_petrol) || 0,
+        total_spare_parts: parseFloat(r.total_spare_parts) || 0,
+        total_labour: parseFloat(r.total_labour) || 0,
+        total_expenses: parseFloat(r.total_expenses) || 0,
+        total_revenue: parseFloat(r.total_revenue) || 0,
+        collected_revenue: parseFloat(r.collected_revenue) || 0,
+        pending_revenue: parseFloat(r.pending_revenue) || 0,
+        total_hours: totalHours,
+        avg_duration_per_call: parseFloat(r.avg_duration_per_call) || 0,
+        on_time_rate: parseFloat(r.on_time_rate) || 0,
+        calls_per_hour: callsPerHour,
+        profit,
+        profit_margin: profitMargin,
+      };
+    });
+
+    // Summary totals
+    const summary = {
+      total_engineers: engineers.length,
+      total_calls: engineers.reduce((s, e) => s + (parseInt(e.total_calls) || 0), 0),
+      closed_calls: engineers.reduce((s, e) => s + (parseInt(e.closed_calls) || 0), 0),
+      pending_calls: engineers.reduce((s, e) => s + (parseInt(e.pending_calls) || 0), 0),
+      total_km: parseFloat(engineers.reduce((s, e) => s + e.total_km, 0).toFixed(1)),
+      total_petrol: parseFloat(engineers.reduce((s, e) => s + e.total_petrol, 0).toFixed(2)),
+      total_spare_parts: parseFloat(engineers.reduce((s, e) => s + e.total_spare_parts, 0).toFixed(2)),
+      total_labour: parseFloat(engineers.reduce((s, e) => s + e.total_labour, 0).toFixed(2)),
+      total_expenses: parseFloat(engineers.reduce((s, e) => s + e.total_expenses, 0).toFixed(2)),
+      total_revenue: parseFloat(engineers.reduce((s, e) => s + e.total_revenue, 0).toFixed(2)),
+      collected_revenue: parseFloat(engineers.reduce((s, e) => s + e.collected_revenue, 0).toFixed(2)),
+      pending_revenue: parseFloat(engineers.reduce((s, e) => s + e.pending_revenue, 0).toFixed(2)),
+      total_hours: parseFloat(engineers.reduce((s, e) => s + e.total_hours, 0).toFixed(2)),
+      exceeded_calls: engineers.reduce((s, e) => s + (parseInt(e.exceeded_calls) || 0), 0),
+      avg_calls_per_hour: engineers.length > 0
+        ? parseFloat((engineers.reduce((s, e) => s + e.calls_per_hour, 0) / engineers.length).toFixed(2))
+        : 0,
+    };
+
+    res.json({ engineers, summary });
   });
 });
 

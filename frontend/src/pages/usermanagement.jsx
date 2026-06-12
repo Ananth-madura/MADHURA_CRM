@@ -211,20 +211,24 @@ const [formData, setFormData] = useState({
                   <td className="px-4 py-3 text-gray-600">{user.email}</td>
                   <td className="px-4 py-3">{user.emp_id || "-"}</td>
                   <td className="px-4 py-3">{user.position || "-"}</td>
-<td className="px-4 py-3">
+                  <td className="px-4 py-3">
                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                       (user.email === 'malarvannan@technostore.co.in' || user.role === "subadmin") ? "bg-orange-100 text-orange-700" :
                        user.role === "admin" ? "bg-purple-100 text-purple-700" :
-                       user.role === "subadmin" ? "bg-orange-100 text-orange-700" :
                        "bg-gray-100 text-gray-600"
                      }`}>
-                       {user.role || "employee"}
+                       {user.email === 'malarvannan@technostore.co.in' ? "subadmin" : (user.role || "employee")}
                      </span>
                    </td>
                   <td className="px-4 py-3 text-center">{getStatusBadge(user.status)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       {user.role === "admin" ? (
-                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">🔒 Admin</span>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          user.email === 'malarvannan@technostore.co.in' ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"
+                        }`}>
+                          {user.email === 'malarvannan@technostore.co.in' ? "🔒 subadmin" : "🔒 Admin"}
+                        </span>
                       ) : (
                         <>
                           <button onClick={() => handleEdit(user)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit">

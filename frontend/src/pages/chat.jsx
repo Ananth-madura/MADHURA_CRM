@@ -28,6 +28,7 @@ const [activeUser, setActiveUser] = useState(null);
       const formatted = data.map(u => ({
         id: u.id,
         name: u.first_name,
+        email: u.email,
         position: u.position || "Staff",
         role: u.role || '',
         status: "online",
@@ -408,11 +409,15 @@ const handleFileSend = async (e) => {
                      {u.name}
                        </p>
 
-                {u.role === 'admin' && (
-                  <span className="px-2 py-0.5 bg-gradient-to-r from-red-100 to-orange-100 text-red-700 text-[10px] font-bold rounded-full border border-red-200">
-                  ADMIN
-      </span>
-    )}
+                 {u.role === 'admin' && (
+                   <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                     u.email === 'malarvannan@technostore.co.in'
+                       ? "bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 border-orange-200"
+                       : "bg-gradient-to-r from-red-100 to-orange-100 text-red-700 border-red-200"
+                   }`}>
+                     {u.email === 'malarvannan@technostore.co.in' ? "SUBADMIN" : "ADMIN"}
+                   </span>
+                 )}
   </div>
 
   <p className={`text-xs truncate ${

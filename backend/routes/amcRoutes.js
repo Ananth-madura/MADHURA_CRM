@@ -99,7 +99,7 @@ router.get("/amc-alc", verifyToken, (req, res) => {
 });
 
 /* UPDATE AMC/ALC SERVICE */
-router.put("/amc-alc/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/amc-alc/:id", verifyToken, (req, res) => {
   const { id } = req.params;
   const {
     service_type,

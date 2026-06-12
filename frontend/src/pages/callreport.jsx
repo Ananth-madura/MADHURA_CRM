@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import "../Styles/tailwind.css";
-import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench, Users, Layers } from "lucide-react";
+import { Search, Plus, X, Trash2, Edit, ChevronDown, ChevronUp, Download, Eye, AlertCircle, CheckCircle, Clock, Phone, CreditCard, DollarSign, AlertTriangle, MapPin, Phone as PhoneIcon, FileText, Calendar, DollarSign as DollarIcon, User, Tag, MessageSquare, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Mail, Wrench } from "lucide-react";
 import axios from "axios";
 import socket from "../socket/socket";
 import { API } from "../config";
@@ -377,7 +377,6 @@ const DetailModal = ({ call, onClose, formatCurrency }) => {
 };
 
 const CallReport = () => {
-  const userRole = getUserRole();
   const canEditDelete = getCanEditCallReport();
 
   const [activeTab, setActiveTab] = useState("calls");
@@ -394,7 +393,6 @@ const CallReport = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [editId, setEditId] = useState(null);
   const [detailCall, setDetailCall] = useState(null);
-  const [perfEngineerFilter, setPerfEngineerFilter] = useState("All");
 
   const [form, setForm] = useState({
     customer: "", customer_id: "", mobile_number: "", email: "", location_city: "", call_details: "",
@@ -640,22 +638,6 @@ const CallReport = () => {
     }
   };
 
-  const handleCustomerSelect = (customerVal) => {
-    const customer = customerSearchResults.find(c => c.value === customerVal);
-    if (customer) {
-      setForm((prev) => ({
-        ...prev,
-        customer: customer.value,
-        customer_id: customer.customer_id || "",
-        mobile_number: customer.mobile_number || "",
-        email: customer.email || "",
-        location_city: customer.location_city || "",
-      }));
-    } else {
-      setForm((prev) => ({ ...prev, customer: customerVal }));
-    }
-  };
-
   const calculateDuration = () => {
     if (!form.start_time || !form.end_time) return { actual: 0, limit: 0, exceeded: false, overflow: 0 };
     const [sh, sm] = form.start_time.split(":").map(Number);
@@ -669,8 +651,6 @@ const CallReport = () => {
     const overflow = exceeded ? actual - limit : 0;
     return { actual, limit, exceeded, overflow };
   };
-
-  const duration = calculateDuration();
 
   const calculateStep2Duration = () => {
     if (!step2Form.start_time || !step2Form.end_time) return { actual: 0, limit: 0, exceeded: false, overflow: 0 };
@@ -716,7 +696,7 @@ const CallReport = () => {
     setStep2ModalOpen(false);
   };
 
-  const openAddModal = () => { resetForm(); setModalOpen(true); searchCustomers(""); };
+
 
   const openEditModal = (call) => {
     setForm({
@@ -1058,9 +1038,7 @@ const CallReport = () => {
     return { isBusy, customerName: currentCall ? (currentCall.customer_name || currentCall.client_name) : null };
   };
 
-  const freeEngineers = useMemo(() => {
-    return ENGINEERS.filter(e => !busyEngineers.includes(e.value));
-  }, [busyEngineers]);
+
 
   const openFollowUpCall = async (c) => {
     const sessionCalls = calls.filter(call => call.session_id === c.session_id);
@@ -1204,51 +1182,94 @@ const CallReport = () => {
     }
   };
 
-  const performanceData = useMemo(() => {
-    return ENGINEERS.map(eng => {
-      const engCalls = calls.filter(c => (c.engineer || c.staff_name) === eng.value && (c.status === "Closed" || c.status === "Completed"));
-      const totalCalls = engCalls.length;
-      const totalKM = engCalls.reduce((sum, c) => sum + (parseFloat(c.km) || 0), 0);
-      const totalPetrol = engCalls.reduce((sum, c) => sum + (parseFloat(c.petrol_charges) || 0), 0);
-      const totalMinutes = engCalls.reduce((sum, c) => sum + (c.actual_duration || 0), 0);
-      const totalHours = totalMinutes / 60;
-      const totalRevenue = engCalls.reduce((sum, c) => sum + (parseFloat(c.invoice_value) || 0), 0);
-      const callsPerHour = totalHours > 0 ? (totalCalls / totalHours).toFixed(2) : "0.00";
-      return {
-        name: eng.label,
-        totalCalls,
-        totalKM: totalKM.toFixed(1),
-        totalPetrol,
-        totalHours: totalHours.toFixed(1),
-        totalRevenue,
-        callsPerHour: parseFloat(callsPerHour),
-      };
-    }).sort((a, b) => b.callsPerHour - a.callsPerHour);
-  }, [calls]);
+  // ── Performance Tab: API-driven data ────────────────────────────────────────
+  const [perfData, setPerfData] = useState([]);
+  const [perfSummary, setPerfSummary] = useState({});
+  const [perfLoading, setPerfLoading] = useState(false);
+  const [perfFilters, setPerfFilters] = useState({
+    dateRangeType: "all",
+    from: "",
+    to: "",
+    month: "",
+    year: new Date().getFullYear().toString(),
+    engineer: "All",
+  });
 
-  const filteredPerformanceData = useMemo(() => {
-    if (perfEngineerFilter === "All") return performanceData;
-    return performanceData.filter(p => p.name === perfEngineerFilter);
-  }, [performanceData, perfEngineerFilter]);
+  const fetchPerformance = useCallback(async () => {
+    setPerfLoading(true);
+    try {
+      const params = new URLSearchParams();
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+
+      if (perfFilters.dateRangeType === "last_7") {
+        const d = new Date(); d.setDate(today.getDate() - 7);
+        params.append("from", d.toISOString().split("T")[0]);
+        params.append("to", todayStr);
+      } else if (perfFilters.dateRangeType === "last_30") {
+        const d = new Date(); d.setDate(today.getDate() - 30);
+        params.append("from", d.toISOString().split("T")[0]);
+        params.append("to", todayStr);
+      } else if (perfFilters.dateRangeType === "this_month") {
+        params.append("month", String(today.getMonth() + 1));
+        params.append("year", String(today.getFullYear()));
+      } else if (perfFilters.dateRangeType === "last_month") {
+        const lm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        params.append("month", String(lm.getMonth() + 1));
+        params.append("year", String(lm.getFullYear()));
+      } else if (perfFilters.dateRangeType === "this_year") {
+        params.append("year", String(today.getFullYear()));
+      } else if (perfFilters.dateRangeType === "custom") {
+        if (perfFilters.from) params.append("from", perfFilters.from);
+        if (perfFilters.to) params.append("to", perfFilters.to);
+      } else if (perfFilters.dateRangeType === "month_year") {
+        if (perfFilters.month) params.append("month", perfFilters.month);
+        if (perfFilters.year) params.append("year", perfFilters.year);
+      }
+
+      if (perfFilters.engineer && perfFilters.engineer !== "All") {
+        params.append("engineer", perfFilters.engineer);
+      }
+
+      const res = await axios.get(`${API}/api/call-reports/performance?${params.toString()}`, getAuthConfig());
+      const { engineers = [], summary = {} } = res.data || {};
+      setPerfData(engineers);
+      setPerfSummary(summary);
+    } catch (err) {
+      console.error("Fetch performance error:", err);
+      setPerfData([]);
+      setPerfSummary({});
+    } finally {
+      setPerfLoading(false);
+    }
+  }, [perfFilters]);
+
+  useEffect(() => {
+    if (activeTab === "performance") fetchPerformance();
+  }, [activeTab, fetchPerformance]);
 
   const downloadPerformanceCSV = () => {
-    if (!filteredPerformanceData.length) return alert("No performance data to export");
-    const headers = ["Engineer Name", "Total Calls Completed", "Total KM Driven", "Total Petrol Cost (₹)", "Total Time Spent (Hours)", "Total Revenue Generated (₹)", "Calls per Hour (Efficiency)"];
-    const rows = filteredPerformanceData.map(p => [
-      p.name,
-      p.totalCalls,
-      p.totalKM,
-      p.totalPetrol,
-      p.totalHours,
-      p.totalRevenue,
-      p.callsPerHour
+    if (!perfData.length) return alert("No performance data to export");
+    const headers = [
+      "Engineer Name", "Total Calls", "Closed Calls", "Pending Calls",
+      "Total KM Driven", "Petrol Cost (₹)", "Spare Parts (₹)", "Labour Charges (₹)",
+      "Total Expenses (₹)", "Total Revenue (₹)", "Collected Revenue (₹)", "Pending Revenue (₹)",
+      "Total Time (Hours)", "Avg Duration/Call (min)", "On-Time Rate (%)",
+      "Calls per Hour", "Profit (₹)", "Profit Margin (%)", "Exceeded Calls"
+    ];
+    const rows = perfData.map(p => [
+      p.engineer_name, p.total_calls, p.closed_calls, p.pending_calls,
+      p.total_km, p.total_petrol, p.total_spare_parts, p.total_labour,
+      p.total_expenses, p.total_revenue, p.collected_revenue, p.pending_revenue,
+      p.total_hours, p.avg_duration_per_call, p.on_time_rate,
+      p.calls_per_hour, p.profit, p.profit_margin, p.exceeded_calls
     ]);
     const csv = [headers, ...rows].map(r => r.map(cell => `"${String(cell || "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Engineer_Performance_Report_${perfEngineerFilter.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `Engineer_Performance_${perfFilters.dateRangeType}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1413,7 +1434,6 @@ const CallReport = () => {
                           </tr>
                           {!isCollapsed && group.calls.map((c) => {
                             const sc = STATUS_COLORS[c.status] || STATUS_COLORS.Pending;
-                            const pc = PRIORITY_COLORS[c.priority] || PRIORITY_COLORS.Medium;
                             const psc = PAYMENT_STATUS_COLORS[c.payment_status] || PAYMENT_STATUS_COLORS.Pending;
                             const dur = c.actual_duration || 0;
                             const isComplete = c.step2_completed;
@@ -1798,48 +1818,113 @@ const CallReport = () => {
 
       {activeTab === "performance" && (
         <>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 p-4 rounded-xl border border-border bg-card">
-            <div className="flex items-center gap-2">
-              <Wrench size={16} className="text-primary" />
-              <span className="text-sm font-semibold text-foreground">Filter by Engineer:</span>
-              <select
-                value={perfEngineerFilter}
-                onChange={(e) => setPerfEngineerFilter(e.target.value)}
-                className="border border-border rounded-lg px-3 py-1.5 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors"
-              >
-                <option value="All">All Engineers</option>
-                {ENGINEERS.map(e => (
-                  <option key={e.value} value={e.label}>{e.label}</option>
-                ))}
+          {/* Filter Bar */}
+          <div className="bg-card rounded-xl border border-border p-4 mb-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Wrench size={16} className="text-primary" />
+                <span className="text-sm font-semibold text-foreground">Performance Filters:</span>
+              </div>
+              <select value={perfFilters.dateRangeType} onChange={e => setPerfFilters(p => ({ ...p, dateRangeType: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors">
+                <option value="all">All Time</option>
+                <option value="last_7">Last 7 Days</option>
+                <option value="last_30">Last 30 Days</option>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_year">This Year</option>
+                <option value="custom">Custom Range</option>
+                <option value="month_year">Month & Year</option>
               </select>
+              {perfFilters.dateRangeType === "custom" && (
+                <>
+                  <input type="date" value={perfFilters.from} onChange={e => setPerfFilters(p => ({ ...p, from: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground" title="From" />
+                  <input type="date" value={perfFilters.to} onChange={e => setPerfFilters(p => ({ ...p, to: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground" title="To" />
+                </>
+              )}
+              {perfFilters.dateRangeType === "month_year" && (
+                <>
+                  <select value={perfFilters.month} onChange={e => setPerfFilters(p => ({ ...p, month: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground">
+                    <option value="">All Months</option>
+                    {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString("default", { month: "long" })}</option>))}
+                  </select>
+                  <select value={perfFilters.year} onChange={e => setPerfFilters(p => ({ ...p, year: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground">
+                    {Array.from({ length: 5 }, (_, i) => { const y = new Date().getFullYear() - i; return <option key={y} value={y}>{y}</option>; })}
+                  </select>
+                </>
+              )}
+              <select value={perfFilters.engineer} onChange={e => setPerfFilters(p => ({ ...p, engineer: e.target.value }))} className="border border-border rounded-lg px-3 py-2 text-sm outline-none bg-white text-foreground hover:border-primary/30 transition-colors">
+                <option value="All">All Engineers</option>
+                {ENGINEERS.map(e => (<option key={e.value} value={e.value}>{e.label}</option>))}
+              </select>
+              <button onClick={fetchPerformance} className="px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/95 transition-colors shadow flex items-center gap-2">
+                <Search size={14} /> Search
+              </button>
+              <button onClick={downloadPerformanceCSV} className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors ml-auto">
+                <Download size={14} /> Export CSV
+              </button>
             </div>
-            <button
-              onClick={downloadPerformanceCSV}
-              className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-primary text-white hover:bg-primary/95 transition-colors shadow"
-            >
-              <Download size={14} /> Download Excel Report
-            </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {/* Loading State */}
+          {perfLoading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+              <span className="ml-3 text-sm text-muted-foreground">Loading performance data...</span>
+            </div>
+          )}
+
+          {!perfLoading && (
+            <>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
             {[
-              { label: "Total Calls", value: filteredPerformanceData.reduce((s, p) => s + p.totalCalls, 0), icon: Phone, color: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.1)" },
-              { label: "Total Revenue", value: formatCurrency(filteredPerformanceData.reduce((s, p) => s + p.totalRevenue, 0)), icon: DollarSign, color: "hsl(var(--accent))", bg: "hsl(var(--accent) / 0.1)" },
-              { label: "Total KM", value: filteredPerformanceData.reduce((s, p) => s + parseFloat(p.totalKM), 0).toFixed(1), icon: MapPin, color: "hsl(38 92% 50%)", bg: "hsl(38 92% 50% / 0.1)" },
-              { label: "Avg Calls/Hr", value: (filteredPerformanceData.reduce((s, p) => s + p.callsPerHour, 0) / (filteredPerformanceData.length || 1)).toFixed(2), icon: TrendingUp, color: "hsl(271 81% 56%)", bg: "hsl(271 81% 56% / 0.1)" },
+              { label: "Total Calls", value: perfSummary.total_calls || 0, icon: Phone, color: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.1)" },
+              { label: "Closed", value: perfSummary.closed_calls || 0, icon: CheckCircle, color: "hsl(142 71% 45%)", bg: "hsl(142 71% 45% / 0.1)" },
+              { label: "Pending", value: perfSummary.pending_calls || 0, icon: Clock, color: "hsl(38 92% 50%)", bg: "hsl(38 92% 50% / 0.1)" },
+              { label: "Revenue", value: formatCurrency(perfSummary.total_revenue || 0), icon: DollarSign, color: "hsl(var(--accent))", bg: "hsl(var(--accent) / 0.1)" },
+              { label: "Collected", value: formatCurrency(perfSummary.collected_revenue || 0), icon: CreditCard, color: "hsl(142 71% 45%)", bg: "hsl(142 71% 45% / 0.1)" },
+              { label: "Expenses", value: formatCurrency(perfSummary.total_expenses || 0), icon: AlertTriangle, color: "hsl(0 72% 51%)", bg: "hsl(0 72% 51% / 0.1)" },
+              { label: "Total KM", value: (perfSummary.total_km || 0).toFixed(1), icon: MapPin, color: "hsl(38 92% 50%)", bg: "hsl(38 92% 50% / 0.1)" },
+              { label: "Avg Calls/Hr", value: perfSummary.avg_calls_per_hour || 0, icon: TrendingUp, color: "hsl(271 81% 56%)", bg: "hsl(271 81% 56% / 0.1)" },
             ].map((s, i) => (
-              <div key={i} className="rounded-xl p-4 border border-border bg-card hover:border-primary/20 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: s.bg }}>
-                    <s.icon size={18} style={{ color: s.color }} />
+              <div key={i} className="rounded-xl p-3 border border-border bg-card hover:border-primary/20 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: s.bg }}>
+                    <s.icon size={14} style={{ color: s.color }} />
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-                    <p className="text-lg font-bold font-display text-foreground">{s.value}</p>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium text-muted-foreground truncate">{s.label}</p>
+                    <p className="text-sm font-bold font-display text-foreground truncate">{s.value}</p>
                   </div>
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Revenue & Expenses Breakdown */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <div className="rounded-xl p-4 border border-border bg-gradient-to-br from-green-50 to-green-100/50">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-green-700">Collected Revenue</p>
+              <p className="text-xl font-black text-green-800 font-display">{formatCurrency(perfSummary.collected_revenue || 0)}</p>
+            </div>
+            <div className="rounded-xl p-4 border border-border bg-gradient-to-br from-red-50 to-red-100/50">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-red-700">Pending Revenue</p>
+              <p className="text-xl font-black text-red-800 font-display">{formatCurrency(perfSummary.pending_revenue || 0)}</p>
+            </div>
+            <div className="rounded-xl p-4 border border-border bg-gradient-to-br from-orange-50 to-orange-100/50">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Total Expenses</p>
+              <p className="text-lg font-black text-orange-800 font-display">{formatCurrency(perfSummary.total_expenses || 0)}</p>
+              <div className="flex gap-3 mt-1 text-[10px] text-orange-600">
+                <span>Petrol: {formatCurrency(perfSummary.total_petrol || 0)}</span>
+                <span>Parts: {formatCurrency(perfSummary.total_spare_parts || 0)}</span>
+              </div>
+            </div>
+            <div className="rounded-xl p-4 border border-border bg-gradient-to-br from-purple-50 to-purple-100/50">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700">Net Profit</p>
+              <p className={`text-xl font-black font-display ${((perfSummary.total_revenue || 0) - (perfSummary.total_expenses || 0)) >= 0 ? "text-green-800" : "text-red-800"}`}>
+                {formatCurrency((perfSummary.total_revenue || 0) - (perfSummary.total_expenses || 0))}
+              </p>
+              <p className="text-[10px] text-purple-600 mt-0.5">{perfSummary.total_hours || 0} hours · {perfSummary.exceeded_calls || 0} exceeded</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -1848,31 +1933,40 @@ const CallReport = () => {
                 <BarChart3 size={18} className="text-primary" />
                 <h3 className="text-sm font-bold text-foreground">Calls per Engineer</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={filteredPerformanceData}>
+                <BarChart data={perfData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <XAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="totalCalls" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="closed_calls" fill="hsl(142 71% 45%)" name="Closed" radius={[4, 4, 0, 0]} stackId="a" />
+                  <Bar dataKey="pending_calls" fill="hsl(38 92% 50%)" name="Pending" stackId="a" />
+                  <Bar dataKey="live_calls" fill="hsl(217 91% 60%)" name="Live" stackId="a" />
                 </BarChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
 
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center gap-2 mb-4">
                 <DollarSign size={18} className="text-accent" />
-                <h3 className="text-sm font-bold text-foreground">Revenue per Engineer (₹)</h3>
+                <h3 className="text-sm font-bold text-foreground">Revenue vs Expenses (₹)</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={filteredPerformanceData}>
+                <BarChart data={perfData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <XAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                   <Tooltip formatter={(v) => `₹${v.toLocaleString()}`} contentStyle={tooltipStyle} />
-                  <Bar dataKey="totalRevenue" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="total_revenue" fill="hsl(var(--accent))" name="Revenue" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total_expenses" fill="hsl(0 72% 51%)" name="Expenses" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
           </div>
 
@@ -1880,19 +1974,21 @@ const CallReport = () => {
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Activity size={18} className="text-purple-500" />
-                <h3 className="text-sm font-bold text-foreground">Calls/Hour Performance Trend</h3>
+                <h3 className="text-sm font-bold text-foreground">Calls/Hour Efficiency</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={filteredPerformanceData}>
+                <AreaChart data={perfData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <XAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area type="monotone" dataKey="callsPerHour" stroke="hsl(271 81% 56%)" fill="hsl(271 81% 56%)" fillOpacity={0.15} name="Calls/Hour" strokeWidth={2} />
-                  <Line type="monotone" dataKey="callsPerHour" stroke="hsl(271 81% 56%)" strokeWidth={2} dot={{ r: 4 }} name="Calls/Hour" />
+                  <Area type="monotone" dataKey="calls_per_hour" stroke="hsl(271 81% 56%)" fill="hsl(271 81% 56%)" fillOpacity={0.15} name="Calls/Hour" strokeWidth={2} />
+                  <Line type="monotone" dataKey="calls_per_hour" stroke="hsl(271 81% 56%)" strokeWidth={2} dot={{ r: 4 }} name="Calls/Hour" />
                 </AreaChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
 
             <div className="bg-card rounded-xl border border-border p-4">
@@ -1900,16 +1996,18 @@ const CallReport = () => {
                 <MapPin size={18} className="text-amber-600" />
                 <h3 className="text-sm font-bold text-foreground">KM Driven per Engineer</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={filteredPerformanceData}>
+                <LineChart data={perfData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <XAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                   <Tooltip formatter={(v) => `${v} km`} contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="totalKM" stroke="hsl(38 92% 50%)" strokeWidth={3} dot={{ r: 5, fill: "hsl(38 92% 50%)" }} name="KM" />
+                  <Line type="monotone" dataKey="total_km" stroke="hsl(38 92% 50%)" strokeWidth={3} dot={{ r: 5, fill: "hsl(38 92% 50%)" }} name="KM" />
                 </LineChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
           </div>
 
@@ -1917,18 +2015,20 @@ const CallReport = () => {
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center gap-2 mb-4">
                 <PieChartIcon size={18} className="text-destructive" />
-                <h3 className="text-sm font-bold text-foreground">Petrol Cost Distribution</h3>
+                <h3 className="text-sm font-bold text-foreground">Expense Distribution</h3>
               </div>
+              {perfData.filter(p => p.total_expenses > 0).length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <Pie data={filteredPerformanceData.filter(p => p.totalPetrol > 0)} dataKey="totalPetrol" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                    {filteredPerformanceData.filter(p => p.totalPetrol > 0).map((_, index) => (
+                  <Pie data={perfData.filter(p => p.total_expenses > 0)} dataKey="total_expenses" nameKey="engineer_name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${(name || "").split(" ")[0]}: ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                    {perfData.filter(p => p.total_expenses > 0).map((_, index) => (
                       <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(v) => `₹${v.toLocaleString()}`} contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No expense data</div>)}
             </div>
 
             <div className="bg-card rounded-xl border border-border p-4">
@@ -1936,86 +2036,132 @@ const CallReport = () => {
                 <Clock size={18} className="text-blue-600" />
                 <h3 className="text-sm font-bold text-foreground">Time Spent (Hours)</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={filteredPerformanceData}>
+                <BarChart data={perfData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <XAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} interval={0} angle={-45} textAnchor="end" height={80} />
                   <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                   <Tooltip formatter={(v) => `${v} hrs`} contentStyle={tooltipStyle} />
-                  <Bar dataKey="totalHours" fill="hsl(217 91% 60%)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total_hours" fill="hsl(217 91% 60%)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
 
             <div className="bg-card rounded-xl border border-border p-4">
               <div className="flex items-center gap-2 mb-4">
                 <TrendingUp size={18} className="text-accent" />
-                <h3 className="text-sm font-bold text-foreground">Engineer Efficiency Score</h3>
+                <h3 className="text-sm font-bold text-foreground">Efficiency Score</h3>
               </div>
+              {perfData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <RadarChart data={filteredPerformanceData.slice(0, 8)}>
+                <RadarChart data={perfData.slice(0, 8)}>
                   <PolarGrid stroke="hsl(var(--border))" />
-                  <PolarAngleAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+                  <PolarAngleAxis dataKey="engineer_name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
                   <PolarRadiusAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                  <Radar name="Calls/Hour" dataKey="callsPerHour" stroke="hsl(var(--accent))" fill="hsl(var(--accent))" fillOpacity={0.3} strokeWidth={2} />
+                  <Radar name="Calls/Hour" dataKey="calls_per_hour" stroke="hsl(var(--accent))" fill="hsl(var(--accent))" fillOpacity={0.3} strokeWidth={2} />
                   <Tooltip contentStyle={tooltipStyle} />
                 </RadarChart>
               </ResponsiveContainer>
+              ) : (<div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">No data available</div>)}
             </div>
           </div>
 
+          {/* Detailed Performance Table */}
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="p-4 border-b border-border">
               <h2 className="text-lg font-bold font-display text-foreground">Detailed Performance Table</h2>
-              <p className="text-xs text-muted-foreground">Sorted by Calls/Hour metric (best performance first)</p>
+              <p className="text-xs text-muted-foreground">All data fetched from database · Auto-calculated metrics · Sorted by total calls</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
-                  <tr className="text-muted-foreground font-bold uppercase text-xs border-b border-border">
-                    <th className="px-4 py-3 text-left">Engineer</th>
-                    <th className="px-4 py-3 text-center w-[80px]">Calls</th>
-                    <th className="px-4 py-3 text-center w-[80px]">Total KM</th>
-                    <th className="px-4 py-3 text-center w-[100px]">Petrol (₹)</th>
-                    <th className="px-4 py-3 text-center w-[80px]">Time (hrs)</th>
-                    <th className="px-4 py-3 text-center w-[100px]">Revenue (₹)</th>
-                    <th className="px-4 py-3 text-center w-[100px]">Calls/Hour</th>
+                  <tr className="text-muted-foreground font-bold uppercase text-[10px] border-b border-border">
+                    <th className="px-3 py-3 text-left">Engineer</th>
+                    <th className="px-2 py-3 text-center">Total</th>
+                    <th className="px-2 py-3 text-center">Closed</th>
+                    <th className="px-2 py-3 text-center">Pending</th>
+                    <th className="px-2 py-3 text-center">KM</th>
+                    <th className="px-2 py-3 text-center">Petrol</th>
+                    <th className="px-2 py-3 text-center">Parts</th>
+                    <th className="px-2 py-3 text-center">Labour</th>
+                    <th className="px-2 py-3 text-center">Expenses</th>
+                    <th className="px-2 py-3 text-center">Revenue</th>
+                    <th className="px-2 py-3 text-center">Collected</th>
+                    <th className="px-2 py-3 text-center">Profit</th>
+                    <th className="px-2 py-3 text-center">Time(hrs)</th>
+                    <th className="px-2 py-3 text-center">On-Time</th>
+                    <th className="px-2 py-3 text-center">Calls/Hr</th>
+                    <th className="px-2 py-3 text-center">Exceeded</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPerformanceData.length === 0 ? (
-                    <tr><td colSpan="7" className="text-center py-12 text-muted-foreground">No performance data available</td></tr>
+                  {perfData.length === 0 ? (
+                    <tr><td colSpan="16" className="text-center py-12 text-muted-foreground">No performance data available for the selected filters</td></tr>
                   ) : (
-                    filteredPerformanceData.map((p, idx) => (
-                      <tr key={p.name} className="border-b border-border hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-foreground">
+                    <>
+                    {perfData.map((p, idx) => (
+                      <tr key={p.engineer_name} className="border-b border-border hover:bg-muted/30 transition-colors">
+                        <td className="px-3 py-2.5 font-semibold text-foreground">
                           <span className="inline-flex items-center gap-2">
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? "bg-yellow-400 text-yellow-900" : idx === 1 ? "bg-gray-300 text-gray-700" : idx === 2 ? "bg-orange-300 text-orange-900" : "bg-muted text-muted-foreground"}`}>
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${idx === 0 ? "bg-yellow-400 text-yellow-900" : idx === 1 ? "bg-gray-300 text-gray-700" : idx === 2 ? "bg-orange-300 text-orange-900" : "bg-muted text-muted-foreground"}`}>
                               {idx + 1}
                             </span>
-                            {p.name}
+                            <span className="text-xs truncate max-w-[120px]">{p.engineer_name}</span>
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center font-bold text-primary">{p.totalCalls}</td>
-                        <td className="px-4 py-3 text-center text-muted-foreground">{p.totalKM}</td>
-                        <td className="px-4 py-3 text-center text-muted-foreground">{formatCurrency(p.totalPetrol)}</td>
-                        <td className="px-4 py-3 text-center text-muted-foreground">{p.totalHours}</td>
-                        <td className="px-4 py-3 text-center font-bold text-accent">{formatCurrency(p.totalRevenue)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="px-2 py-1 rounded-full text-xs font-bold" style={{
-                            background: p.callsPerHour >= 1 ? "hsl(var(--accent) / 0.1)" : p.callsPerHour >= 0.5 ? "hsl(38 92% 50% / 0.1)" : "hsl(var(--destructive) / 0.1)",
-                            color: p.callsPerHour >= 1 ? "hsl(var(--accent))" : p.callsPerHour >= 0.5 ? "hsl(38 92% 50%)" : "hsl(var(--destructive))",
+                        <td className="px-2 py-2.5 text-center font-bold text-primary text-xs">{p.total_calls}</td>
+                        <td className="px-2 py-2.5 text-center text-xs"><span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold text-[10px]">{p.closed_calls}</span></td>
+                        <td className="px-2 py-2.5 text-center text-xs"><span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold text-[10px]">{(parseInt(p.pending_calls)||0) + (parseInt(p.live_calls)||0) + (parseInt(p.observation_calls)||0)}</span></td>
+                        <td className="px-2 py-2.5 text-center text-xs text-muted-foreground">{(p.total_km || 0).toFixed(1)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs text-muted-foreground">{formatCurrency(p.total_petrol)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs text-muted-foreground">{formatCurrency(p.total_spare_parts)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs text-muted-foreground">{formatCurrency(p.total_labour)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs font-semibold text-orange-700">{formatCurrency(p.total_expenses)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs font-bold text-accent">{formatCurrency(p.total_revenue)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs font-semibold text-green-700">{formatCurrency(p.collected_revenue)}</td>
+                        <td className="px-2 py-2.5 text-center text-xs"><span className={`font-bold ${p.profit >= 0 ? "text-green-700" : "text-red-700"}`}>{formatCurrency(p.profit)}</span></td>
+                        <td className="px-2 py-2.5 text-center text-xs text-muted-foreground">{p.total_hours}</td>
+                        <td className="px-2 py-2.5 text-center text-xs"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${p.on_time_rate >= 80 ? "bg-green-100 text-green-700" : p.on_time_rate >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{p.on_time_rate}%</span></td>
+                        <td className="px-2 py-2.5 text-center">
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{
+                            background: p.calls_per_hour >= 1 ? "hsl(var(--accent) / 0.1)" : p.calls_per_hour >= 0.5 ? "hsl(38 92% 50% / 0.1)" : "hsl(var(--destructive) / 0.1)",
+                            color: p.calls_per_hour >= 1 ? "hsl(var(--accent))" : p.calls_per_hour >= 0.5 ? "hsl(38 92% 50%)" : "hsl(var(--destructive))",
                           }}>
-                            {p.callsPerHour}
+                            {p.calls_per_hour}
                           </span>
                         </td>
+                        <td className="px-2 py-2.5 text-center text-xs">{p.exceeded_calls > 0 ? <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-[10px]">{p.exceeded_calls}</span> : <span className="text-muted-foreground">0</span>}</td>
                       </tr>
-                    ))
+                    ))}
+                    {/* Totals Row */}
+                    <tr className="bg-primary/5 border-t-2 border-primary/20 font-bold">
+                      <td className="px-3 py-3 text-xs text-primary font-black uppercase">TOTALS</td>
+                      <td className="px-2 py-3 text-center text-xs text-primary">{perfSummary.total_calls || 0}</td>
+                      <td className="px-2 py-3 text-center text-xs text-green-700">{perfSummary.closed_calls || 0}</td>
+                      <td className="px-2 py-3 text-center text-xs text-amber-700">{perfSummary.pending_calls || 0}</td>
+                      <td className="px-2 py-3 text-center text-xs">{(perfSummary.total_km || 0).toFixed(1)}</td>
+                      <td className="px-2 py-3 text-center text-xs">{formatCurrency(perfSummary.total_petrol || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs">{formatCurrency(perfSummary.total_spare_parts || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs">{formatCurrency(perfSummary.total_labour || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs text-orange-700">{formatCurrency(perfSummary.total_expenses || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs text-accent">{formatCurrency(perfSummary.total_revenue || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs text-green-700">{formatCurrency(perfSummary.collected_revenue || 0)}</td>
+                      <td className="px-2 py-3 text-center text-xs"><span className={((perfSummary.total_revenue || 0) - (perfSummary.total_expenses || 0)) >= 0 ? "text-green-700" : "text-red-700"}>{formatCurrency((perfSummary.total_revenue || 0) - (perfSummary.total_expenses || 0))}</span></td>
+                      <td className="px-2 py-3 text-center text-xs">{perfSummary.total_hours || 0}</td>
+                      <td className="px-2 py-3 text-center text-xs">—</td>
+                      <td className="px-2 py-3 text-center text-xs text-primary">{perfSummary.avg_calls_per_hour || 0}</td>
+                      <td className="px-2 py-3 text-center text-xs text-red-700">{perfSummary.exceeded_calls || 0}</td>
+                    </tr>
+                    </>
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+            </>
+          )}
         </>
       )}
       {detailCall && <DetailModal call={detailCall} onClose={() => setDetailCall(null)} formatCurrency={formatCurrency} />}
@@ -2079,30 +2225,37 @@ const CallReport = () => {
                         placeholder="Search customer (type and press Enter)..."
                         className={inputBase}
                       />
-                      {customerSearchResults.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 overflow-hidden border border-border rounded-lg bg-white shadow-lg">
-                          {customerSearchResults.map((customer, idx) => (
-                            <div 
-                              key={idx} 
-                              className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/50 text-foreground"
-                              onClick={() => {
-                                setForm({ 
-                                  ...form, 
-                                  customer: customer.value,
-                                  customer_id: customer.customer_id || "",
-                                  contract_title: "",
-                                  mobile_number: customer.mobile_number || "",
-                                  email: customer.email || "",
-                                  location_city: customer.location_city || "",
-                                  gst_number: customer.gst_number || "",
-                                  company_name: customer.company_name || ""
-                                });
-                                setCustomerSearchResults([]);
-                              }}
-                            >
-                              {customer.label}
+                      {(customerLoading || customerSearchResults.length > 0) && (
+                        <div className="absolute z-50 w-full mt-1 overflow-hidden border border-border rounded-lg bg-white shadow-lg max-h-60 overflow-y-auto">
+                          {customerLoading ? (
+                            <div className="px-3 py-2.5 text-xs text-muted-foreground flex items-center gap-2 bg-white">
+                              <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-primary border-t-transparent"></div>
+                              <span>Searching customers...</span>
                             </div>
-                          ))}
+                          ) : (
+                            customerSearchResults.map((customer, idx) => (
+                              <div 
+                                key={idx} 
+                                className="px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-muted/50 text-foreground bg-white"
+                                onClick={() => {
+                                  setForm({ 
+                                    ...form, 
+                                    customer: customer.value,
+                                    customer_id: customer.customer_id || "",
+                                    contract_title: "",
+                                    mobile_number: customer.mobile_number || "",
+                                    email: customer.email || "",
+                                    location_city: customer.location_city || "",
+                                    gst_number: customer.gst_number || "",
+                                    company_name: customer.company_name || ""
+                                  });
+                                  setCustomerSearchResults([]);
+                                }}
+                              >
+                                {customer.label}
+                              </div>
+                            ))
+                          )}
                         </div>
                       )}
                     </div>

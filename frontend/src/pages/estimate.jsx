@@ -1037,24 +1037,24 @@ const Estimate = () => {
                     </td>
                     <td className="p-4">
                       <div className="flex gap-3 justify-center items-center">
-                        <button
-                          type="button"
-                          onClick={() => deleteEstimate(E.id)}
-                          className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition"
-                          title="Delete"
-                        >
-                          <Trash2 size={18} />
-                        </button>
                         {canEditDelete && (
                           <button
                             type="button"
-                            onClick={() => openEditModal(E)}
-                            className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded transition"
-                            title="Edit"
+                            onClick={() => deleteEstimate(E.id)}
+                            className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition"
+                            title="Delete"
                           >
-                            <Edit size={18} />
+                            <Trash2 size={18} />
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(E)}
+                          className="text-green-600 hover:text-green-800 p-1 hover:bg-green-50 rounded transition"
+                          title="Edit"
+                        >
+                          <Edit size={18} />
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -504,12 +504,10 @@ const Clients = () => {
 
             {/* Footer */}
             <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
-              {canEditDelete && (
-                <button onClick={() => { setShowDetailsModal(false); openEditModal(selectedClientDetails); }}
-                  className="px-6 py-2.5 rounded-lg text-sm font-bold text-white transition-all shadow-sm hover:shadow-md" style={{ background: N.primary }}>
-                  Edit Client
-                </button>
-              )}
+              <button onClick={() => { setShowDetailsModal(false); openEditModal(selectedClientDetails); }}
+                className="px-6 py-2.5 rounded-lg text-sm font-bold text-white transition-all shadow-sm hover:shadow-md" style={{ background: N.primary }}>
+                Edit Client
+              </button>
               <button onClick={() => setShowDetailsModal(false)}
                 className="px-6 py-2.5 rounded-lg text-sm font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition-all">
                 Close

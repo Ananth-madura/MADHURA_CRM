@@ -45,11 +45,11 @@ router.get("/:id", verifyToken, (req, res) => {
 });
 
 // UPDATE INVOICE
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const { client_company, project_names, invoice_date, invoice_duedate, category } = req.body;
   db.query(
-    `UPDATE clientinvoices SET client_company=?, project_names=?, invoice_date=?, invoice_duedate=?, category=? WHERE id=? AND (created_by=? OR 'admin'=?)`,
-    [client_company, project_names, invoice_date, invoice_duedate, category, req.params.id, req.user.id, req.user.role],
+    `UPDATE clientinvoices SET client_company=?, project_names=?, invoice_date=?, invoice_duedate=?, category=? WHERE id=?`,
+    [client_company, project_names, invoice_date, invoice_duedate, category, req.params.id],
     (err) => {
       if (err) { console.error(err); return res.status(500).json({ message: "Update failed" }); }
       res.json({ message: "Invoice updated" });

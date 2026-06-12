@@ -169,7 +169,7 @@ router.post("/", verifyToken, (req, res) => {
 });
 
 /* UPDATE CLIENT */
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const { name, company_name, email, phone, alternate_phone, address, city, state, pincode, service, gst_number, notes, client_status, assigned_teammember_id } = req.body;
 
   // Check duplicates (exclude current client)

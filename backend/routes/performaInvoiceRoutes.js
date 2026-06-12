@@ -208,7 +208,7 @@ router.post("/create", verifyToken, (req, res) => {
 });
 
 // Update — creates a NEW version, preserving history
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const error = validateInvoice(req.body);
   if (error) return res.status(400).json({ message: error });
 
@@ -231,9 +231,10 @@ router.put("/:id", verifyToken, isAdmin, (req, res) => {
         db.query(`SELECT customer_id, parent_id, version, reference_no, created_by FROM performainvoices WHERE id=?`, [id], (err, rows) => {
           if (err || !rows.length) return db.rollback(() => res.status(500).json(err || { message: "Not found" }));
           
-          if (req.user.role === 'employee' && rows[0].created_by !== req.user.id) {
-            return db.rollback(() => res.status(403).json({ message: "Access denied" }));
-          }
+          // Removed creator restriction to allow all employees to edit
+          // if (req.user.role === 'employee' && rows[0].created_by !== req.user.id) {
+          //   return db.rollback(() => res.status(403).json({ message: "Access denied" }));
+          // }
 
           const current = rows[0];
           const rootId = current.parent_id || id;

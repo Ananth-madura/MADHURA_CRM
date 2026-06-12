@@ -123,6 +123,7 @@ const fetchContracts = useCallback(async () => {
       contract_title: trimmedTitle,
       amount_value: parsedAmount,
       service_type: trimmedServiceType,
+      contract_type: trimmedServiceType,
       mobile_number: contractForm.mobile_number || null,
       location_city: contractForm.location_city || null,
       email: contractForm.email || null,
@@ -942,7 +943,7 @@ const fetchContracts = useCallback(async () => {
                  <div>
                    <label className="text-sm font-medium text-gray-600">Client Company <span className="text-red-500">*</span></label>
                    <ClientSearchDropdown 
-                     value={selectedClient}
+                     value={contractForm.client_company}
                      onSelect={(client) => {
                        if (client.name === "") {
                          // Clear selection
@@ -961,7 +962,7 @@ const fetchContracts = useCallback(async () => {
                          setShowOtherClient(false);
                          setContractForm(prev => ({
                            ...prev,
-                           client_company: client.name || "",
+                           client_company: client.company_name || client.name || "",
                            mobile_number: client.phone || "",
                            email: client.email || "",
                            location_city: client.city || ""

@@ -45,7 +45,7 @@ router.get("/", verifyToken, (req, res) => {
 });
 
 /* UPDATE */
-router.put("/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/:id", verifyToken, (req, res) => {
   const { id } = req.params;
   const {
     client_company,

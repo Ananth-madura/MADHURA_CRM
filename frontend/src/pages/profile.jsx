@@ -280,7 +280,11 @@ const Profile = () => {
   };
 
   const getRoleBadge = (role) => {
-    const colors = { admin: "bg-purple-100 text-purple-700", employee: "bg-blue-100 text-blue-700" };
+    const colors = {
+      admin: "bg-purple-100 text-purple-700",
+      subadmin: "bg-orange-100 text-orange-700",
+      employee: "bg-blue-100 text-blue-700"
+    };
     return colors[role] || "bg-gray-100 text-gray-700";
   };
 
@@ -351,14 +355,14 @@ const Profile = () => {
                 <p className="text-blue-100 text-sm">{profile.email}</p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadge(profile.role)}`}>
-                {profile.role}
-              </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(profile.status)}`}>
-                {profile.status}
-              </span>
-            </div>
+             <div className="flex gap-2">
+               <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadge(profile.email === 'malarvannan@technostore.co.in' ? 'subadmin' : profile.role)}`}>
+                 {profile.email === 'malarvannan@technostore.co.in' ? 'subadmin' : profile.role}
+               </span>
+               <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(profile.status)}`}>
+                 {profile.status}
+               </span>
+             </div>
           </div>
         </div>
 

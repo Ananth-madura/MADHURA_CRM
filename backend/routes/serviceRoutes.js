@@ -65,7 +65,7 @@ router.delete("/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 // UPDATE SERVICE
-router.put("/:id", upload.array("images", 10), verifyToken, isAdmin, (req, res) => {
+router.put("/:id", upload.array("images", 10), verifyToken, (req, res) => {
   const { client, material, warranty, amc, date, issues } = req.body;
   let sql, values;
 
