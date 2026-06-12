@@ -193,33 +193,31 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: A4 portrait; margin: 8mm 9mm 12mm 9mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    html, body { margin: 0; padding: 0; width: 210mm; background: #fff; }
+    html, body { margin: 0; padding: 0; width: 100%; background: #fff; }
     body { font-family: "Poppins", Arial, sans-serif; color: #1a1f2e; }
 
     .qw {
-      position: relative; width: 210mm; min-height: 297mm;
-      background: #fff; padding: 9mm;
+      position: relative; width: 100%; min-height: auto;
+      background: #fff; padding: 24px 0 0 0;
     }
-    /* Fixed top color bar — appears on every page */
+    /* Fixed top color bar — appears on every PDF page */
     .top-bar {
       position: fixed; top: 0; left: 0; right: 0; height: 6px;
       background: linear-gradient(to right, #1f0779e0, #340285, #1b03a1); z-index: 110;
     }
-    /* Fixed watermark — appears centered on every page */
+    /* Fixed watermark — repeats centered on every PDF page behind text */
     .wm {
-      position: fixed; top: 50vh; left: 50%; max-width: 55%; max-height: 55%;
+      position: fixed; top: 50%; left: 50%; max-width: 130mm; width: auto; height: auto;
       transform: translate(-50%, -50%); opacity: 0.07; pointer-events: none;
-      z-index: 50; object-fit: contain;
+      z-index: -1; object-fit: contain;
     }
-    /* Fixed page header — appears on every page */
     .page-header {
-      position: fixed; top: 6px; left: 0; right: 0; background: #fff; z-index: 100;
-      padding: 6px 9mm 0;
+      position: relative; background: #fff; z-index: 100;
+      padding: 0;
     }
-    /* Content pushed down to clear fixed header (~30mm tall) */
-    .ct { position: relative; z-index: 1; padding-top: 30mm; }
+    .ct { position: relative; z-index: 1; padding-top: 0; }
 
     .hdr {
       display: table; width: 100%; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px;
@@ -309,6 +307,11 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     }
     .ft span { color: #1e3a8a; font-weight: 600; }
     .ft div { font-size: 11.5px; line-height: 1.55; }
+
+    /* Page break controls for Puppeteer PDF generator */
+    tr, .box, .st-wrap, .bb, .brb {
+      page-break-inside: avoid;
+    }
   </style>
 </head>
 <body>
@@ -318,121 +321,136 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   <!-- Fixed watermark — repeats centered on every PDF page -->
   ${LOGO_SRC ? `<img class="wm" src="${LOGO_SRC}" alt="watermark">` : ""}
 
-  <!-- Fixed page header — repeats on every PDF page -->
-  <div class="page-header">
-    <div class="hdr">
-      <div class="hdr-left">
-        <div class="brand">
-          ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication">` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
-        </div>
-      </div>
-      <div class="hdr-right">
-        <div class="qt">
-          <h2>${docLabel}</h2>
-          <div class="db">
-            <span class="db-item"><span>Doc No:</span> ${docNumber}</span>
-            <span class="db-item"><span>Date:</span> ${fmtDate(invoiceDate)}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Main paginated content -->
+  <!-- Main paginated content wrapper -->
   <div class="qw">
     <div class="ct">
+      <table style="width: 100%; border-collapse: collapse; border: none;">
+        <thead>
+          <tr>
+            <td style="padding: 0; border: none;">
+              <!-- Page Header -->
+              <div class="page-header">
+                <div class="hdr">
+                  <div class="hdr-left">
+                    <div class="brand">
+                      ${BRAND_SRC ? `<img src="${BRAND_SRC}" alt="Achme Communication">` : `<h3 style="color:#1e3a8a;font-size:20px;">Achme Communication</h3>`}
+                    </div>
+                  </div>
+                  <div class="hdr-right">
+                    <div class="qt">
+                      <h2>${docLabel}</h2>
+                      <div class="db">
+                        <span class="db-item"><span>Doc No:</span> ${docNumber}</span>
+                        <span class="db-item"><span>Date:</span> ${fmtDate(invoiceDate)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="height: 14px;"></div>
+            </td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 0; border: none;">
+              <!-- FROM / BILLED TO -->
+              <div class="tb">
+                <div class="tb-cell">
+                  <div class="ib">
+                    <div class="bt">FROM</div>
+                    <h3>Achme Communication</h3>
+                    <div class="gst-line">GSTIN: ${fromGstin}</div>
+                    <div class="cp">${fromAddress}</div>
+                    <div class="cl"><span class="cl-label">Ph:</span><span class="cl-value">0422-2569966, 4376555</span></div>
+                    <div class="cl"><span class="cl-label">Email:</span><span class="cl-value">info@achmecommunication.com</span></div>
+                    <div class="cl"><span class="cl-label">Web:</span><span class="cl-value">www.achmecommunication.com</span></div>
+                  </div>
+                </div>
+                <div class="tb-cell">
+                  <div class="ib">
+                    <div class="bt">BILLED TO</div>
+                    ${(() => {
+                      const clientCompany = (h.client_company || "").trim();
+                      return `<h3>${esc(clientCompany || h.customer_name || "---")}</h3>
+                      ${clientCompany ? `<div class="cp" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}`;
+                    })()}
+                    ${(clientAddr || h.client_pincode) ? `<div class="cp" style="margin-top:6px;">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
+                    ${h.mobile_number ? `<div class="cl" style="margin-top:6px;"><span class="cl-label">Ph:</span><span class="cl-value">${esc(h.mobile_number)}</span></div>` : ""}
+                    ${h.email ? `<div class="cl"><span class="cl-label">Email:</span><span class="cl-value">${esc(h.email)}</span></div>` : ""}
+                    ${h.gst_number ? `<div class="cl"><span class="cl-label">GST:</span><span class="cl-value">${esc(h.gst_number)}</span></div>` : ""}
+                  </div>
+                </div>
+              </div>
 
-      <!-- FROM / BILLED TO -->
-      <div class="tb">
-        <div class="tb-cell">
-          <div class="ib">
-            <div class="bt">FROM</div>
-            <h3>Achme Communication</h3>
-            <div class="gst-line">GSTIN: ${fromGstin}</div>
-            <div class="cp">${fromAddress}</div>
-            <div class="cl"><span class="cl-label">Ph:</span><span class="cl-value">0422-2569966, 4376555</span></div>
-            <div class="cl"><span class="cl-label">Email:</span><span class="cl-value">info@achmecommunication.com</span></div>
-            <div class="cl"><span class="cl-label">Web:</span><span class="cl-value">www.achmecommunication.com</span></div>
-          </div>
-        </div>
-        <div class="tb-cell">
-          <div class="ib">
-            <div class="bt">BILLED TO</div>
-            <h3>${esc(h.client_company || h.customer_name || "---")}</h3>
-            ${h.client_company ? `<div class="cp" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}
-            ${(clientAddr || h.client_pincode) ? `<div class="cp" style="margin-top:6px;">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
-            ${h.mobile_number ? `<div class="cl" style="margin-top:6px;"><span class="cl-label">Ph:</span><span class="cl-value">${esc(h.mobile_number)}</span></div>` : ""}
-            ${h.email ? `<div class="cl"><span class="cl-label">Email:</span><span class="cl-value">${esc(h.email)}</span></div>` : ""}
-            ${h.gst_number ? `<div class="cl"><span class="cl-label">GST:</span><span class="cl-value">${esc(h.gst_number)}</span></div>` : ""}
-          </div>
-        </div>
-      </div>
+              <!-- ITEMS TABLE -->
+              <div class="tw">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width:30px;">S.NO</th>
+                      ${hasBrandModel ? "<th>BRAND / MODEL</th>" : ""}
+                      <th>DESCRIPTION</th>
+                      ${hasHSN ? "<th>HSN/SAC</th>" : ""}
+                      <th style="width:40px;text-align:center;">QTY</th>
+                      <th style="width:50px;">UOM</th>
+                      ${hasGST ? '<th style="width:45px;text-align:right;">GST%</th>' : ""}
+                      <th style="width:80px;text-align:right;">PRICE</th>
+                      <th style="width:90px;text-align:right;">TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>${itemRows}</tbody>
+                </table>
+              </div>
 
-      <!-- ITEMS TABLE -->
-      <div class="tw">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:30px;">S.NO</th>
-              ${hasBrandModel ? "<th>BRAND / MODEL</th>" : ""}
-              <th>DESCRIPTION</th>
-              ${hasHSN ? "<th>HSN/SAC</th>" : ""}
-              <th style="width:40px;text-align:center;">QTY</th>
-              <th style="width:50px;">UOM</th>
-              ${hasGST ? '<th style="width:45px;text-align:right;">GST%</th>' : ""}
-              <th style="width:80px;text-align:right;">PRICE</th>
-              <th style="width:90px;text-align:right;">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>${itemRows}</tbody>
-        </table>
-      </div>
+              <!-- MID SECTION: 4 boxes in 2x2 grid -->
+              <div class="ms">
+                <div class="g2">
+                  <!-- Top-Left: Terms -->
+                  <div class="box">
+                    <div class="sh">TERMS &amp; CONDITIONS</div>
+                    ${terms.length > 0 ? `<ul style="padding-left:18px;margin:0;font-size:11.5px;line-height:1.6;color:#1a1f2e;">${termsListItems}</ul>` : '<div style="font-size:11.5px;color:#94a3b8;">No terms specified</div>'}
+                  </div>
+                  <!-- Top-Right: Summary (fixed size box) -->
+                  <div class="st-wrap">
+                    <table class="st"><tbody>${summaryRows}</tbody></table>
+                  </div>
+                  <!-- Bottom-Left: Notes -->
+                  <div class="box">
+                    <div class="sh">IMPORTANT NOTES</div>
+                    <div style="font-size:11.5px;line-height:1.6;color:#1a1f2e;">
+                      <div style="margin-bottom:6px;"><strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE &amp; ACCESSORIES AS PER ACTUALS.</div>
+                      <div style="margin-bottom:6px;"><strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.</div>
+                      <div><strong>NOTE:</strong> Civil, Electrical &amp; Interior Works not included.</div>
+                    </div>
+                  </div>
+                  <!-- Bottom-Right: Bank -->
+                  <div class="bb">
+                    <div class="sh">BANK DETAILS</div>
+                    <div class="bg">
+                      <div class="bg-label">Company</div><div class="bg-value">${bank.company}</div>
+                      <div class="bg-label">Bank</div><div class="bg-value">${bank.bank}</div>
+                      <div class="bg-label">Account</div><div class="bg-value">${bank.account}</div>
+                      <div class="bg-label">IFSC</div><div class="bg-value">${bank.ifsc}</div>
+                      <div class="bg-label">Branch</div><div class="bg-value">${bank.branch}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-      <!-- MID SECTION: 4 boxes in 2x2 grid -->
-      <div class="ms">
-        <div class="g2">
-          <!-- Top-Left: Terms -->
-          <div class="box">
-            <div class="sh">TERMS &amp; CONDITIONS</div>
-            ${terms.length > 0 ? `<ul style="padding-left:18px;margin:0;font-size:11.5px;line-height:1.6;color:#1a1f2e;">${termsListItems}</ul>` : '<div style="font-size:11.5px;color:#94a3b8;">No terms specified</div>'}
-          </div>
-          <!-- Top-Right: Summary (fixed size box) -->
-          <div class="st-wrap">
-            <table class="st"><tbody>${summaryRows}</tbody></table>
-          </div>
-          <!-- Bottom-Left: Notes -->
-          <div class="box">
-            <div class="sh">IMPORTANT NOTES</div>
-            <div style="font-size:11.5px;line-height:1.6;color:#1a1f2e;">
-              <div style="margin-bottom:6px;"><strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE &amp; ACCESSORIES AS PER ACTUALS.</div>
-              <div style="margin-bottom:6px;"><strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.</div>
-              <div><strong>NOTE:</strong> Civil, Electrical &amp; Interior Works not included.</div>
-            </div>
-          </div>
-          <!-- Bottom-Right: Bank -->
-          <div class="bb">
-            <div class="sh">BANK DETAILS</div>
-            <div class="bg">
-              <div class="bg-label">Company</div><div class="bg-value">${bank.company}</div>
-              <div class="bg-label">Bank</div><div class="bg-value">${bank.bank}</div>
-              <div class="bg-label">Account</div><div class="bg-value">${bank.account}</div>
-              <div class="bg-label">IFSC</div><div class="bg-value">${bank.ifsc}</div>
-              <div class="bg-label">Branch</div><div class="bg-value">${bank.branch}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+              <!-- BRANCHES (other 2 branches) -->
+              ${branchesHtml}
 
-      <!-- BRANCHES (other 2 branches) -->
-      ${branchesHtml}
-
-      <!-- FOOTER -->
-      <div class="ft">
-        <div><span>Executive:</span> ${execName}</div>
-        <div><span>PH:</span> ${execPhone}</div>
-        ${execEmail ? `<div><span>Email:</span> ${execEmail}</div>` : ""}
-      </div>
-
+              <!-- FOOTER -->
+              <div class="ft">
+                <div><span>Executive:</span> ${execName}</div>
+                <div><span>PH:</span> ${execPhone}</div>
+                ${execEmail ? `<div><span>Email:</span> ${execEmail}</div>` : ""}
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </body>
@@ -493,8 +511,8 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     });
     const pdfBuffer = await page.pdf({
       format: "A4",
+      preferCSSPageSize: true,
       printBackground: true,
-      margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
     });
     return pdfBuffer;
   } finally {

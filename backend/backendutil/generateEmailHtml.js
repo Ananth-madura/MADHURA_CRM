@@ -179,8 +179,11 @@ function generateEmailHtml({ invoice, items, type, docNumber, docLabel, companyN
           <tr>
             <td style="padding:20px;border-bottom:1px solid #e2e8f0;font-family:Arial,sans-serif;">
               <div style="color:#1e3a8a;font-weight:bold;font-size:13px;margin-bottom:8px;letter-spacing:0.5px;">BILLED TO</div>
-              <div style="font-size:15px;font-weight:bold;color:#2c2c2c;margin-bottom:4px;">${esc(h.customer_name || "---")}</div>
-              ${h.client_company ? `<div style="font-size:12px;color:#444;margin-bottom:2px;">${esc(h.client_company)}</div>` : ""}
+              ${(() => {
+                const clientCompany = (h.client_company || "").trim();
+                return `<div style="font-size:15px;font-weight:bold;color:#2c2c2c;margin-bottom:4px;">${esc(clientCompany || h.customer_name || "---")}</div>
+                ${clientCompany ? `<div style="font-size:12px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}`;
+              })()}
               ${h.mobile_number ? `<div style="font-size:12px;color:#1a1f2e;margin-top:4px;">Ph: ${esc(h.mobile_number)}</div>` : ""}
               ${h.email ? `<div style="font-size:12px;color:#1a1f2e;">Email: ${esc(h.email)}</div>` : ""}
               ${h.gst_number ? `<div style="font-size:12px;color:#1a1f2e;">GSTIN: ${esc(h.gst_number)}</div>` : ""}

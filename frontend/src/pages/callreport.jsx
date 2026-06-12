@@ -2238,6 +2238,12 @@ const CallReport = () => {
                           <p className="font-semibold text-xs sm:text-sm text-foreground truncate">{call.email || "—"}</p>
                         </div>
                       </div>
+                      {(call.call_details || call.complaint || call.description) && (
+                        <div className="mt-3 p-3 rounded-lg bg-white border border-primary/20">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-primary mb-1">Call Details / Issue Description</p>
+                          <p className="text-sm text-foreground leading-relaxed">{call.call_details || call.complaint || call.description}</p>
+                        </div>
+                      )}
                     </>
                   );
                 })()}

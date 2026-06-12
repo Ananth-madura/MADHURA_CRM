@@ -85,6 +85,49 @@ const EstimateInvoice = () => {
     fetchEstimateInvoices();
     fetchQuotations();
     fetchFromAddresses();
+
+    // Check for query params
+    const urlParams = new URLSearchParams(window.location.search);
+    const qName = urlParams.get('client_name');
+    if (qName) {
+      setCustomer(c => ({
+        ...c,
+        customer_name: decodeURIComponent(qName),
+        email: urlParams.get("client_email") ? decodeURIComponent(urlParams.get("client_email")) : c.email
+      }));
+      setOpen(true);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      const pf = sessionStorage.getItem("qt_prefill");
+      if (pf) {
+        try {
+          const v = JSON.parse(pf);
+          setCustomer(c => ({
+            ...c,
+            customer_name: v.customer_name || "",
+            mobile_number: v.mobile_number || c.mobile_number,
+            email: v.email || c.email,
+            gst_number: v.gst_number || c.gst_number,
+            location_city: v.location_city || c.location_city
+          }));
+          setExtra(ex => ({
+            ...ex,
+            client_company: v.company_name || v.customer_name || ex.client_company,
+            client_address1: v.address || ex.client_address1,
+            client_city: v.location_city || ex.client_city,
+            client_state: v.state || ex.client_state,
+            client_pincode: v.pincode || ex.client_pincode,
+            gst_mode: v.gst_mode || "Exclusive"
+          }));
+          if (v.service_description) {
+            setDescInput(v.service_description); setBrandInput("");
+            setItems([{ name: v.service_description, brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
+          }
+          setOpen(true);
+          sessionStorage.removeItem("qt_prefill");
+        } catch (_) { }
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

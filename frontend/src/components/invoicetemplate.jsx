@@ -177,263 +177,284 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
         <img className="ft-watermark" src={logoImg} alt="watermark" />
 
         <div className="ft-content">
-          {/* HEADER */}
-          <header className="ft-header">
-            <div className="ft-brand">
-              <img src={brandLogo} alt="Achme Communication logo" />
-            </div>
-            <div className="ft-quotation-title">
-              <h2>{config.label}</h2>
-              <div className="ft-doc-box">
-                <div>
-                  <span>Doc No:</span> {docNumber}
-                </div>
-                <div>
-                  <span>Date:</span> {formatDate(docDate)}
-                </div>
-              </div>
-            </div>
-          </header>
+          <table style={{ width: "100%", borderCollapse: "collapse", border: "none" }}>
+            <thead>
+              <tr>
+                <td style={{ padding: 0, border: "none" }}>
+                  {/* HEADER */}
+                  <header className="ft-header">
+                    <div className="ft-brand">
+                      <img src={brandLogo} alt="Achme Communication logo" />
+                    </div>
+                    <div className="ft-quotation-title">
+                      <h2>{config.label}</h2>
+                      <div className="ft-doc-box">
+                        <div>
+                          <span>Doc No:</span> {docNumber}
+                        </div>
+                        <div>
+                          <span>Date:</span> {formatDate(docDate)}
+                        </div>
+                      </div>
+                    </div>
+                  </header>
+                  <div style={{ height: "14px" }}></div>
+                </td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: 0, border: "none" }}>
+                  {/* FROM / BILLED TO */}
+                  <section className="ft-top-boxes">
+                    <div className="ft-info-box">
+                      <div className="ft-box-title">FROM</div>
+                      <h3>Achme Communication</h3>
+                      <div className="ft-gst">GSTIN: {fromGstin}</div>
+                      <div className="ft-compact">{fromAddress}</div>
+                      <div className="ft-contact-line">
+                        <span className="label">Ph:</span>
+                        <span>0422-2569966, 4376555</span>
+                      </div>
+                      <div className="ft-contact-line">
+                        <span className="label">Email:</span>
+                        <span>info@achmecommunication.com</span>
+                      </div>
+                      <div className="ft-contact-line">
+                        <span className="label">Web:</span>
+                        <span>www.achmecommunication.com</span>
+                      </div>
+                    </div>
 
-          {/* FROM / BILLED TO */}
-          <section className="ft-top-boxes">
-            <div className="ft-info-box">
-              <div className="ft-box-title">FROM</div>
-              <h3>Achme Communication</h3>
-              <div className="ft-gst">GSTIN: {fromGstin}</div>
-              <div className="ft-compact">{fromAddress}</div>
-              <div className="ft-contact-line">
-                <span className="label">Ph:</span>
-                <span>0422-2569966, 4376555</span>
-              </div>
-              <div className="ft-contact-line">
-                <span className="label">Email:</span>
-                <span>info@achmecommunication.com</span>
-              </div>
-              <div className="ft-contact-line">
-                <span className="label">Web:</span>
-                <span>www.achmecommunication.com</span>
-              </div>
-            </div>
+                    <div className="ft-info-box">
+                      <div className="ft-box-title">BILLED TO</div>
+                      {(() => {
+                        const clientCompany = (h.client_company || "").trim();
+                        return (
+                          <>
+                            <h3>{clientCompany || h.customer_name || "---"}</h3>
+                            {clientCompany && <div className="ft-compact" style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>{h.customer_name}</div>}
+                          </>
+                        );
+                      })()}
+                      {h.gst_number && <div className="ft-gst">GSTIN: {h.gst_number}</div>}
+                      {(clientAddr || h.client_pincode) && (
+                        <div className="ft-compact">
+                          {clientAddr}
+                          {clientPin}
+                          {clientCountry}
+                        </div>
+                      )}
+                      {h.mobile_number && (
+                        <div className="ft-contact-line">
+                          <span className="label">Ph:</span>
+                          <span>{h.mobile_number}</span>
+                        </div>
+                      )}
+                      {h.email && (
+                        <div className="ft-contact-line">
+                          <span className="label">Email:</span>
+                          <span>{h.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
-            <div className="ft-info-box">
-              <div className="ft-box-title">BILLED TO</div>
-              <h3>{h.client_company || h.customer_name || "---"}</h3>
-              {h.client_company && <div className="ft-compact" style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>{h.customer_name}</div>}
-              {h.gst_number && <div className="ft-gst">GSTIN: {h.gst_number}</div>}
-              {(clientAddr || h.client_pincode) && (
-                <div className="ft-compact">
-                  {clientAddr}
-                  {clientPin}
-                  {clientCountry}
-                </div>
-              )}
-              {h.mobile_number && (
-                <div className="ft-contact-line">
-                  <span className="label">Ph:</span>
-                  <span>{h.mobile_number}</span>
-                </div>
-              )}
-              {h.email && (
-                <div className="ft-contact-line">
-                  <span className="label">Email:</span>
-                  <span>{h.email}</span>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ITEMS TABLE */}
-          <div className="ft-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>S.NO</th>
-                  {/* Show BRAND / MODEL first if available */}
-                  {hasBrandModel && <th>BRAND / MODEL</th>}
-                  <th>DESCRIPTION</th>
-                  {hasHSN && <th>HSN/SAC</th>}
-                  <th>QTY</th>
-                  <th>UOM</th>
-                  {hasGST && <th>GST%</th>}
-                  <th>PRICE</th>
-                  <th>TOTAL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => {
-                  const qty = Number(r.quantity || 0);
-                  const price = Number(r.price || 0);
-                  const lineTotal = qty * price;
-                  return (
-                    <tr key={i}>
-                      <td data-label="S.NO">{i + 1}</td>
-                      {hasBrandModel && <td data-label="BRAND / MODEL">{r.brand_model || "---"}</td>}
-                      <td data-label="DESCRIPTION">
-                        {(() => {
-                          const desc = r.description || "---";
-                          const commaIndex = desc.indexOf(",");
-                          if (commaIndex !== -1) {
-                            const heading = desc.substring(0, commaIndex + 1);
-                            const body = desc.substring(commaIndex + 1);
-                            return (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
-                                <span style={{ fontWeight: "700", color: "#1e293b", fontSize: "12px" }}>{heading}</span>
-                                <span style={{ fontWeight: "400", color: "#64748b", fontSize: "10.5px", marginTop: "2px" }}>{body.trim()}</span>
-                              </div>
-                            );
-                          }
-                          return <strong>{desc}</strong>;
-                        })()}
-                      </td>
-                      {hasHSN && <td data-label="HSN/SAC">{r.hsn_sac || "---"}</td>}
-                      <td data-label="QTY">{qty}</td>
-                      <td data-label="UOM">{r.uom || "Nos"}</td>
-                      {hasGST && <td data-label="GST%">{r.tax || taxRate}%</td>}
-                      <td data-label="PRICE">{fmt(price)}</td>
-                      <td data-label="TOTAL">
-                        <strong>{fmt(lineTotal)}</strong>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* MID SECTION */}
-          <section className="ft-mid-section">
-            <div className="ft-grid-2x2">
-              {/* TERMS */}
-              {terms.length > 0 && (
-                <div className="ft-terms-box">
-                  <div className="ft-section-heading">TERMS & CONDITIONS</div>
-                  <ul>
-                    {terms.map((t, i) => (
-                      <li key={i}>{t}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* SUMMARY */}
-              <div className="ft-summary-box">
-                <table className="ft-summary-table">
-                  <tr>
-                    <td style={{ width: "50%" }}>Subtotal</td>
-                    <td style={{ width: "50%" }}>{fmt(subtotal)}</td>
-                  </tr>
-                  {showDiscount && (
-                    <tr>
-                      <td style={{ width: "50%" }}>Discount</td>
-                      <td style={{ width: "50%" }}>{fmt(totalDiscount)}</td>
-                    </tr>
-                  )}
-                  {showCGST && (
-                    <tr>
-                      <td style={{ width: "50%" }}>CGST ({taxRate / 2}%)</td>
-                      <td style={{ width: "50%" }}>{fmt(totalCGST)}</td>
-                    </tr>
-                  )}
-                  {showSGST && (
-                    <tr>
-                      <td style={{ width: "50%" }}>SGST ({taxRate / 2}%)</td>
-                      <td style={{ width: "50%" }}>{fmt(totalSGST)}</td>
-                    </tr>
-                  )}
-                  {showIGST && (
-                    <tr>
-                      <td style={{ width: "50%" }}>IGST ({taxRate}%)</td>
-                      <td style={{ width: "50%" }}>{fmt(totalIGST)}</td>
-                    </tr>
-                  )}
-                  {!hasGST && (
-                    <tr>
-                      <td style={{ color: "var(--muted)", fontSize: "10px", width: "50%" }}>Without GST</td>
-                      <td style={{ width: "50%" }}></td>
-                    </tr>
-                  )}
-                  <tr className="ft-grand-total">
-                    <td style={{ width: "50%" }}>GRAND TOTAL</td>
-                    <td style={{ width: "50%" }}>{fmt(grandTotal)}</td>
-                  </tr>
-                </table>
-              </div>
-
-              {/* NOTES */}
-              <div className="ft-notes-box">
-                <div className="ft-section-heading">IMPORTANT NOTES</div>
-                <strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE & ACCESSORIES AS PER ACTUALS.
-                <br />
-                <br />
-                <strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.
-                <br />
-                <br />
-                <strong>NOTE:</strong> Civil, Electrical & Interior Works not included.
-              </div>
-
-              {/* BANK */}
-              <div className="ft-bank-box">
-                <div className="ft-section-heading">BANK DETAILS</div>
-                <div className="ft-bank-grid">
-                  <div>Company</div>
-                  <div>
-                    <strong>{bank.company}</strong>
+                  {/* ITEMS TABLE */}
+                  <div className="ft-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>S.NO</th>
+                          {/* Show BRAND / MODEL first if available */}
+                          {hasBrandModel && <th>BRAND / MODEL</th>}
+                          <th>DESCRIPTION</th>
+                          {hasHSN && <th>HSN/SAC</th>}
+                          <th>QTY</th>
+                          <th>UOM</th>
+                          {hasGST && <th>GST%</th>}
+                          <th>PRICE</th>
+                          <th>TOTAL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => {
+                          const qty = Number(r.quantity || 0);
+                          const price = Number(r.price || 0);
+                          const lineTotal = qty * price;
+                          return (
+                            <tr key={i}>
+                              <td data-label="S.NO">{i + 1}</td>
+                              {hasBrandModel && <td data-label="BRAND / MODEL">{r.brand_model || "---"}</td>}
+                              <td data-label="DESCRIPTION">
+                                {(() => {
+                                  const desc = r.description || "---";
+                                  const commaIndex = desc.indexOf(",");
+                                  if (commaIndex !== -1) {
+                                    const heading = desc.substring(0, commaIndex + 1);
+                                    const body = desc.substring(commaIndex + 1);
+                                    return (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
+                                        <span style={{ fontWeight: "700", color: "#1e293b", fontSize: "12px" }}>{heading}</span>
+                                        <span style={{ fontWeight: "400", color: "#64748b", fontSize: "10.5px", marginTop: "2px" }}>{body.trim()}</span>
+                                      </div>
+                                    );
+                                  }
+                                  return <strong>{desc}</strong>;
+                                })()}
+                              </td>
+                              {hasHSN && <td data-label="HSN/SAC">{r.hsn_sac || "---"}</td>}
+                              <td data-label="QTY">{qty}</td>
+                              <td data-label="UOM">{r.uom || "Nos"}</td>
+                              {hasGST && <td data-label="GST%">{r.tax || taxRate}%</td>}
+                              <td data-label="PRICE">{fmt(price)}</td>
+                              <td data-label="TOTAL">
+                                <strong>{fmt(lineTotal)}</strong>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <div>Bank</div>
-                  <div>
-                    <strong>{bank.bank}</strong>
-                  </div>
-                  <div>Account</div>
-                  <div>
-                    <strong>{bank.account}</strong>
-                  </div>
-                  <div>IFSC</div>
-                  <div>
-                    <strong>{bank.ifsc}</strong>
-                  </div>
-                  <div>Branch</div>
-                  <div>
-                    <strong>{bank.branch}</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
 
-          {/* BRANCHES */}
-          {otherBranches.length > 0 && (
-            <div className="ft-branch-box">
-              <div className="ft-section-heading">OUR BRANCHES</div>
-              {otherBranches.map((b, i) => (
-                <span key={i}>
-                  <strong>{b.name}:</strong> {b.address} | <strong>GSTIN:</strong> {b.gstin}
-                  {i < otherBranches.length - 1 && <br />}
-                </span>
-              ))}
-            </div>
-          )}
+                  {/* MID SECTION */}
+                  <section className="ft-mid-section">
+                    <div className="ft-grid-2x2">
+                      {/* TERMS */}
+                      {terms.length > 0 && (
+                        <div className="ft-terms-box">
+                          <div className="ft-section-heading">TERMS & CONDITIONS</div>
+                          <ul>
+                            {terms.map((t, i) => (
+                              <li key={i}>{t}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-          {/* FOOTER */}
-          {(execName || execPhone || execEmail) && (
-            <footer className="ft-footer">
-              {execName && (
-                <div>
-                  <span>Executive:</span> {execName}
-                </div>
-              )}
-              {execPhone && (
-                <div>
-                  <span>PH:</span> {execPhone}
-                </div>
-              )}
-              {execEmail && (
-                <div>
-                  <span>Email:</span> {execEmail}
-                </div>
-              )}
-            </footer>
-          )}
+                      {/* SUMMARY */}
+                      <div className="ft-summary-box">
+                        <table className="ft-summary-table">
+                          <tr>
+                            <td style={{ width: "50%" }}>Subtotal</td>
+                            <td style={{ width: "50%" }}>{fmt(subtotal)}</td>
+                          </tr>
+                          {showDiscount && (
+                            <tr>
+                              <td style={{ width: "50%" }}>Discount</td>
+                              <td style={{ width: "50%" }}>{fmt(totalDiscount)}</td>
+                            </tr>
+                          )}
+                          {showCGST && (
+                            <tr>
+                              <td style={{ width: "50%" }}>CGST ({taxRate / 2}%)</td>
+                              <td style={{ width: "50%" }}>{fmt(totalCGST)}</td>
+                            </tr>
+                          )}
+                          {showSGST && (
+                            <tr>
+                              <td style={{ width: "50%" }}>SGST ({taxRate / 2}%)</td>
+                              <td style={{ width: "50%" }}>{fmt(totalSGST)}</td>
+                            </tr>
+                          )}
+                          {showIGST && (
+                            <tr>
+                              <td style={{ width: "50%" }}>IGST ({taxRate}%)</td>
+                              <td style={{ width: "50%" }}>{fmt(totalIGST)}</td>
+                            </tr>
+                          )}
+                          {!hasGST && (
+                            <tr>
+                              <td style={{ color: "var(--muted)", fontSize: "10px", width: "50%" }}>Without GST</td>
+                              <td style={{ width: "50%" }}></td>
+                            </tr>
+                          )}
+                          <tr className="ft-grand-total">
+                            <td style={{ width: "50%" }}>GRAND TOTAL</td>
+                            <td style={{ width: "50%" }}>{fmt(grandTotal)}</td>
+                          </tr>
+                        </table>
+                      </div>
+
+                      {/* NOTES */}
+                      <div className="ft-notes-box">
+                        <div className="ft-section-heading">IMPORTANT NOTES</div>
+                        <strong>Materials:</strong> BOQ based on discussion. Extra materials required at execution charged extra. CABLE & ACCESSORIES AS PER ACTUALS.
+                        <br />
+                        <br />
+                        <strong>Delay:</strong> Delays due to external dependencies at site - Achme Communication will not be responsible.
+                        <br />
+                        <br />
+                        <strong>NOTE:</strong> Civil, Electrical & Interior Works not included.
+                      </div>
+
+                      {/* BANK */}
+                      <div className="ft-bank-box">
+                        <div className="ft-section-heading">BANK DETAILS</div>
+                        <div className="ft-bank-grid">
+                          <div>Company</div>
+                          <div>
+                            <strong>{bank.company}</strong>
+                          </div>
+                          <div>Bank</div>
+                          <div>
+                            <strong>{bank.bank}</strong>
+                          </div>
+                          <div>Account</div>
+                          <div>
+                            <strong>{bank.account}</strong>
+                          </div>
+                          <div>IFSC</div>
+                          <div>
+                            <strong>{bank.ifsc}</strong>
+                          </div>
+                          <div>Branch</div>
+                          <div>
+                            <strong>{bank.branch}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* BRANCHES */}
+                  {otherBranches.length > 0 && (
+                    <div className="ft-branch-box">
+                      <div className="ft-section-heading">OUR BRANCHES</div>
+                      {otherBranches.map((b, i) => (
+                        <span key={i}>
+                          <strong>{b.name}:</strong> {b.address} | <strong>GSTIN:</strong> {b.gstin}
+                          {i < otherBranches.length - 1 && <br />}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* FOOTER */}
+                  {(execName || execPhone || execEmail) && (
+                    <footer className="ft-footer">
+                      {execName && (
+                        <div>
+                          <span>Executive:</span> {execName}
+                        </div>
+                      )}
+                      {execPhone && (
+                        <div>
+                          <span>PH:</span> {execPhone}
+                        </div>
+                      )}
+                      {execEmail && (
+                        <div>
+                          <span>Email:</span> {execEmail}
+                        </div>
+                      )}
+                    </footer>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </main>
     </div>

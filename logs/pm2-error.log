@@ -2,3 +2,12 @@
 2026-06-12T11:24:11: OTP email transporter verification failed: queryA ETIMEOUT smtp.gmail.com
 2026-06-12T11:29:24: OTP email transporter verification failed: queryA ETIMEOUT smtp.gmail.com
 2026-06-12T12:01:56: OTP email transporter verification failed: queryA ETIMEOUT smtp.gmail.com
+2026-06-12T13:45:07: SMTP verification attempt 1 failed, retrying... getaddrinfo ENOTFOUND hgy.jbb.hsu
+2026-06-12T13:45:07: SMTP verification attempt 2 failed: Error: getaddrinfo ENOTFOUND hgy.jbb.hsu
+2026-06-12T13:45:07:     at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:121:26) {
+2026-06-12T13:45:07:   errno: -3008,
+2026-06-12T13:45:07:   code: 'EDNS',
+2026-06-12T13:45:07:   syscall: 'getaddrinfo',
+2026-06-12T13:45:07:   hostname: 'hgy.jbb.hsu',
+2026-06-12T13:45:07:   command: 'CONN'
+2026-06-12T13:45:07: }

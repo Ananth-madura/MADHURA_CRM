@@ -15,7 +15,7 @@ export const DashboardSearchContext = createContext("");
 export const ReminderContext = createContext({ setReminderData: () => {}, setReminderNotes: () => {} });
 
 export default function DashboardLayout() {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [reminderData, setReminderData] = useState(null);
@@ -25,6 +25,19 @@ export default function DashboardLayout() {
   const location = useLocation();
 
   useEffect(() => { initMobileTables(); }, []);
+
+  // Sync user profile/permissions on mount
+  useEffect(() => {
+    if (user && login) {
+      axios.get(`${API}/api/auth/profile`)
+        .then(res => {
+          if (res.data.role !== user.role) {
+            login({ ...user, role: res.data.role });
+          }
+        })
+        .catch(err => console.error("Permission sync error:", err));
+    }
+  }, []);
 
   useEffect(() => {
     if (user) {
