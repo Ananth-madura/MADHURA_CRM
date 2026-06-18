@@ -7,7 +7,7 @@ import ServiceEstimation from "./serviceestimation";
 const TABS = [
   { key: "quotation", label: "Quotation" },
   { key: "proforma", label: "Proforma Invoice" },
-  { key: "estimation", label: "Estimation" },
+  // { key: "estimation", label: "Estimation" },
   { key: "service", label: "Service Estimation" },
 ];
 
@@ -21,11 +21,10 @@ const Proposal = () => {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              activeTab === tab.key
+            className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${activeTab === tab.key
                 ? "border-[#1694CE] text-[#1694CE]"
                 : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
+              }`}
           >
             {tab.label}
           </button>
@@ -34,7 +33,7 @@ const Proposal = () => {
 
       {activeTab === "quotation" && <Quotation />}
       {activeTab === "proforma" && <PerformaInvoice />}
-      {activeTab === "estimation" && <EstimateInvoice />}
+      {/* {activeTab === "estimation" && <EstimateInvoice />} */}
       {activeTab === "service" && <ServiceEstimation />}
     </div>
   );

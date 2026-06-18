@@ -295,9 +295,9 @@ router.put("/update-user/:id", verifyToken, isAdmin, (req, res) => {
   db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
     if (err || !rows.length) return res.status(404).json({ message: "User not found" });
     const oldEmail = rows[0].email;
-    // Protect: cannot edit an admin user's record
-    if (rows[0].role === "admin") {
-      return res.status(403).json({ message: "Cannot modify an admin account" });
+    // Protect: cannot edit the primary admin user's record
+    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") {
+      return res.status(403).json({ message: "Cannot modify the primary admin account" });
     }
 
     db.query(`UPDATE users SET first_name = ?, email = ?, role = ? WHERE id = ?`, [first_name, email?.toLowerCase() || oldEmail, role || "employee", req.params.id], (err2) => {
@@ -314,14 +314,14 @@ router.put("/update-user/:id", verifyToken, isAdmin, (req, res) => {
 /* ================= ADMIN: CHANGE USER ROLE ================= */
 router.put("/change-role/:id", verifyToken, isAdmin, (req, res) => {
   const { role } = req.body;
-  if (!["subadmin", "employee"].includes(role)) {
-    return res.status(400).json({ message: "Invalid role. Can only set subadmin or employee" });
+  if (!["admin", "subadmin", "employee"].includes(role)) {
+    return res.status(400).json({ message: "Invalid role. Can only set admin, subadmin or employee" });
   }
-  // Check if target user is an admin — admins are protected
-  db.query(`SELECT role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
+  // Check if target user is primary admin — primary admin is protected
+  db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
     if (err || !rows.length) return res.status(404).json({ message: "User not found" });
-    if (rows[0].role === "admin") {
-      return res.status(403).json({ message: "Cannot change the role of an admin account" });
+    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") {
+      return res.status(403).json({ message: "Cannot change the role of the primary admin account" });
     }
     db.query(`UPDATE users SET role = ? WHERE id = ?`, [role, req.params.id], (err2) => {
       if (err2) return res.status(500).json({ message: "Role update failed" });
@@ -335,10 +335,10 @@ router.put("/ban-user/:id", verifyToken, isAdmin, (req, res) => {
   const { status } = req.body;
   if (!["active", "banned", "pending"].includes(status)) return res.status(400).json({ message: "Invalid status" });
 
-  // Protect admin accounts from being banned
-  db.query(`SELECT role FROM users WHERE id = ?`, [req.params.id], (err0, rows0) => {
+  // Protect primary admin account from being banned
+  db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err0, rows0) => {
     if (err0 || !rows0.length) return res.status(404).json({ message: "User not found" });
-    if (rows0[0].role === "admin") return res.status(403).json({ message: "Cannot ban an admin account" });
+    if (rows0[0].role === "admin" && rows0[0].email === "Kk@achmecommunication.com") return res.status(403).json({ message: "Cannot ban the primary admin account" });
 
     db.query(`UPDATE users SET status = ? WHERE id = ?`, [status, req.params.id], (err) => {
       if (err) return res.status(500).json({ message: "Update failed" });
@@ -351,8 +351,8 @@ router.put("/ban-user/:id", verifyToken, isAdmin, (req, res) => {
 router.delete("/delete-user/:id", verifyToken, isAdmin, (req, res) => {
   db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
     if (err || !rows.length) return res.status(404).json({ message: "User not found" });
-    // Protect admin accounts from being deleted
-    if (rows[0].role === "admin") return res.status(403).json({ message: "Cannot delete an admin account" });
+    // Protect primary admin account from being deleted
+    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") return res.status(403).json({ message: "Cannot delete the primary admin account" });
 
 
     db.query(`DELETE FROM users WHERE id = ?`, [req.params.id], (err2) => {

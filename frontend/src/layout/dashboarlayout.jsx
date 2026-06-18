@@ -10,9 +10,10 @@ import UserSidebar from "../sidebars/usersidebar";
 import MobileBottomNav from "../components/MobileBottomNav";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
 import { initMobileTables } from "../utils/mobileTableHelper";
+import MadhuraLogo from "./Madhura-logo.png";
 
 export const DashboardSearchContext = createContext("");
-export const ReminderContext = createContext({ setReminderData: () => {}, setReminderNotes: () => {} });
+export const ReminderContext = createContext({ setReminderData: () => { }, setReminderNotes: () => { } });
 
 export default function DashboardLayout() {
   const { user, login } = useAuth();
@@ -69,7 +70,7 @@ export default function DashboardLayout() {
         await axios.post(`${API}/api/leads/check-missed`);
         const res = await axios.get(`${API}/api/leads/escalations`);
         setEscalations(res.data);
-      } catch (_) {}
+      } catch (_) { }
     };
     fetchEscalations();
     const interval = setInterval(fetchEscalations, 5 * 60 * 1000);
@@ -84,67 +85,68 @@ export default function DashboardLayout() {
 
   return (
     <DashboardSearchContext.Provider value={searchQuery}>
-    <ReminderContext.Provider value={reminderValue}>
-      {/* TOPBAR */}
-      <div className="fixed top-0 left-0 w-full z-50">
-        <Topbar
-          onHamburgerClick={() => setSidebarOpen(prev => !prev)}
-          showSearch={isDashboard}
-          onSearch={setSearchQuery}
-          reminderData={reminderData}
-          reminderNotes={reminderNotes}
-          escalationCount={escalations.length}
-          escalations={escalations}
-        />
-      </div>
-
-      <div className="flex">
-        {/* Overlay for phone only */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/40 z-40 md:hidden"
-            onClick={() => setSidebarOpen(false)}
+      <ReminderContext.Provider value={reminderValue}>
+        {/* TOPBAR */}
+        <div className="fixed top-0 left-0 w-full z-50">
+          <Topbar
+            onHamburgerClick={() => setSidebarOpen(prev => !prev)}
+            showSearch={isDashboard}
+            onSearch={setSearchQuery}
+            reminderData={reminderData}
+            reminderNotes={reminderNotes}
+            escalationCount={escalations.length}
+            escalations={escalations}
           />
-        )}
+        </div>
 
-        {/* Sidebar — visible from md (768px) */}
-        <div
-          className={`fixed left-0 top-[65px] bg-shell text-shell-text z-40 transition-transform duration-300
+        <div className="flex">
+          {/* Overlay for phone only */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 z-40 md:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+
+          {/* Sidebar — visible from md (768px) */}
+          <div
+            className={`fixed left-0 top-[65px] bg-shell text-shell-text z-40 transition-transform duration-300
             w-[250px] h-[calc(100vh-65px)]
             md:h-[calc(100vh-65px)] md:translate-x-0
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
             phone-sidebar`}
-        >
-          {user.role === "admin" ? (
-            <AdminSidebar onNavigate={() => setSidebarOpen(false)} />
-          ) : (
-            <UserSidebar onNavigate={() => setSidebarOpen(false)} />
-          )}
+          >
+            {user.role === "admin" ? (
+              <AdminSidebar onNavigate={() => setSidebarOpen(false)} />
+            ) : (
+              <UserSidebar onNavigate={() => setSidebarOpen(false)} />
+            )}
+          </div>
+
+          {/* CENTER CONTENT */}
+          <div className="md:ml-[250px] mt-[65px] w-full max-w-full md:max-w-[calc(100%-250px)] p-3 md:p-5 lg:p-6 min-h-screen text-shell-text bg-content flex flex-col pb-16 md:pb-6">
+            <div className="flex-1 w-full max-w-7xl mx-auto">
+              <Outlet />
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-2 text-xs md:text-sm font-bold text-blue-600 uppercase tracking-wider">
+              <span>Created by</span>
+              <img src={MadhuraLogo} alt="Madhura Logo" className="h-5 w-auto object-contain" />
+            </div>
+          </div>
         </div>
 
-        {/* CENTER CONTENT */}
-        <div className="md:ml-[250px] mt-[65px] w-full max-w-full md:max-w-[calc(100%-250px)] p-3 md:p-5 lg:p-6 min-h-screen text-shell-text bg-content flex flex-col pb-16 md:pb-6">
-          <div className="flex-1 w-full max-w-7xl mx-auto">
-            <Outlet />
-          </div>
-          <div className="mt-6 text-right text-xs md:text-sm font-bold text-blue-600 uppercase tracking-wider">
-            Created by Madhura Technology
-          </div>
+        {/* Bottom Nav — phone only */}
+        <div className="md:hidden">
+          <MobileBottomNav onMenuOpen={() => setSidebarOpen(true)} />
         </div>
-      </div>
 
-      {/* Bottom Nav — phone only */}
-      <div className="md:hidden">
-        <MobileBottomNav onMenuOpen={() => setSidebarOpen(true)} />
-      </div>
-
-      {showSMTPPrompt && user && (
-        <SMTPConfigPrompt 
-          email={user.email} 
-          onClose={() => setShowSMTPPrompt(false)} 
-        />
-      )}
-    </ReminderContext.Provider>
+        {showSMTPPrompt && user && (
+          <SMTPConfigPrompt
+            email={user.email}
+            onClose={() => setShowSMTPPrompt(false)}
+          />
+        )}
+      </ReminderContext.Provider>
     </DashboardSearchContext.Provider>
   );
 }

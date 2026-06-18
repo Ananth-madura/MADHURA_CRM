@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { ToastProvider, useToast } from "./components/Toast";
+import { InAppToastContainer } from "./components/InAppToast";
 import { useEffect } from "react";
 import axios from "axios";
 import Login from "./auth/login";
@@ -123,6 +124,7 @@ export default function App() {
     <AuthProvider>
       <NotificationProvider>
         <ToastProvider>
+          <InAppToastContainer />
           <DBConnectionChecker />
           <NetworkSetupBanner />
           <InstallPrompt />

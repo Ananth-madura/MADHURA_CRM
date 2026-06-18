@@ -135,7 +135,7 @@ async function ensureTablesAndColumns() {
     },
     {
       name: "services",
-      sql: `CREATE TABLE IF NOT EXISTS services (id INT AUTO_INCREMENT PRIMARY KEY, client VARCHAR(150) DEFAULT NULL, material VARCHAR(255) DEFAULT NULL, warranty VARCHAR(100) DEFAULT NULL, amc TINYINT(1) DEFAULT 0, date DATE DEFAULT NULL, images TEXT DEFAULT NULL, issues TEXT DEFAULT NULL, created_by INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+      sql: `CREATE TABLE IF NOT EXISTS services (id INT AUTO_INCREMENT PRIMARY KEY, client VARCHAR(150) DEFAULT NULL, material VARCHAR(255) DEFAULT NULL, warranty VARCHAR(100) DEFAULT NULL, amc TINYINT(1) DEFAULT 0, date DATE DEFAULT NULL, images TEXT DEFAULT NULL, issues TEXT DEFAULT NULL, created_by INT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, engineer_name VARCHAR(150) DEFAULT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     },
     {
       name: "customers",
@@ -305,11 +305,13 @@ async function ensureTablesAndColumns() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         call_id VARCHAR(20) DEFAULT NULL,
         session_id VARCHAR(50) DEFAULT NULL,
+        customer_id INT DEFAULT NULL,
         contract_id INT DEFAULT NULL,
         contract_title VARCHAR(200) DEFAULT NULL,
         service_type ENUM('AMC', 'ALC', 'None') DEFAULT 'None',
         client_name VARCHAR(200) DEFAULT NULL,
         customer_name VARCHAR(200) DEFAULT NULL,
+        name VARCHAR(150) DEFAULT NULL,
         staff_name VARCHAR(150) DEFAULT NULL,
         executive_name VARCHAR(150) DEFAULT NULL,
         technician VARCHAR(150) DEFAULT NULL,
@@ -317,6 +319,7 @@ async function ensureTablesAndColumns() {
         service_person VARCHAR(150) DEFAULT NULL,
         phone VARCHAR(20) DEFAULT NULL,
         mobile_number VARCHAR(20) DEFAULT NULL,
+        email VARCHAR(150) DEFAULT NULL,
         location VARCHAR(100) DEFAULT NULL,
         location_city VARCHAR(100) DEFAULT NULL,
         call_sequence INT DEFAULT 1,
@@ -328,6 +331,7 @@ async function ensureTablesAndColumns() {
         actual_duration INT DEFAULT 0,
         is_exceeded TINYINT(1) DEFAULT 0,
         duration_limit INT DEFAULT NULL,
+        call_details TEXT,
         complaint TEXT,
         description TEXT,
         remarks TEXT,
@@ -339,6 +343,7 @@ async function ensureTablesAndColumns() {
         status ENUM('Pending', 'In Progress', 'Completed', 'Closed', 'Live', 'Observation') DEFAULT 'Completed',
         priority ENUM('Critical', 'High', 'Medium') DEFAULT 'Medium',
         call_type VARCHAR(50) DEFAULT 'AMC',
+        call_referrer VARCHAR(150) DEFAULT NULL,
         payment_type VARCHAR(50) DEFAULT NULL,
         payment_mode VARCHAR(50) DEFAULT NULL,
         invoice_value DECIMAL(10,2) DEFAULT 0,
@@ -346,6 +351,7 @@ async function ensureTablesAndColumns() {
         payment_status VARCHAR(50) DEFAULT NULL,
         gst_number VARCHAR(50) DEFAULT NULL,
         company_name VARCHAR(150) DEFAULT NULL,
+        step2_completed TINYINT(1) DEFAULT 0,
         completed_at TIMESTAMP NULL,
         carry_forward_date DATE NULL,
         created_by INT DEFAULT NULL,
@@ -519,7 +525,11 @@ async function ensureTablesAndColumns() {
     { table: "clientinvoices", column: "created_by", definition: "created_by INT DEFAULT NULL" },
     { table: "performainvoices", column: "created_by", definition: "created_by INT DEFAULT NULL" },
     { table: "services", column: "created_by", definition: "created_by INT DEFAULT NULL" },
+    { table: "services", column: "engineer_name", definition: "engineer_name VARCHAR(150) DEFAULT NULL" },
     { table: "call_reports", column: "created_by", definition: "created_by INT DEFAULT NULL" },
+    { table: "call_reports", column: "customer_id", definition: "customer_id INT DEFAULT NULL" },
+    { table: "call_reports", column: "name", definition: "name VARCHAR(150) DEFAULT NULL" },
+    { table: "call_reports", column: "call_details", definition: "call_details TEXT DEFAULT NULL" },
     { table: "lead_activity", column: "employee_id", definition: "employee_id INT DEFAULT NULL" },
     { table: "lead_escalations", column: "missed_threshold_reached", definition: "missed_threshold_reached TINYINT(1) DEFAULT 0" },
     { table: "lead_escalations", column: "employee_id", definition: "employee_id INT DEFAULT NULL" },
@@ -754,7 +764,11 @@ async function ensureTablesAndColumns() {
   ];
 
   for (const { table, column, definition, expectedType } of columnChecks) {
-    await ensureColumnAsync(table, column, definition, expectedType);
+    try {
+      await ensureColumnAsync(table, column, definition, expectedType);
+    } catch (e) {
+      // Table may not exist yet — will retry in second pass after tables are created
+    }
   }
 
   for (const { table, column, oldEnum, newEnum } of enumFixes) {
@@ -868,7 +882,10 @@ async function seedDefaultEmployees() {
     { first_name: "Uma", last_name: "Kalyani", emp_id: "AC010", email: "uma@achmecommunication.com", mobile: "", job_title: "Sales", emp_role: "Sales" },
     { first_name: "Nagaraj", last_name: "", emp_id: "AC014", email: "nagaraj@technostore.co.in", mobile: "", job_title: "Sales", emp_role: "Sales" },
     { first_name: "Priyanka", last_name: "", emp_id: "AC099", email: "service@achmecommunication.com", mobile: "", job_title: "Sales", emp_role: "Sales" },
-    { first_name: "Malarvannan", last_name: "", emp_id: "AC016", email: "malarvannan@technostore.co.in", mobile: "", job_title: "Service", emp_role: "Sales" }
+    { first_name: "Malarvannan", last_name: "", emp_id: "AC016", email: "malarvannan@technostore.co.in", mobile: "", job_title: "Service", emp_role: "Sales", role: "subadmin" },
+    { first_name: "Jai", last_name: "sir", emp_id: "AC002", email: "jai@technostore.co.in", mobile: "", job_title: "Admin dept", emp_role: "Manager", role: "subadmin" },
+    { first_name: "Manikandan", last_name: "", emp_id: "AC061", email: "mani@technostore.co.in", mobile: "", job_title: "sales dept", emp_role: "Sales", role: "employee" },
+    { first_name: "Anand", last_name: "", emp_id: "AC012", email: "sales3@technostore.co.in", mobile: "", job_title: "sales dept", emp_role: "Sales", role: "employee" }
   ];
 
   for (const employee of employees) {
@@ -876,15 +893,16 @@ async function seedDefaultEmployees() {
     try {
       const existing = await queryAsync(`SELECT id FROM users WHERE email = ?`, [employee.email]);
       if (existing.length > 0) {
+        // Do NOT overwrite role or user_password to avoid resetting updates made in the app
         await queryAsync(
-          `UPDATE users SET first_name=?, last_name=?, emp_id=?, user_password=?, role='employee', status='active' WHERE email=?`,
-          [employee.first_name, employee.last_name, employee.emp_id, hash, employee.email]
+          `UPDATE users SET first_name=?, last_name=?, emp_id=? WHERE email=?`,
+          [employee.first_name, employee.last_name, employee.emp_id, employee.email]
         );
       } else {
         await queryAsync(
           `INSERT INTO users (first_name, last_name, emp_id, email, user_password, role, status)
-           VALUES (?, ?, ?, ?, ?, 'employee', 'active')`,
-          [employee.first_name, employee.last_name, employee.emp_id, employee.email, hash]
+           VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+          [employee.first_name, employee.last_name, employee.emp_id, employee.email, hash, employee.role || 'employee']
         );
       }
     } catch (e) { console.log("User seed:", employee.email, e.message); }
@@ -898,8 +916,8 @@ async function seedDefaultEmployees() {
       );
     } else {
       await queryAsync(
-        `UPDATE teammember SET first_name = ?, last_name = ?, emp_id = ?, user_id = (SELECT id FROM users WHERE email = ? LIMIT 1) WHERE emp_email = ?`,
-        [employee.first_name, employee.last_name, employee.emp_id, employee.email, employee.email]
+        `UPDATE teammember SET first_name = ?, last_name = ?, emp_id = ?, job_title = ?, emp_role = ?, user_id = (SELECT id FROM users WHERE email = ? LIMIT 1) WHERE emp_email = ?`,
+        [employee.first_name, employee.last_name, employee.emp_id, employee.job_title, employee.emp_role, employee.email, employee.email]
       );
     }
   }

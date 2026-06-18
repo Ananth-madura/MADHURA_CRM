@@ -9,6 +9,18 @@ import { API } from "../config";
 import { BRANCH_DATA, BRANCH_OPTIONS, BANK_DETAILS } from "../config/branchConfig";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
 
+const parseName = (fullName = "") => {
+  const prefixes = ["Mr.", "Mrs.", "M/S."];
+  for (const prefix of prefixes) {
+    if (fullName.startsWith(prefix + " ")) {
+      return { salutation: prefix, name: fullName.substring(prefix.length + 1) };
+    } else if (fullName.startsWith(prefix)) {
+      return { salutation: prefix, name: fullName.substring(prefix.length) };
+    }
+  }
+  return { salutation: "", name: fullName };
+};
+
 const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", "Liters"];
 const INDIAN_STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
 const VALIDITY_OPTIONS = ["2 days", "5 days", "10 days", "15 days", "30 days"];
@@ -68,7 +80,7 @@ const Quotation = () => {
   const [showSMTPPrompt, setShowSMTPPrompt] = useState(false);
   const [items, setItems] = useState([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
   const [savedBrands, setSavedBrands] = useState([]);
-  const [customer, setCustomer] = useState({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
+  const [customer, setCustomer] = useState({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
   const [quotationData, setQuotationData] = useState({ quotation_date: todayStr() });
   const [extra, setExtra] = useState(emptyExtra());
   const [editingIndex, setEditingIndex] = useState(null);
@@ -90,7 +102,9 @@ const Quotation = () => {
     const p = new URLSearchParams(window.location.search);
     const qName = p.get("client_name");
     if (qName) {
-      setCustomer(c => ({ ...c, customer_name: decodeURIComponent(qName), email: p.get("client_email") ? decodeURIComponent(p.get("client_email")) : c.email }));
+      const decodedName = decodeURIComponent(qName);
+      const parsed = parseName(decodedName);
+      setCustomer(c => ({ ...c, salutation: parsed.salutation, customer_name: parsed.name, email: p.get("client_email") ? decodeURIComponent(p.get("client_email")) : c.email }));
       setOpen(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
@@ -98,9 +112,11 @@ const Quotation = () => {
       if (pf) {
         try {
           const v = JSON.parse(pf);
+          const parsed = parseName(v.customer_name || "");
           setCustomer(c => ({
             ...c,
-            customer_name: v.customer_name || "",
+            salutation: parsed.salutation,
+            customer_name: parsed.name,
             mobile_number: v.mobile_number || c.mobile_number,
             email: v.email || c.email,
             gst_number: v.gst_number || c.gst_number,
@@ -148,7 +164,8 @@ const Quotation = () => {
     try {
       const res = await axios.get(`${API}/api/quotations/${id}`, getAuthConfig());
       const rows = res.data; const h = rows[0];
-      setCustomer({ customer_name: h.customer_name, mobile_number: h.mobile_number, email: h.email, gst_number: h.gst_number || "", location_city: h.location_city });
+      const parsed = parseName(h.customer_name || "");
+      setCustomer({ salutation: parsed.salutation, customer_name: parsed.name, mobile_number: h.mobile_number, email: h.email, gst_number: h.gst_number || "", location_city: h.location_city });
       setQuotationData({ quotation_date: h.quotation_date?.split("T")[0] || h.invoice_date?.split("T")[0] || "" });
       const li = rows.map(r => ({ name: r.description, brand_model: r.brand_model || "", hsn_sac: r.hsn_sac || "", uom: r.uom || "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: 18, discount: Number(r.discount) || 0 }));
       setItems(li); setDescInput(li.map(i => i.name).join(", ")); setBrandInput(li[0]?.brand_model || "");
@@ -192,14 +209,15 @@ const Quotation = () => {
     if (items.some(i => !i.name.trim())) return alert("Description cannot be empty");
     try {
       const t = getTotals();
-      const payload = { customer, invoice: { invoice_date: quotationData.quotation_date, quotation_date: quotationData.quotation_date, ...t, total_tax: t.total_cgst + t.total_sgst + t.total_igst }, items: items.map(i => ({ description: i.name, brand_model: i.brand_model, hsn_sac: i.hsn_sac, uom: i.uom, price: i.price, quantity: i.qty, tax: i.tax, discount: i.discount, subtotal: calculateItemTotal(i) })), extra };
+      const fullCustomerName = (customer.salutation ? customer.salutation + " " : "") + customer.customer_name;
+      const payload = { customer: { ...customer, customer_name: fullCustomerName }, invoice: { invoice_date: quotationData.quotation_date, quotation_date: quotationData.quotation_date, ...t, total_tax: t.total_cgst + t.total_sgst + t.total_igst }, items: items.map(i => ({ description: i.name, brand_model: i.brand_model, hsn_sac: i.hsn_sac, uom: i.uom, price: i.price, quantity: i.qty, tax: i.tax, discount: i.discount, subtotal: calculateItemTotal(i) })), extra };
       if (editId) { const r = await axios.put(`${API}/api/quotations/${editId}`, payload, getAuthConfig()); alert(`Version ${r.data.version || ""} saved`); }
       else { await axios.post(`${API}/api/quotations/create`, payload, getAuthConfig()); alert("Created successfully"); }
       setOpen(false); resetForm(); fetchList();
     } catch (err) { console.error(err); alert("Error saving Quotation: " + (err.response?.data?.message || err.message)); }
   };
 
-  const resetForm = () => { setCustomer({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" }); setItems([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]); setDescInput(""); setBrandInput(""); setQuotationData({ quotation_date: todayStr() }); setExtra(emptyExtra()); setEditId(null); setEditingIndex(null); };
+  const resetForm = () => { setCustomer({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" }); setItems([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]); setDescInput(""); setBrandInput(""); setQuotationData({ quotation_date: todayStr() }); setExtra(emptyExtra()); setEditId(null); setEditingIndex(null); };
 
   const handleDelete = async () => {
     if (!selectedId) return alert("Select an item to delete");
@@ -377,36 +395,37 @@ const Quotation = () => {
               {filtered.map(p => {
                 const sc = QUOTATION_STATUS_COLORS[p.status] || QUOTATION_STATUS_COLORS.Pending;
                 return (
-                <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
-                  <td className="px-4 py-4 border-r font-medium text-blue-600">{fmtQT(p.id, p.quotation_date || p.invoice_date)}</td>
-                  <td className="px-4 py-4 border-r">{p.customer_name}</td>
-                  <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
-                  <td className="px-4 py-4 border-r">{p.mobile_number}</td>
-                  <td className="px-4 py-4 border-r">{fmtDate(p.quotation_date || p.invoice_date)}</td>
-                  <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                  <td className="px-4 py-4 border-r">
-                    <select
-                      value={p.status || "Pending"}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => handleStatusUpdate(p.id, e.target.value)}
-                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
-                    >
-                      {QUOTATION_STATUS.map(s => (
-                        <option key={s} value={s} className="bg-white text-gray-700 font-normal">
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex gap-2 justify-center flex-wrap">
-                      <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View" className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1"><Eye size={12} /> View</button>
-                      <button onClick={e => { e.stopPropagation(); handleEdit(p.id); }} title="Edit" className="px-2 py-1 rounded text-xs font-bold bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition flex items-center gap-1"><Edit2 size={12} /> Edit</button>
-                      <button onClick={e => { e.stopPropagation(); setSelectedId(p.id); openHistory(e, p.id, p.customer_name); }} title="History" className="px-2 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1"><History size={12} /> History</button>
-                    </div>
-                  </td>
-                </tr>
-              );})}
+                  <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
+                    <td className="px-4 py-4 border-r font-medium text-blue-600">{fmtQT(p.id, p.quotation_date || p.invoice_date)}</td>
+                    <td className="px-4 py-4 border-r">{p.customer_name}</td>
+                    <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
+                    <td className="px-4 py-4 border-r">{p.mobile_number}</td>
+                    <td className="px-4 py-4 border-r">{fmtDate(p.quotation_date || p.invoice_date)}</td>
+                    <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
+                    <td className="px-4 py-4 border-r">
+                      <select
+                        value={p.status || "Pending"}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => handleStatusUpdate(p.id, e.target.value)}
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
+                      >
+                        {QUOTATION_STATUS.map(s => (
+                          <option key={s} value={s} className="bg-white text-gray-700 font-normal">
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2 justify-center flex-wrap">
+                        <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View" className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1"><Eye size={12} /> View</button>
+                        <button onClick={e => { e.stopPropagation(); handleEdit(p.id); }} title="Edit" className="px-2 py-1 rounded text-xs font-bold bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition flex items-center gap-1"><Edit2 size={12} /> Edit</button>
+                        <button onClick={e => { e.stopPropagation(); setSelectedId(p.id); openHistory(e, p.id, p.customer_name); }} title="History" className="px-2 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1"><History size={12} /> History</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 && (<tr><td colSpan="8" className="py-10 text-gray-400 italic">No quotations found</td></tr>)}
             </tbody>
           </table>
@@ -541,30 +560,44 @@ const Quotation = () => {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Customer Name *</label>
-                <div className="relative">
-                  <ClientSearchDropdown
-                    value={customer.customer_name}
-                    onSelect={(client) => {
-                      setCustomer({
-                        customer_name: client.name || "",
-                        mobile_number: client.phone || "",
-                        email: client.email || client.lead_email || "",
-                        gst_number: client.gst_number || "",
-                        location_city: client.lead_city || client.city || ""
-                      });
-                      setExtra(ex => ({
-                        ...ex,
-                        client_company: client.company_name || "",
-                        client_address1: client.address || "",
-                        client_address2: "",
-                        client_city: client.lead_city || client.city || "",
-                        client_state: client.state || "",
-                        client_pincode: client.pincode || "",
-                        client_country: "India"
-                      }));
-                    }}
-                    required
-                  />
+                <div className="flex gap-2">
+                  <select
+                    value={customer.salutation || ""}
+                    onChange={e => setCustomer({ ...customer, salutation: e.target.value })}
+                    className="border border-gray-200 rounded-xl px-2.5 py-2 outline-none bg-white text-sm font-semibold w-24 flex-shrink-0 cursor-pointer focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 transition-all"
+                  >
+                    <option value="">-- Title --</option>
+                    <option value="Mr.">Mr.</option>
+                    <option value="Mrs.">Mrs.</option>
+                    <option value="M/S.">M/S.</option>
+                  </select>
+                  <div className="flex-grow">
+                    <ClientSearchDropdown
+                      value={customer.customer_name}
+                      onSelect={(client) => {
+                        const parsed = parseName(client.name || "");
+                        setCustomer({
+                          salutation: parsed.salutation,
+                          customer_name: parsed.name,
+                          mobile_number: client.phone || "",
+                          email: client.email || client.lead_email || "",
+                          gst_number: client.gst_number || "",
+                          location_city: client.lead_city || client.city || ""
+                        });
+                        setExtra(ex => ({
+                          ...ex,
+                          client_company: client.company_name || "",
+                          client_address1: client.address || "",
+                          client_address2: "",
+                          client_city: client.lead_city || client.city || "",
+                          client_state: client.state || "",
+                          client_pincode: client.pincode || "",
+                          client_country: "India"
+                        }));
+                      }}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -687,22 +720,22 @@ const Quotation = () => {
 
             <div className="flex justify-end pt-2">
               <div className="w-72 border rounded-xl p-4 bg-gray-50 shadow-sm">
-                  {(() => {
-                    const t = getTotals();
-                    const gstMode = extra.gst_mode || "Exclusive";
-                    const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
-                    return (<>
-                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
-                      {gstMode === "Inclusive" && (
-                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
-                      )}
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
-                      <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
-                    </>);
-                  })()}
+                {(() => {
+                  const t = getTotals();
+                  const gstMode = extra.gst_mode || "Exclusive";
+                  const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
+                  return (<>
+                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
+                    {gstMode === "Inclusive" && (
+                      <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
+                    )}
+                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
+                    <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
+                  </>);
+                })()}
               </div>
             </div>
 

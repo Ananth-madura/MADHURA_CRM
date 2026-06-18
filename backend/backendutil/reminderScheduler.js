@@ -21,9 +21,20 @@ function runCheckUpcomingReminders() {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const currentTime = now.toTimeString().slice(0, 8);
-  const fiveMinLater = new Date(now.getTime() + 5 * 60000).toTimeString().slice(0, 8);
 
-  const sql = `
+  // We check two windows:
+  // 1) reminders due in 9–11 minutes → send first warning (notification_sent = 0 → set to 10)
+  // 2) reminders due in 4–6 minutes  → send second warning (notification_sent = 10 → set to 11)
+
+  const tenMinLater = new Date(now.getTime() + 10 * 60000).toTimeString().slice(0, 8);
+  const nineMinLater = new Date(now.getTime() + 9 * 60000).toTimeString().slice(0, 8);
+  const sixMinLater = new Date(now.getTime() + 6 * 60000).toTimeString().slice(0, 8);
+  const fourMinLater = new Date(now.getTime() + 4 * 60000).toTimeString().slice(0, 8);
+
+  const notificationIO = getNotificationIO();
+  if (!notificationIO) return;
+
+  const baseSql = `
     SELECT lr.*, 
            COALESCE(t.customer_name, w.customer_name, f.customer_name) as customer_name,
            COALESCE(t.mobile_number, w.mobile_number, f.mobile_number) as mobile_number,
@@ -35,37 +46,73 @@ function runCheckUpcomingReminders() {
     WHERE lr.status = 'Pending' 
       AND lr.reminder_date = ?
       AND lr.reminder_time IS NOT NULL
+  `;
+
+  // ── First warning: T-10 minutes ────────────────────────────────────────────
+  const sql10 = baseSql + `
       AND lr.reminder_time BETWEEN ? AND ?
       AND (lr.notification_sent IS NULL OR lr.notification_sent = 0)
   `;
+  db.query(sql10, [today, nineMinLater, tenMinLater], (err, reminders10) => {
+    if (err) { console.error("[Scheduler] check-upcoming (10min) error:", err.message); }
+    else {
+      reminders10.forEach(reminder => {
+        const message = `⏰ Reminder in ~10 min: Follow up with ${reminder.customer_name || "customer"} (${reminder.mobile_number || "No mobile"})`;
+        notificationIO.emitNotification("reminder_due", {
+          id: reminder.id,
+          leadId: reminder.lead_id,
+          leadType: reminder.lead_type,
+          userId: reminder.employee_id,
+          userName: reminder.staff_name,
+          customerName: reminder.customer_name,
+          mobileNumber: reminder.mobile_number,
+          reminderTime: reminder.reminder_time,
+          reminderNotes: reminder.reminder_notes,
+          title: "⏰ Reminder in 10 Minutes",
+          message
+        }, reminder.employee_id, true);
 
-  db.query(sql, [today, currentTime, fiveMinLater], (err, reminders) => {
-    if (err) { console.error("[Scheduler] check-upcoming error:", err.message); return; }
-    if (!reminders.length) return;
+        // Mark notification_sent = 10 (means first warning sent)
+        db.query("UPDATE lead_reminders SET notification_sent = 10 WHERE id = ?", [reminder.id]);
+        console.log(`[Scheduler] 10-min warning sent for reminder ID ${reminder.id}, customer: ${reminder.customer_name}`);
+      });
+    }
+  });
 
-    console.log(`[Scheduler] Found ${reminders.length} reminders due in 5 minutes`);
-    const notificationIO = getNotificationIO();
+  // ── Second warning: T-5 minutes ────────────────────────────────────────────
+  const sql5 = baseSql + `
+      AND lr.reminder_time BETWEEN ? AND ?
+      AND (lr.notification_sent IS NULL OR lr.notification_sent = 0 OR lr.notification_sent = 10)
+  `;
+  db.query(sql5, [today, fourMinLater, sixMinLater], (err, reminders5) => {
+    if (err) { console.error("[Scheduler] check-upcoming (5min) error:", err.message); }
+    else {
+      reminders5.forEach(reminder => {
+        // Don't double-send if it was just sent as a 10-min warning in this same tick for overlapping times
+        // (Only send if reminder_time is truly in 4-6 min range, not 9-11 min range)
+        const message = `🔔 Reminder in ~5 min: Follow up with ${reminder.customer_name || "customer"} (${reminder.mobile_number || "No mobile"})`;
+        notificationIO.emitNotification("reminder_due", {
+          id: reminder.id,
+          leadId: reminder.lead_id,
+          leadType: reminder.lead_type,
+          userId: reminder.employee_id,
+          userName: reminder.staff_name,
+          customerName: reminder.customer_name,
+          mobileNumber: reminder.mobile_number,
+          reminderTime: reminder.reminder_time,
+          reminderNotes: reminder.reminder_notes,
+          title: "🔔 Reminder in 5 Minutes",
+          message
+        }, reminder.employee_id, true);
 
-    reminders.forEach(reminder => {
-      const message = `⏰ Reminder: Follow up with ${reminder.customer_name || "customer"} (${reminder.mobile_number || "No mobile"})`;
-
-      notificationIO.emitNotification("reminder_due", {
-        id: reminder.id,
-        leadId: reminder.lead_id,
-        leadType: reminder.lead_type,
-        userId: reminder.employee_id,
-        userName: reminder.staff_name,
-        customerName: reminder.customer_name,
-        mobileNumber: reminder.mobile_number,
-        reminderTime: reminder.reminder_time,
-        reminderNotes: reminder.reminder_notes,
-        message: message
-      }, reminder.employee_id, true);
-
-      db.query("UPDATE lead_reminders SET notification_sent = 1 WHERE id = ?", [reminder.id]);
-    });
+        // Mark notification_sent = 1 (fully notified)
+        db.query("UPDATE lead_reminders SET notification_sent = 1 WHERE id = ?", [reminder.id]);
+        console.log(`[Scheduler] 5-min warning sent for reminder ID ${reminder.id}, customer: ${reminder.customer_name}`);
+      });
+    }
   });
 }
+
 
 const checkAlertAlreadySent = (leadId, leadType, count, callback) => {
   db.query(

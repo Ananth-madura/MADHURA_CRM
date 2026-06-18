@@ -13,6 +13,18 @@ import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
 
 const API_BACKEND = API;
 
+const parseName = (fullName = "") => {
+  const prefixes = ["Mr.", "Mrs.", "M/S."];
+  for (const prefix of prefixes) {
+    if (fullName.startsWith(prefix + " ")) {
+      return { salutation: prefix, name: fullName.substring(prefix.length + 1) };
+    } else if (fullName.startsWith(prefix)) {
+      return { salutation: prefix, name: fullName.substring(prefix.length) };
+    }
+  }
+  return { salutation: "", name: fullName };
+};
+
 const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", "Liters"];
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
@@ -96,7 +108,7 @@ const PerformaInvoice = () => {
   const [newAddrText, setNewAddrText] = useState("");
 
   const [items, setItems] = useState([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
-  const [customer, setCustomer] = useState({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
+  const [customer, setCustomer] = useState({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
   const [performaInvoice, setPerformaInvoice] = useState({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() });
   const [extra, setExtra] = useState(emptyExtra());
   const [editingIndex, setEditingIndex] = useState(null);
@@ -156,9 +168,12 @@ const PerformaInvoice = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const qName = urlParams.get('client_name');
     if (qName) {
+      const decodedName = decodeURIComponent(qName);
+      const parsed = parseName(decodedName);
       setCustomer(c => ({
         ...c,
-        customer_name: decodeURIComponent(qName),
+        salutation: parsed.salutation,
+        customer_name: parsed.name,
         email: urlParams.get("client_email") ? decodeURIComponent(urlParams.get("client_email")) : c.email
       }));
       setOpen(true);
@@ -168,9 +183,11 @@ const PerformaInvoice = () => {
       if (pf) {
         try {
           const v = JSON.parse(pf);
+          const parsed = parseName(v.customer_name || "");
           setCustomer(c => ({
             ...c,
-            customer_name: v.customer_name || "",
+            salutation: parsed.salutation,
+            customer_name: parsed.name,
             mobile_number: v.mobile_number || c.mobile_number,
             email: v.email || c.email,
             gst_number: v.gst_number || c.gst_number,
@@ -278,8 +295,10 @@ const PerformaInvoice = () => {
       const rows = res.data;
       if (rows.length > 0) {
         const h = rows[0];
+        const parsed = parseName(h.customer_name || "");
         setCustomer({
-          customer_name: h.customer_name,
+          salutation: parsed.salutation,
+          customer_name: parsed.name,
           mobile_number: h.mobile_number,
           email: h.email,
           gst_number: h.gst_number || "",
@@ -308,7 +327,8 @@ const PerformaInvoice = () => {
     const res = await axios.get(`${API_BACKEND}/api/performainvoice/${id}`, config);
     const rows = res.data;
     const h = rows[0];
-    setCustomer({ customer_name: h.customer_name, mobile_number: h.mobile_number, email: h.email, gst_number: h.gst_number || "", location_city: h.location_city });
+    const parsed = parseName(h.customer_name || "");
+    setCustomer({ salutation: parsed.salutation, customer_name: parsed.name, mobile_number: h.mobile_number, email: h.email, gst_number: h.gst_number || "", location_city: h.location_city });
     setPerformaInvoice({ invoice_date: h.invoice_date?.split("T")[0] || "" });
     const loadedItems = rows.map(r => ({ name: r.description, brand_model: r.brand_model || "", hsn_sac: r.hsn_sac || "", uom: r.uom || "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: 18, discount: Number(r.discount) || 0 }));
     setItems(loadedItems);
@@ -395,8 +415,9 @@ const PerformaInvoice = () => {
       const token = localStorage.getItem("token");
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const totals = getTaxCalculations();
+      const fullCustomerName = (customer.salutation ? customer.salutation + " " : "") + customer.customer_name;
       const payload = {
-        customer,
+        customer: { ...customer, customer_name: fullCustomerName },
         performaInvoice: {
           invoice_date: performaInvoice.invoice_date,
           subtotal: totals.subtotal, total_discount: totals.total_discount,
@@ -440,7 +461,7 @@ const PerformaInvoice = () => {
   };
 
   const resetForm = () => {
-    setCustomer({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
+    setCustomer({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
     setItems([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
     setDescInput("");
     setBrandInput("");
@@ -586,37 +607,38 @@ const PerformaInvoice = () => {
               {filteredInvoices.map(p => {
                 const sc = STATUS_COLORS[p.status] || STATUS_COLORS.Pending;
                 return (
-                <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
-                  className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
-                  <td className="px-4 py-4 border-r font-medium text-blue-600">{formatPINumber(p.id, p.invoice_date)}</td>
-                  <td className="px-4 py-4 border-r">{p.customer_name}</td>
-                  <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
-                  <td className="px-4 py-4 border-r">{p.mobile_number}</td>
-                  <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
-                  <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                  <td className="px-4 py-4 border-r">{p.location_city}</td>
-                  <td className="px-4 py-4 border-r">
-                    <select
-                      value={p.status || "Pending"}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => handleStatusUpdate(p.id, e.target.value)}
-                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
-                    >
-                      {STATUS_OPTIONS.map(s => (
-                        <option key={s} value={s} className="bg-white text-gray-700 font-normal">
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
-                      <History size={13} /> History
-                    </button>
-                  </td>
-                </tr>
-              );})}
+                  <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
+                    className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
+                    <td className="px-4 py-4 border-r font-medium text-blue-600">{formatPINumber(p.id, p.invoice_date)}</td>
+                    <td className="px-4 py-4 border-r">{p.customer_name}</td>
+                    <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
+                    <td className="px-4 py-4 border-r">{p.mobile_number}</td>
+                    <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
+                    <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
+                    <td className="px-4 py-4 border-r">{p.location_city}</td>
+                    <td className="px-4 py-4 border-r">
+                      <select
+                        value={p.status || "Pending"}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => handleStatusUpdate(p.id, e.target.value)}
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
+                      >
+                        {STATUS_OPTIONS.map(s => (
+                          <option key={s} value={s} className="bg-white text-gray-700 font-normal">
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
+                        <History size={13} /> History
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {filteredInvoices.length === 0 && (<tr><td colSpan="9" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
             </tbody>
           </table>
@@ -817,30 +839,44 @@ const PerformaInvoice = () => {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Customer Name *</label>
-                <div className="relative">
-                  <ClientSearchDropdown
-                    value={customer.customer_name}
-                    onSelect={(client) => {
-                      setCustomer({
-                        customer_name: client.name || "",
-                        mobile_number: client.phone || "",
-                        email: client.email || client.lead_email || "",
-                        gst_number: client.gst_number || "",
-                        location_city: client.lead_city || client.city || ""
-                      });
-                      setExtra(ex => ({
-                        ...ex,
-                        client_company: client.company_name || "",
-                        client_address1: client.address || "",
-                        client_address2: "",
-                        client_city: client.lead_city || client.city || "",
-                        client_state: client.state || "",
-                        client_pincode: client.pincode || "",
-                        client_country: "India"
-                      }));
-                    }}
-                    required
-                  />
+                <div className="flex gap-2">
+                  <select
+                    value={customer.salutation || ""}
+                    onChange={e => setCustomer({ ...customer, salutation: e.target.value })}
+                    className="border border-gray-200 rounded-xl px-2.5 py-2 outline-none bg-white text-sm font-semibold w-24 flex-shrink-0 cursor-pointer focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 transition-all"
+                  >
+                    <option value="">-- Title --</option>
+                    <option value="Mr.">Mr.</option>
+                    <option value="Mrs.">Mrs.</option>
+                    <option value="M/S.">M/S.</option>
+                  </select>
+                  <div className="flex-grow">
+                    <ClientSearchDropdown
+                      value={customer.customer_name}
+                      onSelect={(client) => {
+                        const parsed = parseName(client.name || "");
+                        setCustomer({
+                          salutation: parsed.salutation,
+                          customer_name: parsed.name,
+                          mobile_number: client.phone || "",
+                          email: client.email || client.lead_email || "",
+                          gst_number: client.gst_number || "",
+                          location_city: client.lead_city || client.city || ""
+                        });
+                        setExtra(ex => ({
+                          ...ex,
+                          client_company: client.company_name || "",
+                          client_address1: client.address || "",
+                          client_address2: "",
+                          client_city: client.lead_city || client.city || "",
+                          client_state: client.state || "",
+                          client_pincode: client.pincode || "",
+                          client_country: "India"
+                        }));
+                      }}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -978,7 +1014,7 @@ const PerformaInvoice = () => {
             {/* Totals */}
             <div className="flex justify-end pt-2">
               <div className="w-72 border rounded-xl p-4 bg-gray-50 shadow-sm">
-                  {(() => {
+                {(() => {
                   const t = getTaxCalculations();
                   const gstMode = extra.gst_mode || "Exclusive";
                   const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
@@ -1196,8 +1232,8 @@ const PerformaInvoice = () => {
                               <button onClick={e => { e.stopPropagation(); handleEdit(q.id); setHistoryOpen(false); }} title="Edit" className="w-8 h-8 bg-green-50 text-green-600 rounded-lg flex items-center justify-center hover:bg-green-100"><Edit2 size={14} /></button>
                               <button onClick={e => { e.stopPropagation(); openMailModal(); setSelectedId(q.id); setHistoryOpen(false); }} title="Email" className="w-8 h-8 bg-orange-50 text-orange-500 rounded-lg flex items-center justify-center hover:bg-orange-100"><Mail size={14} /></button>
                               {canEditDelete && (
-                            <button onClick={e => deleteHistoryVersion(e, q.id)} title="Delete" className="w-8 h-8 bg-red-50 text-red-500 rounded-lg flex items-center justify-center hover:bg-red-100"><Trash2 size={14} /></button>
-                          )}
+                                <button onClick={e => deleteHistoryVersion(e, q.id)} title="Delete" className="w-8 h-8 bg-red-50 text-red-500 rounded-lg flex items-center justify-center hover:bg-red-100"><Trash2 size={14} /></button>
+                              )}
                             </div>
                           </td>
                         </tr>

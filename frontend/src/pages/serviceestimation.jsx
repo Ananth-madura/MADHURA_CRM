@@ -9,6 +9,19 @@ import Invoice from "../components/invoicetemplate";
 import { API } from "../config";
 import { BRANCH_DATA, BRANCH_OPTIONS } from "../config/branchConfig";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
+
+const parseName = (fullName = "") => {
+  const prefixes = ["Mr.", "Mrs.", "M/S."];
+  for (const prefix of prefixes) {
+    if (fullName.startsWith(prefix + " ")) {
+      return { salutation: prefix, name: fullName.substring(prefix.length + 1) };
+    } else if (fullName.startsWith(prefix)) {
+      return { salutation: prefix, name: fullName.substring(prefix.length) };
+    }
+  }
+  return { salutation: "", name: fullName };
+};
+
 const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", "Liters"];
 const INDIAN_STATES = [
     "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
@@ -86,7 +99,7 @@ const ServiceEstimation = () => {
     const [newAddrLabel, setNewAddrLabel] = useState("");
     const [newAddrText, setNewAddrText] = useState("");
     const [items, setItems] = useState([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
-    const [customer, setCustomer] = useState({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
+    const [customer, setCustomer] = useState({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
     const [serviceInvoice, setServiceInvoice] = useState({ invoice_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() });
     const [extra, setExtra] = useState(emptyExtra());
     const [editingIndex, setEditingIndex] = useState(null);
@@ -112,9 +125,12 @@ const ServiceEstimation = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const qName = urlParams.get('client_name');
         if (qName) {
+            const decodedName = decodeURIComponent(qName);
+            const parsed = parseName(decodedName);
             setCustomer(c => ({
                 ...c,
-                customer_name: decodeURIComponent(qName),
+                salutation: parsed.salutation,
+                customer_name: parsed.name,
                 email: urlParams.get("client_email") ? decodeURIComponent(urlParams.get("client_email")) : c.email
             }));
             setOpen(true);
@@ -124,9 +140,11 @@ const ServiceEstimation = () => {
             if (pf) {
                 try {
                     const v = JSON.parse(pf);
+                    const parsed = parseName(v.customer_name || "");
                     setCustomer(c => ({
                         ...c,
-                        customer_name: v.customer_name || "",
+                        salutation: parsed.salutation,
+                        customer_name: parsed.name,
                         mobile_number: v.mobile_number || c.mobile_number,
                         email: v.email || c.email,
                         gst_number: v.gst_number || c.gst_number,
@@ -214,8 +232,10 @@ const ServiceEstimation = () => {
             const rows = res.data;
             if (rows.length > 0) {
                 const h = rows[0];
+                const parsed = parseName(h.customer_name || "");
                 setCustomer({
-                    customer_name: h.customer_name || "",
+                    salutation: parsed.salutation,
+                    customer_name: parsed.name,
                     mobile_number: h.mobile_number || "",
                     email: h.email || "",
                     gst_number: h.gst_number || "",
@@ -256,8 +276,10 @@ const ServiceEstimation = () => {
             const rows = res.data;
             if (!rows.length) return alert("Service estimation not found");
             const h = rows[0];
+            const parsed = parseName(h.customer_name || "");
             setCustomer({
-                customer_name: h.customer_name || "",
+                salutation: parsed.salutation,
+                customer_name: parsed.name,
                 mobile_number: h.mobile_number || "",
                 email: h.email || "",
                 gst_number: h.gst_number || "",
@@ -387,13 +409,11 @@ const ServiceEstimation = () => {
         if (items.some(i => !i.name.trim())) return alert("Description cannot be empty");
         try {
             const totals = getTaxCalculations();
+            const fullCustomerName = (customer.salutation ? customer.salutation + " " : "") + customer.customer_name;
             const payload = {
                 customer: {
-                    customer_name: customer.customer_name,
-                    mobile_number: customer.mobile_number,
-                    email: customer.email,
-                    gst_number: customer.gst_number,
-                    location_city: customer.location_city
+                    ...customer,
+                    customer_name: fullCustomerName
                 },
                 invoice: {
                     invoice_date: serviceInvoice.invoice_date,
@@ -455,7 +475,7 @@ const ServiceEstimation = () => {
         setBrandInput("");
     };
     const resetForm = () => {
-        setCustomer({ customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
+        setCustomer({ salutation: "", customer_name: "", mobile_number: "", email: "", gst_number: "", location_city: "" });
         setItems([{ name: "", brand_model: "", hsn_sac: "", uom: "Nos", price: 0, qty: 1, tax: 18, discount: 0 }]);
         setDescInput("");
         setBrandInput("");
@@ -809,30 +829,44 @@ const ServiceEstimation = () => {
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Customer Name *</label>
-                                <div className="relative">
-                                    <ClientSearchDropdown
-                                        value={customer.customer_name}
-                                        onSelect={(client) => {
-                                            setCustomer({
-                                                customer_name: client.name || "",
-                                                mobile_number: client.phone || "",
-                                                email: client.email || client.lead_email || "",
-                                                gst_number: client.gst_number || "",
-                                                location_city: client.lead_city || client.city || ""
-                                            });
-                                            setExtra(ex => ({
-                                                ...ex,
-                                                client_company: client.company_name || "",
-                                                client_address1: client.address || "",
-                                                client_address2: "",
-                                                client_city: client.lead_city || client.city || "",
-                                                client_state: client.state || "",
-                                                client_pincode: client.pincode || "",
-                                                client_country: "India"
-                                            }));
-                                        }}
-                                        required
-                                    />
+                                <div className="flex gap-2">
+                                    <select
+                                        value={customer.salutation || ""}
+                                        onChange={e => setCustomer({ ...customer, salutation: e.target.value })}
+                                        className="border border-gray-200 rounded-xl px-2.5 py-2 outline-none bg-white text-sm font-semibold w-24 flex-shrink-0 cursor-pointer focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 transition-all"
+                                    >
+                                        <option value="">-- Title --</option>
+                                        <option value="Mr.">Mr.</option>
+                                        <option value="Mrs.">Mrs.</option>
+                                        <option value="M/S.">M/S.</option>
+                                    </select>
+                                    <div className="flex-grow">
+                                        <ClientSearchDropdown
+                                            value={customer.customer_name}
+                                            onSelect={(client) => {
+                                                const parsed = parseName(client.name || "");
+                                                setCustomer({
+                                                    salutation: parsed.salutation,
+                                                    customer_name: parsed.name,
+                                                    mobile_number: client.phone || "",
+                                                    email: client.email || client.lead_email || "",
+                                                    gst_number: client.gst_number || "",
+                                                    location_city: client.lead_city || client.city || ""
+                                                });
+                                                setExtra(ex => ({
+                                                    ...ex,
+                                                    client_company: client.company_name || "",
+                                                    client_address1: client.address || "",
+                                                    client_address2: "",
+                                                    client_city: client.lead_city || client.city || "",
+                                                    client_state: client.state || "",
+                                                    client_pincode: client.pincode || "",
+                                                    client_country: "India"
+                                                }));
+                                            }}
+                                            required
+                                        />
+                                    </div>
                                 </div>
                             </div>
                             <div className="flex flex-col gap-1">

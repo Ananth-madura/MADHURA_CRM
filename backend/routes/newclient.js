@@ -12,8 +12,8 @@ router.get("/search", verifyToken, (req, res) => {
   const params = [search, search, search, search];
 
   if (req.user.role === "employee") {
-    sql += " AND (created_by = ? OR assigned_teammember_id = ?)";
-    params.push(req.user.id, req.user.id);
+    sql += " AND created_by = ?";
+    params.push(req.user.id);
   }
 
   sql += " ORDER BY name ASC LIMIT 50";
@@ -53,8 +53,8 @@ router.get("/", verifyToken, (req, res) => {
   const params = [];
 
   if (req.user.role === "employee") {
-    sql += " AND (c.created_by = ? OR c.assigned_teammember_id = ?)";
-    params.push(req.user.id, req.user.id);
+    sql += " AND c.created_by = ?";
+    params.push(req.user.id);
   }
 
   if (search) {

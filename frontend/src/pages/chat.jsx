@@ -409,13 +409,13 @@ const handleFileSend = async (e) => {
                      {u.name}
                        </p>
 
-                 {u.role === 'admin' && (
+                 {(u.role === 'admin' || u.role === 'subadmin') && (
                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
-                     u.email === 'malarvannan@technostore.co.in'
+                     u.role === 'subadmin'
                        ? "bg-gradient-to-r from-orange-100 to-amber-100 text-orange-700 border-orange-200"
                        : "bg-gradient-to-r from-red-100 to-orange-100 text-red-700 border-red-200"
                    }`}>
-                     {u.email === 'malarvannan@technostore.co.in' ? "SUBADMIN" : "ADMIN"}
+                     {u.role.toUpperCase()}
                    </span>
                  )}
   </div>

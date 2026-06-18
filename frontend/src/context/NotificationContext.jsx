@@ -4,6 +4,7 @@ import socket from "../socket/socket";
 import { useAuth } from "../auth/AuthContext";
 import { API } from "../config/api";
 import { showPushNotification, isPushSupported, getPushPreference, requestPushPermission, savePushPreference } from "../utils/pushNotifications";
+import { showInAppToast } from "../components/InAppToast";
 
 const NotificationContext = createContext();
 
@@ -145,26 +146,23 @@ export const NotificationProvider = ({ children }) => {
         }
       }
 
-      // Show browser push notification for ALL types
-      if (isPushSupported()) {
-        const title = notification.data?.title || getPushTitle(notification.type);
-        const body = notification.data?.message || notification.message || "";
-        
-        const triggerPush = () => {
-          showPushNotification(title, {
-            body: body.substring(0, 150),
-            tag: notification.type + "-" + (notification.id || notification.dbId || Date.now()),
-            onClick: () => { window.focus(); window.location.href = "/dashboard/notifications"; }
-          });
-        };
+      // Show in-app toast push notification for ALL types
+      const toastTitle = notification.data?.title || getPushTitle(notification.type);
+      const toastBody = notification.data?.message || notification.message || "";
+      showInAppToast(notification.type, toastBody.substring(0, 120), {
+        title: toastTitle,
+        subtitle: notification.data?.customerName ? `Client: ${notification.data.customerName}` : "",
+        duration: notification.type === "reminder_due" ? 10000 : 6000,
+        onClick: () => { window.location.href = "/dashboard/notifications"; }
+      });
 
-        if (Notification.permission === "granted") {
-          triggerPush();
-        } else if (Notification.permission === "default") {
-          requestPushPermission().then(granted => {
-            if (granted) triggerPush();
-          });
-        }
+      // Also show browser push notification if supported & granted
+      if (isPushSupported() && Notification.permission === "granted") {
+        showPushNotification(toastTitle, {
+          body: toastBody.substring(0, 150),
+          tag: notification.type + "-" + (notification.id || notification.dbId || Date.now()),
+          onClick: () => { window.focus(); window.location.href = "/dashboard/notifications"; }
+        });
       }
     });
 

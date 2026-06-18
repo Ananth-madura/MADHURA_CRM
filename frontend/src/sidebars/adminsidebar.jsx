@@ -56,7 +56,7 @@ const Sidebar = ({ onNavigate }) => {
     },
     {
       icon: <ShoppingCart size={20} />, title: "Sales", subitems: [
-        { label: "Estimation", path: "/dashboard/estimateinvoice" },
+        // { label: "Estimation", path: "/dashboard/estimateinvoice" },
         { label: "Proforma Invoice", path: "/dashboard/performainvoice" },
       ]
     },

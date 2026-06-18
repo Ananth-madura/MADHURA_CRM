@@ -51,11 +51,20 @@ const resolveAssignedTo = (staffName, callback) => {
 
 const isAuthorizedToEdit = (lead, user) => {
   if (user.role === 'admin' || user.role === 'subadmin') return true;
+  if (lead.assigned_to && lead.assigned_to !== user.id) return false;
+
+  const userName = (user.name || "").trim().toLowerCase();
+  if (lead.staff_name && lead.staff_name.trim().length > 0) {
+    if (userName.length > 0 && !lead.staff_name.toLowerCase().includes(userName)) {
+      return false;
+    }
+  }
+
   if (lead.created_by === user.id) return true;
   if (lead.assigned_to === user.id) return true;
   
-  const userName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
-  if (lead.staff_name && lead.staff_name.trim().toLowerCase() === userName) return true;
+  // JWT contains `name` (which is user's first_name)
+  if (lead.staff_name && lead.staff_name.trim().toLowerCase().includes(userName) && userName.length > 0) return true;
   
   return false;
 };
@@ -143,8 +152,8 @@ router.post("/new", verifyToken, (req, res) => {
         db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
           [newId, "field", "Lead Created", `Outcome: ${data.field_outcome || "New"}`]);
         if (data.reminder_required === "Yes" && data.reminder_date) {
-          db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-            [newId, "field", toDateOnly(data.reminder_date), data.reminder_notes || "", req.user?.id || null]);
+          db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_time, reminder_notes, status, employee_id) VALUES (?,?,?,?,?,'Pending',?)",
+            [newId, "field", toDateOnly(data.reminder_date), data.reminder_time || null, data.reminder_notes || "", req.user?.id || null]);
         }
 
         res.json({ message: "Field added", id: newId });
@@ -190,8 +199,8 @@ router.put("/:id", verifyToken, (req, res) => {
                 [id, "field", "Follow-up Scheduled", `Date: ${toDateOnly(data.followup_date)}${data.followup_notes ? " | Notes: " + data.followup_notes : ""}`]);
             }
             if (data.reminder_required === "Yes" && data.reminder_date) {
-              db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-                [id, "field", toDateOnly(data.reminder_date), data.reminder_notes || "", req.user?.id || null],
+              db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_time, reminder_notes, status, employee_id) VALUES (?,?,?,?,?,'Pending',?)",
+                [id, "field", toDateOnly(data.reminder_date), data.reminder_time || null, data.reminder_notes || "", req.user?.id || null],
                 (e) => {
                   if (!e) db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)",
                     [id, "field", "Reminder Added", `Date: ${toDateOnly(data.reminder_date)}${data.reminder_notes ? " | " + data.reminder_notes : ""}`]);
@@ -222,7 +231,7 @@ router.get("/:id", verifyToken, (req, res) => {
 
 /* GET ALL */
 router.get("/", verifyToken, (req, res) => {
-  const { id: user_id, role, first_name: user_name } = req.user;
+  const { id: user_id, role, name: user_name } = req.user;
   let sql = `
     SELECT f.*, u.first_name as creator_name 
     FROM fields f
@@ -231,8 +240,14 @@ router.get("/", verifyToken, (req, res) => {
   const params = [];
   
   if (role === "employee") {
-    sql += " WHERE f.created_by = ? OR f.staff_name LIKE ? OR f.assigned_to = ?";
-    params.push(user_id, `%${user_name}%`, user_id);
+    sql += " WHERE f.created_by = ?";
+    params.push(user_id);
+    sql += " ORDER BY f.id DESC";
+    db.query(sql, params, (err, results) => {
+      if (err) return res.status(500).json({ message: "Fetch failed" });
+      res.json(results);
+    });
+    return;
   }
   
   sql += " ORDER BY f.id DESC";

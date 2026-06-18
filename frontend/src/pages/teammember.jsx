@@ -595,11 +595,11 @@ const Team = () => {
                     <td className="p-4 border">{E.quotation_count || 0}</td>
                     <td className="p-4 border">
                       <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        (E.emp_email === 'malarvannan@technostore.co.in' || E.user_role === "subadmin") ? "bg-orange-100 text-orange-700" :
+                        E.user_role === "subadmin" ? "bg-orange-100 text-orange-700" :
                         E.user_role === "admin" ? "bg-purple-100 text-purple-700" :
                         "bg-gray-100 text-gray-600"
                       }`}>
-                        {E.emp_email === 'malarvannan@technostore.co.in' ? "subadmin" : (E.user_role || "employee")}
+                        {E.user_role || "employee"}
                       </span>
                     </td>
                     <td className="p-4 border">
@@ -621,10 +621,8 @@ const Team = () => {
                           </>
                         )}
                         {(currentUser?.role === "admin" && E.user_role === "admin") && (
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                            E.emp_email === 'malarvannan@technostore.co.in' ? "bg-orange-50 text-orange-700" : "bg-purple-50 text-purple-600"
-                          }`}>
-                            {E.emp_email === 'malarvannan@technostore.co.in' ? "Sub-Admin" : "Admin"}
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-purple-50 text-purple-600">
+                            Admin
                           </span>
                         )}
                         {currentUser?.role === "subadmin" && (
@@ -851,6 +849,7 @@ const Team = () => {
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-white outline-none">
                   <option value="employee">Employee (Create/View Only)</option>
                   <option value="subadmin">Sub-Admin (Assign Tasks/Targets, Edit)</option>
+                  <option value="admin">Admin (Full Access)</option>
                 </select>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500">

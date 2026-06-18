@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { Bell, AlertTriangle, Trophy, Clock, Search, X, Trash2, Archive, RotateCcw, ClipboardList } from "lucide-react";
+import { Bell, AlertTriangle, Trophy, Clock, Search, X, Trash2, Archive, RotateCcw, ClipboardList, ChevronRight, User, Calendar, Hash, MapPin, Phone } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useNotifications } from "../context/NotificationContext";
 import { API } from "../config/api";
@@ -72,9 +72,142 @@ const NOTIF_CONFIG = {
     label: "Incomplete Task Alert",
     desc: "Task overdue and incomplete",
   },
+  reminder_due: {
+    icon: Clock,
+    color: "#764ba2",
+    bg: "#f3f0ff",
+    label: "Reminder Due Soon",
+    desc: "A reminder is due within 10 minutes",
+  },
 };
 
-const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTasksModal }) => {
+// ── Notification Detail Popup ────────────────────────────────────────────────
+const NotifDetailPopup = ({ notification, onClose }) => {
+  if (!notification) return null;
+  const config = NOTIF_CONFIG[notification.type] || { icon: Bell, color: N.steel, bg: N.surface, label: notification.type, desc: "" };
+  const Icon = config.icon;
+
+  const data = notification.data || {};
+  const details = [
+    data.customerName && { icon: User, label: "Client", value: data.customerName },
+    data.mobileNumber && { icon: Phone, label: "Mobile", value: data.mobileNumber },
+    data.userName && { icon: User, label: "Employee", value: data.userName },
+    data.count && { icon: Hash, label: "Missed Count", value: `${data.count} reminders` },
+    data.percentage && { icon: Hash, label: "Progress", value: `${data.percentage}%` },
+    data.leadType && { icon: MapPin, label: "Lead Type", value: data.leadType },
+    data.reminderTime && { icon: Clock, label: "Reminder Time", value: data.reminderTime },
+    data.reminderNotes && { icon: ClipboardList, label: "Notes", value: data.reminderNotes },
+    data.missedAt && { icon: Calendar, label: "Missed At", value: data.missedAt },
+  ].filter(Boolean);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md rounded-2xl overflow-hidden"
+        style={{
+          background: N.canvas,
+          boxShadow: "0 25px 80px rgba(0,0,0,0.25)",
+          animation: "popupSlideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Colored Header */}
+        <div style={{ background: config.bg, borderBottom: `3px solid ${config.color}`, padding: "20px 20px 16px" }}>
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: config.color }}
+              >
+                <Icon size={22} color="#fff" />
+              </div>
+              <div>
+                <p className="text-sm font-bold" style={{ color: config.color }}>{config.label}</p>
+                <p className="text-xs mt-0.5" style={{ color: N.slate }}>{config.desc}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl transition-colors cursor-pointer"
+              style={{ color: N.steel, background: "rgba(0,0,0,0.05)" }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-5">
+          {/* Main message */}
+          <div
+            className="p-4 rounded-xl mb-4"
+            style={{ background: N.surfaceSoft, border: `1px solid ${N.hairline}` }}
+          >
+            <p className="text-sm font-medium" style={{ color: N.ink, lineHeight: "1.55" }}>
+              {notification.message || notification.description || notification.data?.message || "No message"}
+            </p>
+          </div>
+
+          {/* Detail rows */}
+          {details.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {details.map((d, idx) => (
+                <div key={idx} className="flex items-center gap-3 py-2 border-b last:border-b-0" style={{ borderColor: N.hairline }}>
+                  <d.icon size={14} style={{ color: N.stone, flexShrink: 0 }} />
+                  <span className="text-xs font-semibold w-24 flex-shrink-0" style={{ color: N.steel }}>{d.label}</span>
+                  <span className="text-xs font-medium" style={{ color: N.ink }}>{d.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Timestamp */}
+          <div className="flex items-center gap-2 mt-3">
+            <Clock size={12} style={{ color: N.stone }} />
+            <span className="text-xs" style={{ color: N.stone }}>
+              {formatDate(notification.created_at || notification.timestamp)}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: N.surface, color: N.steel }}>
+              {timeAgo(notification.created_at || notification.timestamp)}
+            </span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 flex gap-2">
+          <button
+            onClick={() => { window.location.href = "/dashboard/telecalling"; onClose(); }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all hover:opacity-90"
+            style={{ background: config.color, color: "#fff" }}
+          >
+            View Leads
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
+            style={{ background: N.surface, color: N.slate, border: `1px solid ${N.hairline}` }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes popupSlideIn {
+          from { opacity: 0; transform: scale(0.85) translateY(20px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// ── Notification Card ────────────────────────────────────────────────────────
+const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowDetail }) => {
   const config = NOTIF_CONFIG[n.type] || { icon: Bell, color: N.steel, bg: N.surface, label: n.type, desc: "" };
   const Icon = config.icon;
   const isUnread = n.is_read === 0;
@@ -82,7 +215,7 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTas
 
   return (
     <div
-      className="rounded-xl border p-4 transition-all cursor-pointer hover:shadow-sm"
+      className="rounded-xl border p-4 transition-all cursor-pointer hover:shadow-md group"
       style={{
         background: N.canvas,
         borderColor: isUnread ? config.color : N.hairline,
@@ -93,9 +226,7 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTas
         if (isUnread && !showArchived) {
           onMarkRead?.(n.id, source);
         }
-        if (n.type === "daily_task_summary") {
-          onShowTasksModal?.();
-        }
+        onShowDetail?.(n);
       }}
     >
       <div className="flex items-start gap-3">
@@ -116,7 +247,11 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTas
             {n.data?.percentage && <span>Progress: {n.data.percentage}%</span>}
           </div>
         </div>
-        <div className="flex flex-col gap-1 flex-shrink-0">
+        <div className="flex flex-col gap-1 flex-shrink-0 items-center">
+          {/* View detail arrow */}
+          <div className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: config.color }}>
+            <ChevronRight size={14} />
+          </div>
           {showArchived ? (
             <button onClick={(e) => { e.stopPropagation(); onArchive?.(n.id, source); }} className="p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors" title="Unarchive" style={{ color: N.primary }}>
               <RotateCcw size={14} />
@@ -137,6 +272,7 @@ const NotifCard = ({ n, onMarkRead, onDelete, onArchive, showArchived, onShowTas
   );
 };
 
+// ── Tasks Summary Modal ──────────────────────────────────────────────────────
 const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -147,7 +283,6 @@ const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
     const nameMatch = (t.project_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
                       (t.task_title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
                       (t.staff_name || t.assigned_to || "").toLowerCase().includes(searchTerm.toLowerCase());
-    
     if (statusFilter === "all") return nameMatch;
     if (statusFilter === "New") return nameMatch && t.project_status === "New";
     if (statusFilter === "Process") return nameMatch && t.project_status === "Process";
@@ -175,7 +310,6 @@ const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="w-full max-w-4xl max-h-[85vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden border" style={{ background: N.canvas, borderColor: N.hairline }}>
-        {/* Header */}
         <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: N.hairline }}>
           <div>
             <h3 className="text-lg font-bold" style={{ color: N.ink }}>Current Task Statuses</h3>
@@ -186,7 +320,6 @@ const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
           </button>
         </div>
 
-        {/* Filter controls */}
         <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: N.hairline, background: N.surfaceSoft }}>
           <div className="flex gap-1 rounded-xl p-1 w-full md:w-auto" style={{ background: N.surface }}>
             {[
@@ -214,7 +347,6 @@ const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
           </div>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -274,6 +406,7 @@ const TasksSummaryModal = ({ isOpen, onClose, tasks, loading }) => {
   );
 };
 
+// ── Main Notifications Component ─────────────────────────────────────────────
 const Notifications = () => {
   const { user } = useAuth();
   const { notifications, adminNotifications, markAsRead, markAdminAsRead, refreshNotifications,
@@ -288,6 +421,9 @@ const Notifications = () => {
   const [showTasksModal, setShowTasksModal] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
+
+  // Detail popup
+  const [selectedNotif, setSelectedNotif] = useState(null);
 
   const isAdmin = user?.role === "admin";
   const isSubAdmin = user?.role === "subadmin";
@@ -348,6 +484,7 @@ const Notifications = () => {
     .filter(n => {
       if (filter === "missed") return n.type === "missed_reminder_alert";
       if (filter === "target") return n.type === "target_completed";
+      if (filter === "reminder") return n.type === "reminder_due" || n.type === "reminder_due_now";
       return true;
     })
     .filter(n => {
@@ -413,9 +550,14 @@ const Notifications = () => {
     } catch (e) { console.error(e); }
   };
 
+  const handleShowDetail = (notif) => {
+    setSelectedNotif(notif);
+  };
+
   const missedCount = filteredNotifs.filter(n => n.type === "missed_reminder_alert").length;
   const targetCount = filteredNotifs.filter(n => n.type === "target_completed").length;
   const unreadCount = filteredNotifs.filter(n => n.is_read === 0).length;
+  const reminderCount = filteredNotifs.filter(n => n.type === "reminder_due" || n.type === "reminder_due_now").length;
 
   return (
     <div className="w-full p-4 md:p-6 min-h-screen" style={{ background: N.surfaceSoft }}>
@@ -423,9 +565,9 @@ const Notifications = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-semibold" style={{ color: N.ink }}>Notifications</h2>
-          <p className="text-sm mt-1" style={{ color: N.steel }}>Missed reminders & target completions</p>
+          <p className="text-sm mt-1" style={{ color: N.steel }}>Reminders, missed alerts & target completions</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={() => setShowArchived(!showArchived)}
             className="px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all hover:shadow-md"
@@ -444,7 +586,7 @@ const Notifications = () => {
           )}
           {pushStatus === "granted" && (
             <span className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: N.mint, color: N.green }}>
-              Desktop Notifications On
+              ✓ Desktop Notifications On
             </span>
           )}
           {unreadCount > 0 && !showArchived && (
@@ -486,6 +628,7 @@ const Notifications = () => {
             { key: "all", label: "All" },
             { key: "missed", label: "Missed Reminders" },
             { key: "target", label: "Targets Completed" },
+            { key: "reminder", label: "Reminders Due" },
           ].map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${filter === f.key ? "bg-white shadow" : ""}`}
@@ -516,7 +659,7 @@ const Notifications = () => {
         ) : (
           <div className="space-y-3">
             {archivedNotifs.map(n => (
-              <NotifCard key={n.id || n.dbId} n={n} showArchived onMarkRead={handleMarkRead} onArchive={handleUnarchive} onShowTasksModal={handleShowTasksModal} />
+              <NotifCard key={n.id || n.dbId} n={n} showArchived onMarkRead={handleMarkRead} onArchive={handleUnarchive} onShowDetail={handleShowDetail} />
             ))}
           </div>
         )
@@ -525,19 +668,24 @@ const Notifications = () => {
           <Bell size={40} className="mx-auto mb-3" style={{ color: N.stone }} />
           <p className="text-sm font-medium" style={{ color: N.slate }}>No notifications yet</p>
           <p className="text-xs mt-1" style={{ color: N.stone }}>
-            You'll see alerts when reminders are missed or targets are completed.
+            You'll see alerts when reminders are due, missed, or targets are completed.
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredNotifs.map(n => (
-            <NotifCard key={n.id || n.dbId} n={n} onMarkRead={handleMarkRead} onArchive={handleArchive} onDelete={handleDelete} onShowTasksModal={handleShowTasksModal} />
+            <NotifCard key={n.id || n.dbId} n={n} onMarkRead={handleMarkRead} onArchive={handleArchive} onDelete={handleDelete} onShowDetail={handleShowDetail} />
           ))}
         </div>
       )}
 
       {/* Tasks Summary Modal */}
       <TasksSummaryModal isOpen={showTasksModal} onClose={() => setShowTasksModal(false)} tasks={tasks} loading={loadingTasks} />
+
+      {/* Notification Detail Popup */}
+      {selectedNotif && (
+        <NotifDetailPopup notification={selectedNotif} onClose={() => setSelectedNotif(null)} />
+      )}
     </div>
   );
 };

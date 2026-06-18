@@ -250,7 +250,7 @@ router.post("/", verifyToken, isAdmin, (req, res) => {
             } else if (assignedUser.id) {
               db.query("INSERT INTO notifications (task_id, user_id, type, title, description) VALUES (?, ?, 'task_assigned', 'New Task Assigned', ?)",
                 [taskId, assignedUser.id, message],
-                () => {}
+                () => { }
               );
             }
           }
@@ -290,8 +290,8 @@ router.put("/:id", verifyToken, (req, res) => {
 
     resolveTmId((tmErr, myTmId) => {
       const isAssigned = (task.assigned_teammember_id && myTmId && task.assigned_teammember_id === myTmId) ||
-        (task.staff_name && task.staff_name.toLowerCase().includes((req.user.first_name || "").toLowerCase())) ||
-        (task.assigned_to && task.assigned_to.toLowerCase().includes((req.user.first_name || "").toLowerCase()));
+        (task.staff_name && task.staff_name.toLowerCase().includes((req.user.name || "").toLowerCase())) ||
+        (task.assigned_to && task.assigned_to.toLowerCase().includes((req.user.name || "").toLowerCase()));
 
       if (!isAdminUser && !isCreator && !isAssigned) {
         return res.status(403).json({ message: "Access denied" });
@@ -307,7 +307,7 @@ router.put("/:id", verifyToken, (req, res) => {
               [req.params.id, "Status Updated", `Employee ${req.user.first_name} updated status to ${project_status}`]);
             const notifIO = getNotificationIO();
             if (notifIO) notifIO.emit("task_updated", { taskId: req.params.id, newStatus: project_status });
-            
+
             if (project_status === "Completed") {
               db.query("SELECT task_title, project_name, project_priority FROM tasks WHERE id = ?", [req.params.id], (err, taskRows) => {
                 if (!err && taskRows.length > 0 && notifIO) {
@@ -537,7 +537,7 @@ router.get("/targets/my", verifyToken, (req, res) => {
     (err, targetRows) => {
       if (err) return res.status(500).json({ error: err.message });
       if (targetRows.length === 0) return res.json({ message: "No target set", hasTarget: false });
-      
+
       const targetId = targetRows[0].id;
       const monthlyTarget = targetRows[0].monthly_target;
       const yearlyTarget = targetRows[0].yearly_target;
@@ -1007,20 +1007,20 @@ const processAchievement = (user_id, user_name, targetId, monthlyTarget, achieve
                                 // ═══════════════════════════════════════════════════════════
                                 // STEP 7: Send notifications & update admin side
                                 // ═══════════════════════════════════════════════════════════
-                                
+
                                 // Admin notification (if target completed)
                                 if (monthlyPercentage >= 100 && notifIO) {
-                                   const time = new Date().toLocaleString();
-                                   // Admin notification
-                                   notifIO.emitNotification("target_completed", {
-                                     userId: user_id, userName: user_name, targetId: targetId,
-                                     percentage: monthlyPercentage, achievedAmount: newAchieved,
-                                     effectiveTarget: effectiveTarget,
-                                     title: "🎯 Employee Target Completed",
-                                     message: `${user_name} has completed their monthly target of Rs.${Number(effectiveTarget).toLocaleString()} (${monthlyPercentage}%).`,
-                                     type: "target_completed", timestamp: time
-                                   }, null, true);
-                                 }
+                                  const time = new Date().toLocaleString();
+                                  // Admin notification
+                                  notifIO.emitNotification("target_completed", {
+                                    userId: user_id, userName: user_name, targetId: targetId,
+                                    percentage: monthlyPercentage, achievedAmount: newAchieved,
+                                    effectiveTarget: effectiveTarget,
+                                    title: "🎯 Employee Target Completed",
+                                    message: `${user_name} has completed their monthly target of Rs.${Number(effectiveTarget).toLocaleString()} (${monthlyPercentage}%).`,
+                                    type: "target_completed", timestamp: time
+                                  }, null, true);
+                                }
 
                                 // ═══════════════════════════════════════════════════════════
                                 // STEP 8: Insert into admin_notifications + Broadcast
@@ -1059,10 +1059,10 @@ const processAchievement = (user_id, user_name, targetId, monthlyTarget, achieve
 
                                       // Broadcast to all admin clients
                                       notifIO.namespace.to("admin_notifications").emit("employee_achievement", achievementData);
-                                      
+
                                       // Broadcast to employee
                                       notifIO.namespace.to(`notifications:${user_id}`).emit("achievement_recorded", achievementData);
-                                      
+
                                       // Broadcast to all connected clients (global sync)
                                       notifIO.emit("target_data_changed", {
                                         type: "achievement_added",

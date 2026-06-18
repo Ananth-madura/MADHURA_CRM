@@ -14,3 +14,138 @@
 2026-06-12T15:24:52: OTP email transporter verification failed: getaddrinfo ENOTFOUND smtp.gmail.com
 2026-06-12T15:41:01: ❌ Port 5000 is already in use. Either stop the process currently listening on port 5000 or set a different PORT in backend/.env.
 2026-06-12T15:56:57: ❌ Port 5000 is already in use. Either stop the process currently listening on port 5000 or set a different PORT in backend/.env.
+2026-06-12T18:13:21: Update error: Error: Data truncated for column 'call_outcome' at row 1
+2026-06-12T18:13:21:     at Packet.asError (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packets\packet.js:788:17)
+2026-06-12T18:13:21:     at Query.execute (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\commands\command.js:29:26)
+2026-06-12T18:13:21:     at Connection.handlePacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:552:34)
+2026-06-12T18:13:21:     at PacketParser.onPacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:102:12)
+2026-06-12T18:13:21:     at PacketParser.executeStart (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packet_parser.js:75:16)
+2026-06-12T18:13:21:     at Socket.<anonymous> (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:109:25)
+2026-06-12T18:13:21:     at Socket.emit (node:events:509:20)
+2026-06-12T18:13:21:     at addChunk (node:internal/streams/readable:568:12)
+2026-06-12T18:13:21:     at readableAddChunkPushByteMode (node:internal/streams/readable:519:3)
+2026-06-12T18:13:21:     at Readable.push (node:internal/streams/readable:399:5) {
+2026-06-12T18:13:21:   code: 'WARN_DATA_TRUNCATED',
+2026-06-12T18:13:21:   errno: 1265,
+2026-06-12T18:13:21:   sqlState: '01000',
+2026-06-12T18:13:21:   sqlMessage: "Data truncated for column 'call_outcome' at row 1",
+2026-06-12T18:13:21:   sql: 'UPDATE telecalls SET\n' +
+2026-06-12T18:13:21:     "              customer_name='SOCIA by Sparrowdsabfklknasadfsf',\n" +
+2026-06-12T18:13:21:     "              mobile_number='0787187553832',\n" +
+2026-06-12T18:13:21:     "              location_city='Chennai',\n" +
+2026-06-12T18:13:21:     "              call_date='2026-06-10',\n" +
+2026-06-12T18:13:21:     "              service_name='',\n" +
+2026-06-12T18:13:21:     "              staff_name='Priyanka',\n" +
+2026-06-12T18:13:21:     "              call_outcome='Closed',\n" +
+2026-06-12T18:13:21:     "              followup_required='Default',\n" +
+2026-06-12T18:13:21:     "              followup_date='2026-06-10',\n" +
+2026-06-12T18:13:21:     "              followup_notes='',\n" +
+2026-06-12T18:13:21:     "              reminder_required='Default',\n" +
+2026-06-12T18:13:21:     "              reminder_date='2026-06-10',\n" +
+2026-06-12T18:13:21:     "              reminder_notes='',\n" +
+2026-06-12T18:13:21:     "              reference='',\n" +
+2026-06-12T18:13:21:     "              gst_number='',\n" +
+2026-06-12T18:13:21:     "              email='thanan757@gm31432ail423.com',\n" +
+2026-06-12T18:13:21:     '              assigned_to=706\n' +
+2026-06-12T18:13:21:     "             WHERE id='29'"
+2026-06-12T18:13:21: }
+2026-06-12T18:14:59: Update error: Error: Data truncated for column 'call_outcome' at row 1
+2026-06-12T18:14:59:     at Packet.asError (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packets\packet.js:788:17)
+2026-06-12T18:14:59:     at Query.execute (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\commands\command.js:29:26)
+2026-06-12T18:14:59:     at Connection.handlePacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:552:34)
+2026-06-12T18:14:59:     at PacketParser.onPacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:102:12)
+2026-06-12T18:14:59:     at PacketParser.executeStart (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packet_parser.js:75:16)
+2026-06-12T18:14:59:     at Socket.<anonymous> (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:109:25)
+2026-06-12T18:14:59:     at Socket.emit (node:events:509:20)
+2026-06-12T18:14:59:     at addChunk (node:internal/streams/readable:568:12)
+2026-06-12T18:14:59:     at readableAddChunkPushByteMode (node:internal/streams/readable:519:3)
+2026-06-12T18:14:59:     at Readable.push (node:internal/streams/readable:399:5) {
+2026-06-12T18:14:59:   code: 'WARN_DATA_TRUNCATED',
+2026-06-12T18:14:59:   errno: 1265,
+2026-06-12T18:14:59:   sqlState: '01000',
+2026-06-12T18:14:59:   sqlMessage: "Data truncated for column 'call_outcome' at row 1",
+2026-06-12T18:14:59:   sql: 'UPDATE telecalls SET\n' +
+2026-06-12T18:14:59:     "              customer_name='SOCIA by Sparrowdsabfklknasadfsf',\n" +
+2026-06-12T18:14:59:     "              mobile_number='0787187553832',\n" +
+2026-06-12T18:14:59:     "              location_city='Chennai',\n" +
+2026-06-12T18:14:59:     "              call_date='2026-06-09',\n" +
+2026-06-12T18:14:59:     "              service_name='',\n" +
+2026-06-12T18:14:59:     "              staff_name='Priyanka',\n" +
+2026-06-12T18:14:59:     "              call_outcome='Billed',\n" +
+2026-06-12T18:14:59:     "              followup_required='Default',\n" +
+2026-06-12T18:14:59:     "              followup_date='2026-06-09',\n" +
+2026-06-12T18:14:59:     "              followup_notes='',\n" +
+2026-06-12T18:14:59:     "              reminder_required='Default',\n" +
+2026-06-12T18:14:59:     "              reminder_date='2026-06-09',\n" +
+2026-06-12T18:14:59:     "              reminder_notes='',\n" +
+2026-06-12T18:14:59:     "              reference='',\n" +
+2026-06-12T18:14:59:     "              gst_number='',\n" +
+2026-06-12T18:14:59:     "              email='thanan757@gm31432ail423.com',\n" +
+2026-06-12T18:14:59:     '              assigned_to=706\n' +
+2026-06-12T18:14:59:     "             WHERE id='29'"
+2026-06-12T18:14:59: }
+2026-06-12T18:15:15: Update error: Error: Data truncated for column 'call_outcome' at row 1
+2026-06-12T18:15:15:     at Packet.asError (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packets\packet.js:788:17)
+2026-06-12T18:15:15:     at Query.execute (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\commands\command.js:29:26)
+2026-06-12T18:15:15:     at Connection.handlePacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:552:34)
+2026-06-12T18:15:15:     at PacketParser.onPacket (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:102:12)
+2026-06-12T18:15:15:     at PacketParser.executeStart (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\packet_parser.js:75:16)
+2026-06-12T18:15:15:     at Socket.<anonymous> (D:\ACHME_COMUNICATION-main\backend\node_modules\mysql2\lib\base\connection.js:109:25)
+2026-06-12T18:15:15:     at Socket.emit (node:events:509:20)
+2026-06-12T18:15:15:     at addChunk (node:internal/streams/readable:568:12)
+2026-06-12T18:15:15:     at readableAddChunkPushByteMode (node:internal/streams/readable:519:3)
+2026-06-12T18:15:15:     at Readable.push (node:internal/streams/readable:399:5) {
+2026-06-12T18:15:15:   code: 'WARN_DATA_TRUNCATED',
+2026-06-12T18:15:15:   errno: 1265,
+2026-06-12T18:15:15:   sqlState: '01000',
+2026-06-12T18:15:15:   sqlMessage: "Data truncated for column 'call_outcome' at row 1",
+2026-06-12T18:15:15:   sql: 'UPDATE telecalls SET\n' +
+2026-06-12T18:15:15:     "              customer_name='SOCIA by Sparrowdsabfklknasadfsf',\n" +
+2026-06-12T18:15:15:     "              mobile_number='0787187553832',\n" +
+2026-06-12T18:15:15:     "              location_city='Chennai',\n" +
+2026-06-12T18:15:15:     "              call_date='2026-06-09',\n" +
+2026-06-12T18:15:15:     "              service_name='',\n" +
+2026-06-12T18:15:15:     "              staff_name='Priyanka',\n" +
+2026-06-12T18:15:15:     "              call_outcome='n',\n" +
+2026-06-12T18:15:15:     "              followup_required='Default',\n" +
+2026-06-12T18:15:15:     "              followup_date='2026-06-09',\n" +
+2026-06-12T18:15:15:     "              followup_notes='',\n" +
+2026-06-12T18:15:15:     "              reminder_required='Default',\n" +
+2026-06-12T18:15:15:     "              reminder_date='2026-06-09',\n" +
+2026-06-12T18:15:15:     "              reminder_notes='',\n" +
+2026-06-12T18:15:15:     "              reference='',\n" +
+2026-06-12T18:15:15:     "              gst_number='',\n" +
+2026-06-12T18:15:15:     "              email='thanan757@gm31432ail423.com',\n" +
+2026-06-12T18:15:15:     '              assigned_to=706\n' +
+2026-06-12T18:15:15:     "             WHERE id='29'"
+2026-06-12T18:15:15: }
+2026-06-18T11:23:24: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:24: Database is not ready. Server not started.
+2026-06-18T11:23:24: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:28: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:28: Database is not ready. Server not started.
+2026-06-18T11:23:28: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:33: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:33: Database is not ready. Server not started.
+2026-06-18T11:23:33: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:37: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:37: Database is not ready. Server not started.
+2026-06-18T11:23:37: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:41: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:41: Database is not ready. Server not started.
+2026-06-18T11:23:41: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:45: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:45: Database is not ready. Server not started.
+2026-06-18T11:23:45: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:49: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:49: Database is not ready. Server not started.
+2026-06-18T11:23:49: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:54: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:54: Database is not ready. Server not started.
+2026-06-18T11:23:54: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:58: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:23:58: Database is not ready. Server not started.
+2026-06-18T11:23:58: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:24:02: ❌ user_email_configs.smtp_secure: Table 'achme.user_email_configs' doesn't exist
+2026-06-18T11:24:02: Database is not ready. Server not started.
+2026-06-18T11:24:02: Check DB_HOST, DB_PORT, DB_USER, DB_PASS, and DB_NAME in backend/.env. Details: Table 'achme.user_email_configs' doesn't exist

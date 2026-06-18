@@ -62,6 +62,7 @@ const Telecall = () => {
     followup_notes: "",
     reminder_required: "Default",
     reminder_date: new Date().toISOString().slice(0, 10),
+    reminder_time: "",
     reminder_notes: "",
     reference: "",
     email: "",
@@ -215,6 +216,7 @@ const Telecall = () => {
           followup_notes: "",
           reminder_required: "Default",
           reminder_date: "",
+          reminder_time: "",
           reminder_notes: "",
         }));
       } else {
@@ -262,7 +264,8 @@ const Telecall = () => {
         followup_date: data.followup_date || "",
         followup_notes: data.followup_notes || "",
         reminder_required: data.reminder_required || "Default",
-        reminder_date: data.reminder_date || "",
+        reminder_date: data.reminder_date ? data.reminder_date.toString().slice(0, 10) : "",
+        reminder_time: data.reminder_time || "",
         reminder_notes: data.reminder_notes || "",
         reference: data.reference || "",
         email: data.email || "",
@@ -330,7 +333,7 @@ const Telecall = () => {
 
           <div className="mt-2">
             <button
-              onClick={() => { setIsEdit(false); setForm({ customer_name: "", mobile_number: "", location_city: "", call_date: new Date().toISOString().slice(0, 10), service_name: "", staff_name: "", call_outcome: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_notes: "", reference: "", gst_number: "", email: "" }); setCustomOutcomeInput(""); setOpen(true); }}
+              onClick={() => { setIsEdit(false); setForm({ customer_name: "", mobile_number: "", location_city: "", call_date: new Date().toISOString().slice(0, 10), service_name: "", staff_name: "", call_outcome: "New", followup_required: "Default", followup_date: new Date().toISOString().slice(0, 10), followup_notes: "", reminder_required: "Default", reminder_date: new Date().toISOString().slice(0, 10), reminder_time: "", reminder_notes: "", reference: "", gst_number: "", email: "" }); setCustomOutcomeInput(""); setOpen(true); }}
               className="bg-[#FF3355] text-white w-12 h-12 rounded-full flex justify-center items-center shadow-lg hover:bg-[#e62848] "
             >
               <Plus size={24} />
@@ -385,18 +388,22 @@ const Telecall = () => {
                 <label htmlFor="" className="text-sm text-gray-600 text-left">Description</label>
                 <input type="text" value={form.service_name} onChange={handleChange} name="service_name" className="col-span-3 border rounded-md px-3 py-2 outline-none bg-white w-[100%]" />
               </div>
-              {/*  */}
               <div className="grid grid-cols-4 items-center gap-6">
                 <label htmlFor="" className="text-sm text-gray-600 text-left">Assigned Staff</label>
                 <div className="col-span-3">
                   <select value={form.staff_name} onChange={handleChange} name="staff_name"
                     className="border rounded-md px-3 py-2 outline-none bg-white w-full text-sm">
                     <option value="">-- Select Staff --</option>
-                    {teamMembers.map(t => (
-                      <option key={t.id} value={`${t.first_name} ${t.last_name || ""}`.trim()}>
-                        {t.first_name} {t.last_name || ""} {t.job_title ? `(${t.job_title})` : ""}
-                      </option>
-                    ))}
+                    <option value="Princee SD">Princee SD</option>
+                    <option value="Priyanka">Priyanka</option>
+                    <option value="Uma Kalyani">Uma Kalyani</option>
+                    <option value="Vimal">Vimal</option>
+                    <option value="Moorthi">Moorthi</option>
+                    <option value="Nagaraj">Nagaraj</option>
+                    <option value="Malarvannan">Malarvannan</option>
+                    <option value="Jai sir">Jai sir</option>
+                    <option value="Manikandan">Manikandan</option>
+                    <option value="Anand">Anand</option>
                   </select>
                 </div>
               </div>
@@ -535,6 +542,14 @@ const Telecall = () => {
                           <label className="text-xs font-semibold text-gray-500">Date</label>
                           <input type="date" value={form.reminder_date} onChange={handleChange} name="reminder_date"
                             className="border rounded-lg px-3 py-2 outline-none bg-white w-full text-sm mt-1" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-500">⏰ Time <span className="text-yellow-600 font-bold">(Required for pre-warning)</span></label>
+                          <input type="time" value={form.reminder_time} onChange={handleChange} name="reminder_time"
+                            className="border rounded-lg px-3 py-2 outline-none bg-white w-full text-sm mt-1" />
+                          {form.reminder_time && (
+                            <p className="text-xs text-yellow-600 mt-1">You'll be notified at {form.reminder_time.split(':').map((p,i) => i===0 ? String(Math.max(0,parseInt(p)-0)).padStart(2,'0') : p).join(':')} — 10 min before & 5 min before</p>
+                          )}
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-500">Notes</label>

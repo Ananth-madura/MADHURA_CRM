@@ -51,17 +51,26 @@ const resolveAssignedTo = (staffName, callback) => {
 
 const isAuthorizedToEdit = (lead, user) => {
   if (user.role === 'admin' || user.role === 'subadmin') return true;
+  if (lead.assigned_to && lead.assigned_to !== user.id) return false;
+
+  const userName = (user.name || "").trim().toLowerCase();
+  if (lead.staff_name && lead.staff_name.trim().length > 0) {
+    if (userName.length > 0 && !lead.staff_name.toLowerCase().includes(userName)) {
+      return false;
+    }
+  }
+
   if (lead.created_by === user.id) return true;
   if (lead.assigned_to === user.id) return true;
   
-  const userName = `${user.first_name} ${user.last_name || ""}`.trim().toLowerCase();
-  if (lead.staff_name && lead.staff_name.trim().toLowerCase() === userName) return true;
+  // JWT contains `name` (which is user's first_name)
+  if (lead.staff_name && lead.staff_name.trim().toLowerCase().includes(userName) && userName.length > 0) return true;
   
   return false;
 };
 
 router.get("/", verifyToken, (req, res) => {
-  const { id: user_id, role, first_name: user_name } = req.user;
+  const { id: user_id, role, name: user_name } = req.user;
   let sql = `
     SELECT t.*, u.first_name as creator_name 
     FROM telecalls t
@@ -70,8 +79,14 @@ router.get("/", verifyToken, (req, res) => {
   const params = [];
 
   if (role === "employee") {
-    sql += " WHERE t.created_by = ? OR t.staff_name LIKE ? OR t.assigned_to = ?";
-    params.push(user_id, `%${user_name}%`, user_id);
+    sql += " WHERE t.created_by = ?";
+    params.push(user_id);
+    sql += " ORDER BY t.id DESC";
+    db.query(sql, params, (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(results);
+    });
+    return;
   }
 
   sql += " ORDER BY t.id DESC";
@@ -253,8 +268,8 @@ router.post("/", verifyToken, (req, res) => {
           // If reminder set, add to lead_reminders
           if (reminder_required === "Yes" && reminder_date) {
             db.query(
-              "INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-              [newId, "telecall", toDateOnly(reminder_date), reminder_notes || "", req.user?.id || null]
+              "INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_time, reminder_notes, status, employee_id) VALUES (?,?,?,?,?,'Pending',?)",
+              [newId, "telecall", toDateOnly(reminder_date), toTimeOnly(req.body.reminder_time) || null, reminder_notes || "", req.user?.id || null]
             );
           }
 
@@ -368,8 +383,8 @@ router.put("/:id", verifyToken, (req, res) => {
 
             if (reminder_required === "Yes" && reminder_date) {
               db.query(
-                "INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_notes, status, employee_id) VALUES (?,?,?,?,'Pending',?)",
-                [id, "telecall", toDateOnly(reminder_date), reminder_notes || "", req.user?.id || null],
+                "INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_time, reminder_notes, status, employee_id) VALUES (?,?,?,?,?,'Pending',?)",
+                [id, "telecall", toDateOnly(reminder_date), toTimeOnly(req.body.reminder_time) || null, reminder_notes || "", req.user?.id || null],
                 (e) => {
                   if (!e) {
                     db.query(

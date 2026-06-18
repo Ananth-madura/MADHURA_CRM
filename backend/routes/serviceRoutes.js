@@ -32,10 +32,10 @@ router.get("/", verifyToken, (req, res) => {
 
 // CREATE SERVICE (WITH IMAGES)
 router.post("/", upload.array("images", 10), verifyToken, (req, res) => {
-  const { client, material, warranty, amc, date, issues } = req.body;
+  const { client, material, warranty, amc, date, issues, engineer_name } = req.body;
   const imageFiles = req.files && req.files.length > 0 ? req.files.map((file) => file.filename) : [];
 
-  const sql = "INSERT INTO services (client, material, warranty, amc, date, images, issues) VALUES (?, ?, ?, ?, ?, ?, ?)";
+  const sql = "INSERT INTO services (client, material, warranty, amc, date, images, issues, engineer_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
   const values = [
     client,
     material,
@@ -43,7 +43,8 @@ router.post("/", upload.array("images", 10), verifyToken, (req, res) => {
     amc === "true" || amc === true ? 1 : 0,
     date,
     imageFiles.length > 0 ? JSON.stringify(imageFiles) : null,
-    issues
+    issues,
+    engineer_name
   ];
 
   db.query(sql, values, (err, result) => {
@@ -66,16 +67,16 @@ router.delete("/:id", verifyToken, isAdmin, (req, res) => {
 
 // UPDATE SERVICE
 router.put("/:id", upload.array("images", 10), verifyToken, (req, res) => {
-  const { client, material, warranty, amc, date, issues } = req.body;
+  const { client, material, warranty, amc, date, issues, engineer_name } = req.body;
   let sql, values;
 
   if (req.files && req.files.length > 0) {
     const imageFiles = req.files.map((file) => file.filename);
-    sql = "UPDATE services SET client=?, material=?, warranty=?, amc=?, date=?, images=?, issues=? WHERE id=?";
-    values = [client, material, warranty, amc === "true" || amc === true ? 1 : 0, date, JSON.stringify(imageFiles), issues, req.params.id];
+    sql = "UPDATE services SET client=?, material=?, warranty=?, amc=?, date=?, images=?, issues=?, engineer_name=? WHERE id=?";
+    values = [client, material, warranty, amc === "true" || amc === true ? 1 : 0, date, JSON.stringify(imageFiles), issues, engineer_name, req.params.id];
   } else {
-    sql = "UPDATE services SET client=?, material=?, warranty=?, amc=?, date=?, issues=? WHERE id=?";
-    values = [client, material, warranty, amc === "true" || amc === true ? 1 : 0, date, issues, req.params.id];
+    sql = "UPDATE services SET client=?, material=?, warranty=?, amc=?, date=?, issues=?, engineer_name=? WHERE id=?";
+    values = [client, material, warranty, amc === "true" || amc === true ? 1 : 0, date, issues, engineer_name, req.params.id];
   }
 
   db.query(sql, values, (err, result) => {
@@ -114,6 +115,7 @@ router.post("/send-email/:id", verifyToken, (req, res) => {
           <div style="background:#f8fafc;padding:16px;border-radius:8px;margin-top:16px;">
             <p><strong>Client:</strong> ${service.client}</p>
             <p><strong>Material:</strong> ${service.material || "—"}</p>
+            <p><strong>Engineer's Name:</strong> ${service.engineer_name || "—"}</p>
             <p><strong>Warranty:</strong> ${service.warranty || "—"}</p>
             <p><strong>AMC:</strong> ${service.amc ? "Yes" : "No"}</p>
             <p><strong>Date:</strong> ${service.date ? new Date(service.date).toLocaleDateString("en-IN") : "—"}</p>

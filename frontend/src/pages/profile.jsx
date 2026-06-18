@@ -356,8 +356,8 @@ const Profile = () => {
               </div>
             </div>
              <div className="flex gap-2">
-               <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadge(profile.email === 'malarvannan@technostore.co.in' ? 'subadmin' : profile.role)}`}>
-                 {profile.email === 'malarvannan@technostore.co.in' ? 'subadmin' : profile.role}
+               <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadge(profile.role)}`}>
+                 {profile.role}
                </span>
                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(profile.status)}`}>
                  {profile.status}

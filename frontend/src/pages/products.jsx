@@ -23,6 +23,7 @@ function Products() {
   const [amc, setAmc] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [issues, setIssues] = useState("");
+  const [engineerName, setEngineerName] = useState("");
 
 
   const [images, setImages] = useState([]);
@@ -87,6 +88,7 @@ function Products() {
     formData.append("amc", amc);
     formData.append("date", date);
     formData.append("issues", issues);
+    formData.append("engineer_name", engineerName);
 
     images.forEach((img) => formData.append("images", img));
 
@@ -128,6 +130,7 @@ function Products() {
     setAmc(service.amc === 1 || service.amc === true);
     setDate(service.date?.split("T")[0]);
     setIssues(service.issues || "");
+    setEngineerName(service.engineer_name || "");
     setPreviews([]);
     setImages([]);
     setShowModal(true);
@@ -141,6 +144,7 @@ function Products() {
     setAmc(false);
     setDate(new Date().toISOString().slice(0, 10));
     setIssues("");
+    setEngineerName("");
     setImages([]);
     setPreviews([]);
     setIsEdit(false);
@@ -217,7 +221,8 @@ function Products() {
   // Material-based search logic
   const filteredServices = services.filter(s => 
     s.material?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.client?.toLowerCase().includes(searchTerm.toLowerCase())
+    s.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.engineer_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -234,7 +239,7 @@ function Products() {
           <Search size={18} className="text-gray-500" />
           <input
             type="text"
-            placeholder="Search by Material or Client"
+            placeholder="Search by Material, Client or Engineer"
             className="outline-none text-sm w-full"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -257,6 +262,7 @@ function Products() {
             <tr>
               <th className="p-4 font-semibold border-b">Client</th>
               <th className="p-4 font-semibold border-b">Material</th>
+              <th className="p-4 font-semibold border-b">Engineer</th>
               <th className="p-4 font-semibold border-b">Warranty</th>
               <th className="p-4 font-semibold border-b">AMC</th>
               <th className="p-4 font-semibold border-b">Date</th>
@@ -269,6 +275,7 @@ function Products() {
               <tr key={i} className="hover:bg-gray-50 border-b">
                 <td className="p-4">{s.client}</td>
                 <td className="p-4 font-medium">{s.material}</td>
+                <td className="p-4">{s.engineer_name || "—"}</td>
                 <td className="p-4">{s.warranty}</td>
                 <td className="p-4">
                   <span className={`px-2 py-1 rounded text-xs ${s.amc ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
@@ -396,6 +403,17 @@ function Products() {
                 onChange={(e) => setIssues(e.target.value)}
                 className="form-control w-[60%] border rounded-lg p-2 h-20"
                 placeholder="Mention any damages or issues here..."
+              />
+            </div>
+
+            <div className="flex items-center gap-6">
+              <label className="w-40 text-lg">Engineer Name</label>
+              <input
+                type="text"
+                value={engineerName}
+                onChange={(e) => setEngineerName(e.target.value)}
+                className="form-control w-[60%] border rounded-lg p-2"
+                placeholder="Enter engineer's name"
               />
             </div>
 
