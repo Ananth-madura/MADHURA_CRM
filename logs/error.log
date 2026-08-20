@@ -1,2 +1,3 @@
 2026/05/28 16:52:38 [emerg] 51392#30004: CreateFile() "D:\ACHME_COMUNICATION-main/conf/nginx.conf" failed (3: The system cannot find the path specified)
 2026/05/29 21:49:22 [emerg] 14652#8176: CreateFile() "D:\ACHME_COMUNICATION-main/conf/nginx.conf" failed (3: The system cannot find the path specified)
+2026/06/18 15:11:18 [emerg] 21548#6340: CreateFile() "D:\ACHME_COMUNICATION-main/conf/nginx.conf" failed (3: The system cannot find the path specified)

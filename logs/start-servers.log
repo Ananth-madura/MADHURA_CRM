@@ -1,29 +1,71 @@
  
-[Thu 06/18/2026 11:37:09.56] ========== ACHME CRM One-Click Setup started ========== 
-[Thu 06/18/2026 11:37:10.16] Step 1: MySQL check 
-[Thu 06/18/2026 11:37:10.76] MySQL OK, set to auto-start 
-[Thu 06/18/2026 11:37:10.76] Step 2: Node.js check 
-[Thu 06/18/2026 11:37:11.07] Node.js at: C:\Program Files\nodejs\ 
-[Thu 06/18/2026 11:37:11.08] Step 3: Config files 
-[Thu 06/18/2026 11:37:11.10] Step 4: Backend setup 
-◇ injected env (14) from .env // tip: ⌘ suppress logs { quiet: true }
-Database user 'achme_user' already works.
+[Tue 08/04/2026 12:56:38.51] ========== ACHME CRM One-Click Setup started ========== 
+[Tue 08/04/2026 12:56:38.89] Step 1: MySQL check 
+[Tue 08/04/2026 12:56:39.09] MySQL OK, set to auto-start 
+[Tue 08/04/2026 12:56:39.09] Step 2: Node.js check 
+[Tue 08/04/2026 12:56:39.38] Node.js at: C:\Program Files\nodejs\ 
+[Tue 08/04/2026 12:56:39.38] Step 3: Config files 
+[Tue 08/04/2026 12:56:39.41] Step 4: Backend setup 
+◇ injected env (14) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+Database user 'achme_user' is not ready. Trying root bootstrap...
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with blank root password: Access denied for user 'root'@'localhost' (using password: NO)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@127.0.0.1 with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with blank root password: Access denied for user 'root'@'localhost' (using password: NO)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+Root bootstrap failed for root@localhost with provided/root password: Access denied for user 'root'@'localhost' (using password: YES)
+
+Could not create the ACHME database user automatically.
+Set MYSQL_ROOT_PASSWORD or DB_ROOT_PASS before running the batch file, or create this MySQL user manually:
+  user: achme_user
+  password: AchmeSecure@2024
+  database: achme
 ◇ injected env (14) from .env // tip: ⌘ override existing { override: true }
 
 ======================================================
 ⚙️  DATABASE PRE-START CHECK
 Connecting to MySQL at 127.0.0.1:3306 as achme_user...
 ======================================================
-✅ Connected to MySQL server successfully.
-✅ Database 'achme' exists or was successfully created.
-======================================================
 
-[Thu 06/18/2026 11:37:11.87] Step 5: PM2 check 
-[Thu 06/18/2026 11:37:12.56] npm prefix: C:\Users\thana\AppData\Roaming\npm 
-[Thu 06/18/2026 11:37:13.25] PM2 home: C:\Users\thana\.pm2 
-[Thu 06/18/2026 11:37:13.27] Step 6: Frontend setup 
-[Thu 06/18/2026 11:37:13.29] Step 7: Nginx setup 
-[Thu 06/18/2026 11:37:20.17] Step 8: PM2 backend start 
-[Thu 06/18/2026 11:37:23.00] Step 9: Auto-boot setup 
-[Thu 06/18/2026 11:37:24.46] Scheduled tasks registered 
-[Thu 06/18/2026 11:37:24.80] Step 10: Health verification 
+❌ Failed to connect to MySQL database server:
+   Message: Access denied for user 'achme_user'@'localhost' (using password: YES)
+
+💡 Troubleshooting tips:
+   1. Make sure your MySQL Server service is running on port 3306.
+   2. Verify that the DB_USER and DB_PASS in backend/.env are 100% correct.
+   3. Verify that the user has host permission (e.g. 'achme_user'@'localhost' or 'achme_user'@'%').
+
+[Tue 08/04/2026 12:56:40.86] Step 5: PM2 check 
+[Tue 08/04/2026 12:56:42.32] npm prefix: C:\Users\thana\AppData\Roaming\npm 
+[Tue 08/04/2026 12:56:43.07] PM2 home: C:\Users\thana\.pm2 
+[Tue 08/04/2026 12:56:43.09] Step 6: Frontend setup 
+[Tue 08/04/2026 12:56:43.12] Step 7: Nginx setup 
+[Tue 08/04/2026 12:56:50.27] Step 8: PM2 backend start 
+[Tue 08/04/2026 12:56:54.97] Step 9: Auto-boot, firewall, hosts, and power settings 
+[Tue 08/04/2026 12:57:07.85] Step 10: Health verification 
