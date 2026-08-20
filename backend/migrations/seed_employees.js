@@ -5,7 +5,7 @@ const migration = async () => {
   await db.ready;
   console.log("Database connected!");
 
-await new Promise((resolve) => {
+  await new Promise((resolve) => {
     db.query("ALTER TABLE users MODIFY COLUMN role ENUM('admin','employee','user') DEFAULT 'employee'", (err) => {
       if (err) console.log("Alter users role:", err.message);
       else console.log("Users role column updated");
@@ -14,9 +14,9 @@ await new Promise((resolve) => {
   });
 
   await new Promise((resolve) => {
-    db.query("ALTER TABLE teammember MODIFY COLUMN emp_role ENUM('Developer','BDM','Manager','Sales') DEFAULT 'Sales'", (err) => {
+    db.query("ALTER TABLE teammember MODIFY COLUMN emp_role VARCHAR(150) DEFAULT 'Sales'", (err) => {
       if (err) console.log("Alter teammember emp_role:", err.message);
-      else console.log("Teammember emp_role column updated");
+      else console.log("Teammember emp_role column updated to VARCHAR(150)");
       resolve();
     });
   });

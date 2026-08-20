@@ -71,6 +71,24 @@ router.post("/new", verifyToken, (req, res) => {
         }, null, true);
       }
       */
+      // Auto-trigger WhatsApp automation for amc_created
+      try {
+        const { triggerAutomation } = require("../services/waAutomationService");
+        triggerAutomation("amc_created", {
+          phone: mobile_number,
+          contactName: trimmedCompany,
+          data: {
+            service: trimmedServiceType,
+            amc_contract_no: `AMC-${result.insertId}`,
+            amount: parsedAmount,
+            start_date: start_date,
+            end_date: end_date,
+            due_date: end_date,
+            city: location_city,
+            company: trimmedCompany,
+          }
+        }).catch(() => {});
+      } catch (_) {}
 
       res.json({ success: true, id: result.insertId });
     }
@@ -90,8 +108,18 @@ router.get("/by-type/:type", verifyToken, (req, res) => {
   }
 
   if (role === "employee") {
-    sql += " AND created_by = ?";
-    params.push(user_id);
+    sql += ` AND (
+      c.created_by = ?
+      OR c.client_company IN (
+        SELECT company_name FROM clients cl
+        WHERE cl.created_by = ?
+          OR cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)
+          OR (cl.original_lead_type = 'telecall' AND cl.original_lead_id IN (SELECT id FROM telecalls WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'walkin' AND cl.original_lead_id IN (SELECT id FROM walkins WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'field' AND cl.original_lead_id IN (SELECT id FROM fields WHERE created_by = ? OR assigned_to = ?))
+      )
+    )`;
+    params.push(user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id);
   }
 
   sql += " ORDER BY id DESC";
@@ -109,11 +137,21 @@ router.get("/", verifyToken, (req, res) => {
   const params = [];
 
   if (role === "employee") {
-    sql += " WHERE created_by = ?";
-    params.push(user_id);
+    sql += ` WHERE (
+      c.created_by = ?
+      OR c.client_company IN (
+        SELECT company_name FROM clients cl
+        WHERE cl.created_by = ?
+          OR cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)
+          OR (cl.original_lead_type = 'telecall' AND cl.original_lead_id IN (SELECT id FROM telecalls WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'walkin' AND cl.original_lead_id IN (SELECT id FROM walkins WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'field' AND cl.original_lead_id IN (SELECT id FROM fields WHERE created_by = ? OR assigned_to = ?))
+      )
+    )`;
+    params.push(user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id);
   }
 
-  sql += " ORDER BY id ASC";
+  sql += " ORDER BY id DESC";
   
   db.query(sql, params, (err, rows) => {
     if (err) return res.status(500).json(err);
@@ -179,17 +217,29 @@ router.get("/with-usage", verifyToken, (req, res) => {
     SELECT
       c.*,
       COALESCE(SUM(s.total_expenses), 0) as used_total,
-      COUNT(s.id) as service_count
+      COUNT(s.id) as service_count,
+      u.first_name AS creator_name
     FROM contracts c
-    LEFT JOIN amc_alc_services s ON c.id = s.contract_id`;
+    LEFT JOIN amc_alc_services s ON c.id = s.contract_id
+    LEFT JOIN users u ON u.id = c.created_by`;
   
   const params = [];
   if (role === "employee") {
-    sql += " WHERE c.created_by = ?";
-    params.push(user_id);
+    sql += ` WHERE (
+      c.created_by = ?
+      OR c.client_company IN (
+        SELECT company_name FROM clients cl
+        WHERE cl.created_by = ?
+          OR cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)
+          OR (cl.original_lead_type = 'telecall' AND cl.original_lead_id IN (SELECT id FROM telecalls WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'walkin' AND cl.original_lead_id IN (SELECT id FROM walkins WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'field' AND cl.original_lead_id IN (SELECT id FROM fields WHERE created_by = ? OR assigned_to = ?))
+      )
+    )`;
+    params.push(user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id);
   }
 
-  sql += ` GROUP BY c.id ORDER BY c.id DESC`;
+  sql += ` GROUP BY c.id, u.first_name ORDER BY c.id DESC`;
 
   db.query(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -220,8 +270,18 @@ router.get("/usage/:id", verifyToken, (req, res) => {
   
   const params = [id];
   if (role === "employee") {
-    sql += " AND c.created_by = ?";
-    params.push(user_id);
+    sql += ` AND (
+      c.created_by = ?
+      OR c.client_company IN (
+        SELECT company_name FROM clients cl
+        WHERE cl.created_by = ?
+          OR cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)
+          OR (cl.original_lead_type = 'telecall' AND cl.original_lead_id IN (SELECT id FROM telecalls WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'walkin' AND cl.original_lead_id IN (SELECT id FROM walkins WHERE created_by = ? OR assigned_to = ?))
+          OR (cl.original_lead_type = 'field' AND cl.original_lead_id IN (SELECT id FROM fields WHERE created_by = ? OR assigned_to = ?))
+      )
+    )`;
+    params.push(user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id);
   }
 
   sql += " GROUP BY c.id";

@@ -63,6 +63,8 @@ const alterations = [
   "ALTER TABLE call_reports ADD COLUMN petrol_charges DECIMAL(10,2) DEFAULT 0",
   "ALTER TABLE call_reports ADD COLUMN spare_parts_price DECIMAL(10,2) DEFAULT 0",
   "ALTER TABLE call_reports ADD COLUMN labour_charges DECIMAL(10,2) DEFAULT 0",
+  "ALTER TABLE call_reports ADD COLUMN delivery_call_type VARCHAR(50) DEFAULT NULL",
+  "ALTER TABLE call_reports ADD COLUMN delivery_project_work DECIMAL(10,2) DEFAULT 0",
   "ALTER TABLE call_reports ADD COLUMN total_expenses DECIMAL(10,2) DEFAULT 0",
 
   // ── Payment ──────────────────────────────────────────────────

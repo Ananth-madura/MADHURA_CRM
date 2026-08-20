@@ -7,14 +7,14 @@ const { getNotificationIO } = require("../sockets/notifications");
 const checkDuplicateLead = (phone, email, excludeId, callback) => {
   if (typeof excludeId === 'function') { callback = excludeId; excludeId = null; }
   const checks = [];
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM telecalls WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM walkins WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM fields WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
-  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM telecalls WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
-  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM walkins WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM telecalls WHERE mobile_number = ?", params: [phone] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM walkins WHERE mobile_number = ?", params: [phone] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM fields WHERE mobile_number = ? AND id != ?", params: [phone, excludeId || 0] });
+  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM telecalls WHERE email = ?", params: [email] });
+  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM walkins WHERE email = ?", params: [email] });
   if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM fields WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, name, phone FROM clients WHERE phone = ?", params: [phone] });
-  if (email) checks.push({ sql: "SELECT id, name, email as phone FROM clients WHERE email = ?", params: [email] });
+  if (phone) checks.push({ sql: "SELECT id, name, phone FROM clients WHERE phone = ? AND NOT (original_lead_id = ? AND original_lead_type = 'field')", params: [phone, excludeId || 0] });
+  if (email) checks.push({ sql: "SELECT id, name, email as phone FROM clients WHERE email = ? AND NOT (original_lead_id = ? AND original_lead_type = 'field')", params: [email, excludeId || 0] });
 
   if (checks.length === 0) return callback(null);
 
@@ -62,16 +62,15 @@ const isAuthorizedToEdit = (lead, user) => {
 
   if (lead.created_by === user.id) return true;
   if (lead.assigned_to === user.id) return true;
-  
+
   // JWT contains `name` (which is user's first_name)
   if (lead.staff_name && lead.staff_name.trim().toLowerCase().includes(userName) && userName.length > 0) return true;
-  
+
   return false;
 };
 
-/* AUTO CREATE CLIENT IF CONVERTED */
 const syncClient = (data, userId, leadId, teammemberId) => {
-  const { customer_name, mobile_number, location_city, purpose, email, field_outcome, gst_number, staff_name } = data;
+  const { customer_name, company_name, mobile_number, location_city, purpose, email, field_outcome, gst_number, staff_name, landline_number, alternate_mobile_number, reference_by, nearest_landmark } = data;
   const leadIdDisplay = `F-${leadId}`;
 
   if (field_outcome === "Converted") {
@@ -91,20 +90,22 @@ const syncClient = (data, userId, leadId, teammemberId) => {
         db.query(`SELECT id FROM clients WHERE (${phoneCheck}) ${emailCheck} AND (original_lead_id IS NULL OR original_lead_type != 'field')`, params, (err2, phoneResult) => {
           if (!err2 && phoneResult.length > 0) {
             db.query(
-              `UPDATE clients SET name=?, phone=?, address=?, service=?, email=?, gst_number=?, 
+              `UPDATE clients SET name=?, company_name=?, phone=?, address=?, city=?, service=?, email=?, gst_number=?, 
                original_lead_id=?, original_lead_type='field', assigned_teammember_id=?,
-               lead_staff_name=?, lead_id_display=?, client_status='converted', converted_at=NOW()
+               lead_staff_name=?, lead_id_display=?, client_status='converted', converted_at=NOW(),
+               landline_number=?, alternate_mobile_number=?, reference_by=?, nearest_landmark=?
                WHERE id=?`,
-              [customer_name, mobile_number, location_city, purpose, email, gst_number || "", leadId, teammemberId || null,
-               staff_name || "", leadIdDisplay, phoneResult[0].id]
+              [customer_name, company_name || null, mobile_number, location_city, location_city, purpose, email, gst_number || "", leadId, teammemberId || null,
+                staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null, phoneResult[0].id]
             );
           } else {
             db.query(
-              `INSERT INTO clients (name, phone, address, service, email, gst_number, created_by, assigned_teammember_id, 
-               original_lead_id, original_lead_type, lead_staff_name, lead_id_display, client_status, converted_at) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'field', ?, ?, 'converted', NOW())`,
-              [customer_name, mobile_number, location_city, purpose, email, gst_number || "", userId, teammemberId || null,
-               leadId, staff_name || "", leadIdDisplay],
+              `INSERT INTO clients (name, company_name, phone, address, city, service, email, gst_number, created_by, assigned_teammember_id, 
+               original_lead_id, original_lead_type, lead_staff_name, lead_id_display, client_status, converted_at,
+               landline_number, alternate_mobile_number, reference_by, nearest_landmark) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'field', ?, ?, 'converted', NOW(), ?, ?, ?, ?)`,
+              [customer_name, company_name || null, mobile_number, location_city, location_city, purpose, email, gst_number || "", userId, teammemberId || null,
+                leadId, staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null],
               (insertErr) => {
                 if (insertErr) console.error("Client conversion (field insert) failed:", insertErr);
               }
@@ -113,11 +114,12 @@ const syncClient = (data, userId, leadId, teammemberId) => {
         });
       } else {
         db.query(
-          `UPDATE clients SET name=?, phone=?, address=?, service=?, email=?, gst_number=?, 
-           assigned_teammember_id=?, lead_staff_name=?, lead_id_display=?
+          `UPDATE clients SET name=?, company_name=?, phone=?, address=?, city=?, service=?, email=?, gst_number=?, 
+           assigned_teammember_id=?, lead_staff_name=?, lead_id_display=?,
+           landline_number=?, alternate_mobile_number=?, reference_by=?, nearest_landmark=?
            WHERE original_lead_id=? AND original_lead_type='field'`,
-          [customer_name, mobile_number, location_city, purpose, email, gst_number || "", teammemberId || null,
-           staff_name || "", leadIdDisplay, leadId],
+          [customer_name, company_name || null, mobile_number, location_city, location_city, purpose, email, gst_number || "", teammemberId || null,
+            staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null, leadId],
           (updateErr) => {
             if (updateErr) console.error("Client conversion (field update) failed:", updateErr);
           }
@@ -127,6 +129,7 @@ const syncClient = (data, userId, leadId, teammemberId) => {
   }
 };
 
+
 /* CREATE FIELD */
 router.post("/new", verifyToken, (req, res) => {
   const data = { ...req.body, created_by: req.user.id };
@@ -134,6 +137,22 @@ router.post("/new", verifyToken, (req, res) => {
   if (!data.customer_name || !data.visit_date) {
     return res.status(400).json({ message: "Customer name & visit date required" });
   }
+
+  // Strip fields that do NOT exist in the `fields` table (e.g. reminder_time is only in lead_reminders)
+  const allowedColumns = [
+    "customer_name", "company_name", "mobile_number", "location_city", "visit_date", "purpose",
+    "staff_name", "field_outcome", "followup_required", "followup_date", "followup_notes",
+    "reminder_required", "reminder_date", "reminder_notes", "reference", "gst_number",
+    "email", "created_by", "assigned_to", "landline_number", "alternate_mobile_number",
+    "reference_by", "nearest_landmark"
+  ];
+  const dbData = {};
+  allowedColumns.forEach(col => { if (data[col] !== undefined) dbData[col] = data[col]; });
+
+  // Normalise date fields
+  if (dbData.visit_date) dbData.visit_date = toDateOnly(dbData.visit_date);
+  if (dbData.followup_date) dbData.followup_date = toDateOnly(dbData.followup_date);
+  if (dbData.reminder_date) dbData.reminder_date = toDateOnly(dbData.reminder_date);
 
   // Check duplicates
   checkDuplicateLead(data.mobile_number, data.email, (duplicates) => {
@@ -143,9 +162,9 @@ router.post("/new", verifyToken, (req, res) => {
     }
 
     resolveAssignedTo(data.staff_name, (resolvedId) => {
-      data.assigned_to = resolvedId || data.assigned_to || null;
-      db.query("INSERT INTO fields SET ?", data, (err, result) => {
-        if (err) { console.error(err); return res.status(500).json({ message: "Insert failed" }); }
+      dbData.assigned_to = resolvedId || data.assigned_to || null;
+      db.query("INSERT INTO fields SET ?", dbData, (err, result) => {
+        if (err) { console.error(err); return res.status(500).json({ message: "Insert failed", error: err.sqlMessage }); }
         const newId = result.insertId;
         syncClient(data, req.user.id, newId, data.teammember_id || null);
 
@@ -155,6 +174,15 @@ router.post("/new", verifyToken, (req, res) => {
           db.query("INSERT INTO lead_reminders (lead_id, lead_type, reminder_date, reminder_time, reminder_notes, status, employee_id) VALUES (?,?,?,?,?,'Pending',?)",
             [newId, "field", toDateOnly(data.reminder_date), data.reminder_time || null, data.reminder_notes || "", req.user?.id || null]);
         }
+
+        try {
+          const { triggerAutomation } = require("../services/waAutomationService");
+          triggerAutomation("new_lead", {
+            phone: data.mobile_number,
+            contactName: data.customer_name,
+            data: { customer_name: data.customer_name, company_name: data.company_name, purpose: data.purpose, location_city: data.location_city }
+          }).catch(e => console.error("WA Automation trigger error:", e.message));
+        } catch (_) {}
 
         res.json({ message: "Field added", id: newId });
       });
@@ -170,7 +198,7 @@ router.put("/:id", verifyToken, (req, res) => {
   db.query("SELECT created_by, assigned_to, staff_name FROM fields WHERE id = ?", [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ message: "Not found" });
-    
+
     if (!isAuthorizedToEdit(results[0], req.user)) {
       return res.status(403).json({ message: "Access denied" });
     }
@@ -184,9 +212,26 @@ router.put("/:id", verifyToken, (req, res) => {
 
       resolveAssignedTo(data.staff_name, (resolvedId) => {
         data.assigned_to = resolvedId || data.assigned_to || null;
+
+        // Strip fields that do NOT exist in the `fields` table
+        const allowedColumns = [
+          "customer_name", "company_name", "mobile_number", "location_city", "visit_date", "purpose",
+          "staff_name", "field_outcome", "followup_required", "followup_date", "followup_notes",
+          "reminder_required", "reminder_date", "reminder_notes", "reference", "gst_number",
+          "email", "assigned_to", "landline_number", "alternate_mobile_number",
+          "reference_by", "nearest_landmark"
+        ];
+        const dbData = {};
+        allowedColumns.forEach(col => { if (data[col] !== undefined) dbData[col] = data[col]; });
+
+        // Normalise date fields
+        if (dbData.visit_date) dbData.visit_date = toDateOnly(dbData.visit_date);
+        if (dbData.followup_date) dbData.followup_date = toDateOnly(dbData.followup_date);
+        if (dbData.reminder_date) dbData.reminder_date = toDateOnly(dbData.reminder_date);
+
         db.query(
           `UPDATE fields SET ? WHERE id=?`,
-          [data, req.params.id],
+          [dbData, req.params.id],
           (err, result) => {
             if (err) return res.status(500).json({ message: err.sqlMessage });
             syncClient(data, results[0].created_by || req.user.id, req.params.id, data.teammember_id || null);
@@ -233,12 +278,16 @@ router.get("/:id", verifyToken, (req, res) => {
 router.get("/", verifyToken, (req, res) => {
   const { id: user_id, role, name: user_name } = req.user;
   let sql = `
-    SELECT f.*, u.first_name as creator_name 
+    SELECT f.*, u.first_name as creator_name,
+      (SELECT COUNT(*) FROM lead_reminders WHERE lead_id = f.id AND lead_type = 'field' AND status = 'Pending') AS pending_reminder_count,
+      (SELECT COUNT(*) FROM lead_followups WHERE lead_id = f.id AND lead_type = 'field' AND status = 'Pending') AS pending_followup_count,
+      (SELECT COUNT(*) FROM lead_reminders WHERE lead_id = f.id AND lead_type = 'field' AND status = 'Pending' AND reminder_date = CURDATE()) AS today_reminder_count,
+      (SELECT COUNT(*) FROM lead_followups WHERE lead_id = f.id AND lead_type = 'field' AND status = 'Pending' AND followup_date = CURDATE()) AS today_followup_count
     FROM fields f
     LEFT JOIN users u ON f.created_by = u.id
   `;
   const params = [];
-  
+
   if (role === "employee") {
     sql += " WHERE f.created_by = ?";
     params.push(user_id);
@@ -249,7 +298,7 @@ router.get("/", verifyToken, (req, res) => {
     });
     return;
   }
-  
+
   sql += " ORDER BY f.id DESC";
   db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ message: "Fetch failed" });
@@ -282,6 +331,9 @@ router.patch("/:id", verifyToken, (req, res) => {
       if (req.body.followup_required === "Yes") {
         db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "field", "Follow-up Scheduled", `Date: ${toDateOnly(req.body.followup_date) || "Today"}`]);
       }
+      if (req.body.followup_required === "No") {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "field", "Follow-up Completed", "Marked as done via shortcut"]);
+      }
       res.json({ message: "Updated successfully" });
     });
   });
@@ -293,7 +345,7 @@ router.delete("/:id", verifyToken, isAdmin, (req, res) => {
   db.query("SELECT created_by FROM fields WHERE id = ?", [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ message: "Not found" });
-    
+
     if (req.user.role !== 'admin' && results[0].created_by !== req.user.id) {
       return res.status(403).json({ message: "Access denied" });
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import appIcon from "../images/achme-logo-high.jpeg";
+import appIcon from "../layout/Madhura-logo.png";
 
 const STORAGE_KEY = "achme_install_dismissed_at";
 const DAYS_3_MS = 3 * 24 * 60 * 60 * 1000;

@@ -2,7 +2,18 @@
 :: Run as Administrator to fix the hosts file and nginx immediately
 net session >nul 2>&1
 if errorlevel 1 (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  echo Requesting Administrator privileges - UAC prompt...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+  if errorlevel 1 (
+    echo.
+    echo ====================================================================
+    echo ERROR: ACCESS DENIED! Administrator privileges are required.
+    echo Please accept the UAC prompt to run this script.
+    echo ====================================================================
+    echo.
+    pause
+    exit /b 1
+  )
   exit /b 0
 )
 
@@ -14,7 +25,7 @@ if "%LAN_IP%"=="" set "LAN_IP=192.168.1.110"
 set "NGINX_DIR=C:\nginx"
 
 echo Fixing hosts file...
-powershell -NoProfile -ExecutionPolicy Bypass -File "d:\ACHME_COMUNICATION-main\fix-hosts-now.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0fix-hosts-now.ps1"
 
 echo.
 echo Writing nginx.conf with IP %LAN_IP%...

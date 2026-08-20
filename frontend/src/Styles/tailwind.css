@@ -8,18 +8,29 @@
 @tailwind utilities;
 
 
- .side-mainbar{
-    padding-left: 10px;
-    line-height: 35px;
-    overflow-y: hidden;
-    transition: 0.4s ease-in-out;
-
-   
+ .side-mainbar {
+  height: 100%;
+  overflow-y: auto;
+  line-height: 35px;
+  scrollbar-width: thin;
+  transition: all 0.3s ease-in-out;
  }
- .side-mainbar:hover{
-      overflow-y: scroll !important;
-      height: 90vh;
 
+ .side-mainbar::-webkit-scrollbar {
+  width: 4px;
+ }
+
+ .side-mainbar::-webkit-scrollbar-track {
+  background: transparent;
+ }
+
+ .side-mainbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.2);
+  border-radius: 4px;
+ }
+
+ .side-mainbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
  }
 .menuitem:hover{
     color: #20B1E4;

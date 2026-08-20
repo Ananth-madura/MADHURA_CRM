@@ -9,7 +9,7 @@ import {
 import "../Styles/tailwind.css";
 import { useAuth } from "../auth/AuthContext";
 import { useNavigate } from "react-router-dom";
-import backheadImage from "../images/achme logo high.jpg.jpeg";
+import backheadImage from "../layout/Madhura-logo.png";
 
 const Topbar = ({ onHamburgerClick, showSearch, onSearch, reminderData, reminderNotes, escalationCount = 0, escalations = [] }) => {
   const [openProfile, setOpenProfile] = useState(false);
@@ -41,7 +41,7 @@ const Topbar = ({ onHamburgerClick, showSearch, onSearch, reminderData, reminder
       {/* Left: hamburger + brand */}
       <div className="flex items-center gap-2 md:gap-3">
         <button
-          className="text-gray-600 p-2 lg:hidden cursor-pointer hover:bg-gray-100 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="text-gray-600 p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blue-500"
           onClick={onHamburgerClick}
           aria-label="Toggle sidebar"
         >

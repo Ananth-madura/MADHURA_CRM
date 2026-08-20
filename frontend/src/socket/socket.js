@@ -16,6 +16,29 @@ const socket = io(socketUrl, socketOptions);
 // Connect to notifications namespace
 const notificationSocket = io(`${socketUrl}/notifications`, socketOptions);
 
+const joinMainRooms = () => {
+  const token = localStorage.getItem("token");
+  let user = {};
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "{}");
+  } catch (_) {}
+  const userId = user.id || user._id || localStorage.getItem("userId") || "1";
+
+  socket.emit("join_room", "whatsapp");
+  if (userId) {
+    socket.emit("join", userId);
+    socket.emit("join_room", `user:${userId}`);
+  }
+};
+
+socket.on("connect", () => {
+  joinMainRooms();
+});
+
+socket.on("reconnect", () => {
+  joinMainRooms();
+});
+
 const joinNotificationRooms = () => {
   const token = localStorage.getItem("token");
   const user = JSON.parse(localStorage.getItem("user") || "{}");

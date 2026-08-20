@@ -68,7 +68,7 @@ const ClientSearchDropdown = ({
     setSearchTerm("");
     setResults([]);
     setIsOpen(false);
-    onSelect({ name: "", phone: "", email: "", gst_number: "", city: "", address: "", company_name: "" });
+    onSelect({ name: "", phone: "", email: "", gst_number: "", city: "", state: "", address: "", address_2: "", company_name: "" });
   };
 
   return (

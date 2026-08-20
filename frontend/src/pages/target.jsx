@@ -63,23 +63,26 @@ const Targets = () => {
       const res = await axios.get(`${API}/api/task/targets/my?user_name=${encodeURIComponent(userName)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      if (res.data?.hasTarget) {
+      if (res.data) {
         setMyTarget(res.data);
+        fetchHistory(res.data.user_name);
       } else {
         setMyTarget(null);
+        fetchHistory();
       }
     } catch (err) {
       console.error("Fetch my target error:", err);
       setMyTarget(null);
+      fetchHistory();
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (targetUserName) => {
     try {
       const token = localStorage.getItem("token");
-      const userName = user?.name || `${user?.first_name || ""} ${user?.last_name || ""}`.trim();
+      const userName = targetUserName || user?.name || `${user?.first_name || ""} ${user?.last_name || ""}`.trim();
       const res = await axios.get(`${API}/api/task/targets/history?user_name=${encodeURIComponent(userName)}&months=12`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -106,12 +109,11 @@ const Targets = () => {
       fetchAllTargets();
     } else {
       fetchMyTarget();
-      fetchHistory();
     }
     // Auto-refresh every 10 seconds
     const interval = setInterval(() => {
       if (isAdmin) fetchAllTargets();
-      else { fetchMyTarget(); fetchHistory(); }
+      else { fetchMyTarget(); }
     }, 10000);
     return () => clearInterval(interval);
   }, [isAdmin, user]);
@@ -122,7 +124,6 @@ const Targets = () => {
       if (isAdmin) fetchAllTargets();
       else {
         fetchMyTarget();
-        fetchHistory();
       }
     };
     socket.on("data_changed", handleChange);
@@ -244,7 +245,7 @@ const Targets = () => {
   const updateAchievement = async () => {
     if (!updateAmount || parseFloat(updateAmount) <= 0) return alert("Please enter a valid amount");
 
-    const userName = user?.first_name || user?.name || user?.email?.split("@")[0] || "";
+    const userName = myTarget?.user_name || user?.first_name || user?.name || user?.email?.split("@")[0] || "";
     const token = localStorage.getItem("token");
 
     try {
@@ -260,7 +261,6 @@ const Targets = () => {
       setUpdateAmount("");
       setUpdateDesc("");
       fetchMyTarget();
-      fetchHistory();
     } catch (err) {
       alert("Failed to update: " + (err.response?.data?.error || err.message));
     }

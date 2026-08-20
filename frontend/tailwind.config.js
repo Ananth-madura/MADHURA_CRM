@@ -113,9 +113,26 @@ module.exports = {
         'popover': '60',
         'tooltip': '70',
       },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', backdropFilter: 'blur(0px)' },
+          '100%': { opacity: '1', backdropFilter: 'blur(4px)' },
+        },
+        'scale-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95) translateY(8px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
+        'pulse-slow': {
+          '0%, 100%': { opacity: '0.6' },
+          '50%': { opacity: '1' },
+        },
+      },
       animation: {
         'slide-in': 'slide-in 0.3s ease-out',
         'door-open': 'doorOpen 0.45s ease-out',
+        'fade-in': 'fade-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'scale-in': 'scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'pulse-slow': 'pulse-slow 2s ease-in-out infinite',
       },
     },
   },

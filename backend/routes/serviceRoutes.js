@@ -23,8 +23,15 @@ const upload = multer({
 
 // GET ALL SERVICES
 router.get("/", verifyToken, (req, res) => {
-  const sql = "SELECT * FROM services ORDER BY created_at DESC";
-  db.query(sql, (err, rows) => {
+  const { id: user_id, role } = req.user;
+  let sql = "SELECT * FROM services";
+  const params = [];
+  if (role === "employee") {
+    sql += " WHERE (created_by = ? OR client IN (SELECT name FROM clients WHERE assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)))";
+    params.push(user_id, user_id);
+  }
+  sql += " ORDER BY created_at DESC";
+  db.query(sql, params, (err, rows) => {
     if (err) return res.status(500).json(err);
     res.json(rows);
   });
@@ -35,7 +42,7 @@ router.post("/", upload.array("images", 10), verifyToken, (req, res) => {
   const { client, material, warranty, amc, date, issues, engineer_name } = req.body;
   const imageFiles = req.files && req.files.length > 0 ? req.files.map((file) => file.filename) : [];
 
-  const sql = "INSERT INTO services (client, material, warranty, amc, date, images, issues, engineer_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+  const sql = "INSERT INTO services (client, material, warranty, amc, date, images, issues, engineer_name, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
   const values = [
     client,
     material,
@@ -44,7 +51,8 @@ router.post("/", upload.array("images", 10), verifyToken, (req, res) => {
     date,
     imageFiles.length > 0 ? JSON.stringify(imageFiles) : null,
     issues,
-    engineer_name
+    engineer_name,
+    req.user.id
   ];
 
   db.query(sql, values, (err, result) => {

@@ -7,13 +7,15 @@ color 0B
 net session >nul 2>&1
 if errorlevel 1 (
     echo Requesting Administrator privileges...
-    mshta vbscript:CreateObject("Shell.Application").ShellExecute("""%~f0""","","","runas",1)(window.close)
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"
     exit /b 0
 )
 
-set "ROOT=d:\ACHME_COMUNICATION-main"
+set "ROOT=%~dp0"
+set "ROOT=%ROOT:~0,-1%"
 set "NGINX_DIR=C:\nginx"
 set "BACKEND_DIR=%ROOT%\backend"
+set "BACKEND_PORT=5000"
 
 echo.
 echo  ============================================================
@@ -46,6 +48,10 @@ if errorlevel 1 (
 
 :: Kill any stuck PM2 daemons and restart clean
 pm2 kill >nul 2>&1
+:: Free backend port if occupied (e.g. by boot task running as SYSTEM)
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /r /c:":%BACKEND_PORT% .*LISTENING" 2^>nul') do (
+    taskkill /F /PID %%P >nul 2>&1
+)
 ping -n 3 127.0.0.1 >nul
 
 :: Start fresh

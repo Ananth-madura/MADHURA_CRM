@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search, Plus, X, Target as TargetIcon, Calendar, Clock, CheckCircle, User, RefreshCw, ChevronLeft, Filter } from "lucide-react";
+import { getToday } from "../utils/leadutil";
 import "../Styles/tailwind.css";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
@@ -140,6 +141,7 @@ const Task = () => {
   const [taskTargets, setTaskTargets] = useState([]);
   const [achievements, setAchievements] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [clients, setClients] = useState([]);
   const [activeTab, setActiveTab] = useState("tasks");
   const [lastUpdate, setLastUpdate] = useState(null);
 
@@ -179,15 +181,15 @@ const Task = () => {
   const [form, setForm] = useState({
     project_name: "", task_title: "", task_description: "", client_name: "", staff_name: "",
     assigned_to: "", assigned_teammember_id: "",
-    created_date: new Date().toISOString().slice(0, 10),
-    due_date: new Date().toISOString().slice(0, 10),
+    created_date: getToday(),
+    due_date: getToday(),
     project_status: "New", project_priority: "Medium",
   });
 
   const resetForm = () => {
     setForm({
       project_name: "", task_title: "", task_description: "", client_name: "", staff_name: "", assigned_to: "", assigned_teammember_id: "",
-      created_date: new Date().toISOString().slice(0, 10), due_date: new Date().toISOString().slice(0, 10),
+      created_date: getToday(), due_date: getToday(),
       project_status: "New", project_priority: "Medium"
     });
     setSelectedTask(null);
@@ -200,9 +202,11 @@ const Task = () => {
         const cachedTasks = localStorage.getItem("cached_tasks");
         const cachedTargets = localStorage.getItem("cached_targets");
         const cachedTeam = localStorage.getItem("cached_team_members");
+        const cachedClients = localStorage.getItem("cached_clients");
         if (cachedTasks) setTasks(JSON.parse(cachedTasks));
         if (cachedTargets) setTaskTargets(JSON.parse(cachedTargets));
         if (cachedTeam) setTeamMembers(JSON.parse(cachedTeam));
+        if (cachedClients) setClients(JSON.parse(cachedClients));
       } catch (e) { console.error("Cache load error:", e); }
     };
 
@@ -210,42 +214,51 @@ const Task = () => {
       const token = localStorage.getItem("token");
       const cfg = { headers: { Authorization: `Bearer ${token}` } };
       const teamProm = axios.get(`${API}/api/teammember`).catch(() => ({ data: [] }));
+      const clientProm = axios.get(`${API}/api/client`, cfg).catch(() => ({ data: [] }));
 
       if (isAdmin) {
-        const [tasksRes, targetsRes, teamRes] = await Promise.all([
+        const [tasksRes, targetsRes, teamRes, clientsRes] = await Promise.all([
           axios.get(`${API}/api/task`, cfg),
           axios.get(`${API}/api/task/targets`, cfg),
           teamProm,
+          clientProm,
         ]);
         const tData = tasksRes.data || [];
         const tgData = targetsRes.data || [];
         const tmData = teamRes.data || [];
+        const cData = clientsRes.data || [];
 
         setTasks(tData);
         setTaskTargets(tgData);
         setTeamMembers(tmData);
+        setClients(cData);
 
         localStorage.setItem("cached_tasks", JSON.stringify(tData));
         localStorage.setItem("cached_targets", JSON.stringify(tgData));
         localStorage.setItem("cached_team_members", JSON.stringify(tmData));
+        localStorage.setItem("cached_clients", JSON.stringify(cData));
       } else {
         const userName = user?.name || `${user?.first_name || ""} ${user?.last_name || ""}`.trim() || user?.email?.split("@")[0] || "";
-        const [tasksRes, targetsRes, teamRes] = await Promise.all([
+        const [tasksRes, targetsRes, teamRes, clientsRes] = await Promise.all([
           axios.get(`${API}/api/task`, cfg),
           axios.get(`${API}/api/task/targets/my?user_name=${encodeURIComponent(userName)}`, cfg).catch(() => ({ data: { hasTarget: false } })),
           teamProm,
+          clientProm,
         ]);
         const tData = tasksRes.data || [];
-        const tgData = targetsRes.data?.hasTarget ? [targetsRes.data] : [];
+        const tgData = (targetsRes.data && targetsRes.data.id) ? [targetsRes.data] : [];
         const tmData = teamRes.data || [];
+        const cData = clientsRes.data || [];
 
         setTasks(tData);
         setTaskTargets(tgData);
         setTeamMembers(tmData);
+        setClients(cData);
 
         localStorage.setItem("cached_tasks", JSON.stringify(tData));
         localStorage.setItem("cached_targets", JSON.stringify(tgData));
         localStorage.setItem("cached_team_members", JSON.stringify(tmData));
+        localStorage.setItem("cached_clients", JSON.stringify(cData));
       }
       setLastUpdate(new Date());
     } catch (err) {
@@ -260,9 +273,11 @@ const Task = () => {
       const cachedTasks = localStorage.getItem("cached_tasks");
       const cachedTargets = localStorage.getItem("cached_targets");
       const cachedTeam = localStorage.getItem("cached_team_members");
+      const cachedClients = localStorage.getItem("cached_clients");
       if (cachedTasks) setTasks(JSON.parse(cachedTasks));
       if (cachedTargets) setTaskTargets(JSON.parse(cachedTargets));
       if (cachedTeam) setTeamMembers(JSON.parse(cachedTeam));
+      if (cachedClients) setClients(JSON.parse(cachedClients));
     } catch (e) { console.error("Cache load mount error:", e); }
 
     fetchAll();
@@ -618,7 +633,7 @@ const Task = () => {
                           </div>
                         ) : (
                           <div className="flex gap-2 items-center">
-                            <button onClick={() => { setSelectedTask(task); setForm({ project_name: task.project_name || "", task_title: task.task_title || "", task_description: task.task_description || "", client_name: task.client_name || "", staff_name: task.staff_name || task.assigned_to || "", assigned_to: task.assigned_to || task.staff_name || "", assigned_teammember_id: task.assigned_teammember_id || "", created_date: task.created_date || new Date().toISOString().slice(0, 10), due_date: task.due_date || new Date().toISOString().slice(0, 10), project_status: task.project_status || "New", project_priority: task.project_priority || "Medium" }); setOpen(true); }}
+                            <button onClick={() => { setSelectedTask(task); setForm({ project_name: task.project_name || "", task_title: task.task_title || "", task_description: task.task_description || "", client_name: task.client_name || "", staff_name: task.staff_name || task.assigned_to || "", assigned_to: task.assigned_to || task.staff_name || "", assigned_teammember_id: task.assigned_teammember_id || "", created_date: task.created_date || getToday(), due_date: task.due_date || getToday(), project_status: task.project_status || "New", project_priority: task.project_priority || "Medium" }); setOpen(true); }}
                               className="text-xs font-medium cursor-pointer px-2 py-1 rounded hover:bg-indigo-50" style={{ color: N.primary }}>Edit</button>
                             {canManageTasks && (
                               <button onClick={() => { if (window.confirm("Are you sure you want to delete this task?")) { deleteTask(task.id); } }}
@@ -840,11 +855,17 @@ const Task = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: N.slate }}>Client Name</label>
-                <input type="text" name="client_name" value={form.client_name} onChange={e => setForm({ ...form, [e.target.name]: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ borderColor: N.hairlineStrong, color: N.ink }}
-                  placeholder="Enter client name" />
+                <label className="block text-xs font-medium mb-1" style={{ color: N.slate }}>Client Name *</label>
+                <select name="client_name" value={form.client_name} onChange={e => setForm({ ...form, client_name: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white outline-none"
+                  style={{ borderColor: N.hairlineStrong, color: N.ink }} required>
+                  <option value="">— Select Client —</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.name}>
+                      {c.name} {c.company_name ? `(${c.company_name})` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1290,7 +1311,7 @@ const EmployeeTargetCard = ({ user, onUpdateAchievement }) => {
       const token = localStorage.getItem("token");
       const res = await axios.get(`${API}/api/task/targets/my?user_name=${encodeURIComponent(userName)}`,
         { headers: { Authorization: `Bearer ${token}` } });
-      setMyTarget(res.data?.hasTarget ? res.data : null);
+      setMyTarget((res.data && res.data.id) ? res.data : null);
     } catch { setMyTarget(null); }
     finally { setLoading(false); }
   };
@@ -1563,12 +1584,17 @@ const EmployeeTargetCard = ({ user, onUpdateAchievement }) => {
                 </tr>
               </thead>
               <tbody>
-                {myTarget.submissions.slice(0, 5).map(s => (
+                {myTarget.submissions.slice(0, 10).map(s => (
                   <tr key={s.id} className="border-t hover:bg-gray-50" style={{ borderColor: N.hairline }}>
                     <td className="px-3 py-2 text-[10px]" style={{ color: N.steel }}>{new Date(s.created_at).toLocaleDateString("en-IN")}</td>
                     <td className="px-3 py-2" style={{ color: N.charcoal }}>{s.month_year}</td>
-                    <td className="px-3 py-2 font-semibold" style={{ color: N.green }}>₹{(parseFloat(s.amount) || 0).toLocaleString()}</td>
-                    <td className="px-3 py-2 max-w-[150px] truncate" style={{ color: N.slate }} title={s.description}>{s.description || "—"}</td>
+                    <td className="px-3 py-2 font-semibold" style={{ color: s.source === 'auto' ? N.primary : N.green }}>₹{(parseFloat(s.amount) || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2" style={{ color: N.slate }}>
+                      {s.source === 'auto' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold mr-1" style={{ background: '#ede9fe', color: '#6d28d9' }}>🧾 Quotation</span>
+                      )}
+                      <span className="max-w-[120px] truncate inline-block" title={s.description}>{s.description || '—'}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1709,8 +1735,13 @@ const AdminTargetDrillDown = ({ employeeName, history, tHistFilter, onBack, tHis
                   <tr key={s.id} className="border-t hover:bg-gray-50" style={{ borderColor: N.hairline }}>
                     <td className="px-4 py-3 text-xs" style={{ color: N.steel }}>{new Date(s.created_at).toLocaleDateString("en-IN")}</td>
                     <td className="px-4 py-3" style={{ color: N.charcoal }}>{s.month_year}</td>
-                    <td className="px-4 py-3 font-semibold" style={{ color: N.green }}>₹{(parseFloat(s.amount) || 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 max-w-[250px] truncate" style={{ color: N.slate }} title={s.description}>{s.description || "—"}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: s.source === 'auto' ? N.primary : N.green }}>₹{(parseFloat(s.amount) || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3" style={{ color: N.slate }}>
+                      {s.source === 'auto' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold mr-1" style={{ background: '#ede9fe', color: '#6d28d9' }}>🧾 Quotation</span>
+                      )}
+                      <span className="max-w-[200px] truncate inline-block" title={s.description}>{s.description || '—'}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

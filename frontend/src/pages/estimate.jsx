@@ -623,7 +623,7 @@ const Estimate = () => {
               <div className="flex flex-col gap-1 mb-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Description</label>
+                    <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Description <span className="text-gray-400 font-normal normal-case">(Optional)</span></label>
                     <textarea
                       value={descInput}
                       onChange={e => setDescInput(e.target.value)}
@@ -771,6 +771,10 @@ const Estimate = () => {
                     const t = getTaxCalculations();
                     const gstMode = extra.gst_mode || "Exclusive";
                     const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
+                    const taxBase = gstMode === "Inclusive" ? taxableValue : (t.subtotal - t.total_discount);
+                    const cgstPct = taxBase > 0 && t.total_cgst > 0 ? +((t.total_cgst / taxBase) * 100).toFixed(2).replace(/\.?0+$/, '') : 0;
+                    const sgstPct = taxBase > 0 && t.total_sgst > 0 ? +((t.total_sgst / taxBase) * 100).toFixed(2).replace(/\.?0+$/, '') : 0;
+                    const igstPct = taxBase > 0 && t.total_igst > 0 ? +((t.total_igst / taxBase) * 100).toFixed(2).replace(/\.?0+$/, '') : 0;
                     return (
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm text-gray-600 py-1">
@@ -785,15 +789,15 @@ const Estimate = () => {
                           <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
                         )}
                         <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}>
-                          <span>CGST</span>
+                          <span>CGST{cgstPct > 0 ? ` (${cgstPct}%)` : ""}</span>
                           <span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}>
-                          <span>SGST</span>
+                          <span>SGST{sgstPct > 0 ? ` (${sgstPct}%)` : ""}</span>
                           <span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}>
-                          <span>IGST</span>
+                          <span>IGST{igstPct > 0 ? ` (${igstPct}%)` : ""}</span>
                           <span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700">
@@ -940,18 +944,14 @@ const Estimate = () => {
                     ))}
                   </div>
                   {extra.terms_payment === "Custom" && (
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="mt-2">
                       <input
-                        type="number"
-                        value={extra.terms_payment_custom ? extra.terms_payment_custom.replace(" Days", "") : ""}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setExtra(ex => ({ ...ex, terms_payment_custom: val ? `${val} Days` : "" }));
-                        }}
-                        placeholder="Enter number of days..."
-                        className="border rounded-lg px-3 py-2 outline-none text-sm w-48 bg-white"
+                        type="text"
+                        value={extra.terms_payment_custom || ""}
+                        onChange={e => setExtra(ex => ({ ...ex, terms_payment_custom: e.target.value }))}
+                        placeholder="e.g. 50% advance, balance on delivery..."
+                        className="border rounded-lg px-3 py-2 outline-none text-sm w-full bg-white"
                       />
-                      <span className="text-sm text-gray-600 font-medium">Days</span>
                     </div>
                   )}
                 </div>

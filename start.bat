@@ -66,7 +66,7 @@ echo.
 start "ACHME Backend" cmd /k ^
 "cd /d ""%ROOT%\backend"" && npm install && npm run dev"
 
-timeout /t 5 >nul
+ping -n 6 127.0.0.1 >nul
 
 echo.
 echo =====================================================

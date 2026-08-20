@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import ClientSearchDropdown from "../components/ClientSearchDropdown";
 import "../Styles/tailwind.css";
 import { Search, Plus, X, TrendingUp, DollarSign, Wrench, FileText, RefreshCw, Link as LinkIcon } from "lucide-react";
+import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import socket from "../socket/socket";
 import { useNavigate } from "react-router-dom";
@@ -18,7 +19,11 @@ const AMCService = () => {
    const [open, setOpen] = useState(false);
    const [services, setServices] = useState([]);
    const [contracts, setContracts] = useState([]);
-   const [searchTerm, setSearchTerm] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+    const [contractTypeFilter, setContractTypeFilter] = useState("");
+    const [creatorFilter, setCreatorFilter] = useState("");
    const [isEdit, setIsEdit] = useState(false);
    const [selectedServiceId, setSelectedServiceId] = useState(null);
    const [selectedContractId, setSelectedContractId] = useState(null);
@@ -34,8 +39,8 @@ const AMCService = () => {
       location_city: "",
       service_type: "None",
       amount_value: "",
-      start_date: new Date().toISOString().slice(0, 10),
-      end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
+      start_date: getToday(),
+      end_date: (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })()
     });
 
     const [form, setForm] = useState({
@@ -46,7 +51,7 @@ const AMCService = () => {
       mobile_number: "",
       email: "",
       location_city: "",
-      service_date: new Date().toISOString().slice(0, 10),
+      service_date: getToday(),
       start_time: "",
       end_time: "",
       km: "",
@@ -146,8 +151,8 @@ const fetchContracts = useCallback(async () => {
         location_city: "",
         service_type: "None",
         amount_value: "",
-        start_date: new Date().toISOString().slice(0, 10),
-        end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
+      start_date: getToday(),
+      end_date: (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })()
       });
       setSelectedClient("");
       setShowOtherClient(false);
@@ -191,8 +196,8 @@ const fetchContracts = useCallback(async () => {
       location_city: "",
       service_type: "None",
       amount_value: "",
-      start_date: new Date().toISOString().slice(0, 10),
-      end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10)
+      start_date: getToday(),
+      end_date: (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })()
     });
     setIsEdit(false);
     setSelectedContractId(null);
@@ -225,7 +230,7 @@ const fetchContracts = useCallback(async () => {
         const data = JSON.parse(prefillData);
         setContractForm(prev => ({
           ...prev,
-          client_company: data.customer_name || "",
+          client_company: data.company_name || data.customer_name || "",
           mobile_number: data.mobile_number || "",
           email: data.email || "",
           location_city: data.location_city || "",
@@ -398,7 +403,7 @@ const fetchContracts = useCallback(async () => {
       mobile_number: "",
       email: "",
       location_city: "",
-      service_date: new Date().toISOString().slice(0, 10),
+      service_date: getToday(),
       start_time: "",
       end_time: "",
       km: "",
@@ -428,6 +433,39 @@ const fetchContracts = useCallback(async () => {
       s.service_person?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesContract = !serviceFilterContract || s.contract_id?.toString() === serviceFilterContract;
     return matchesSearch && matchesContract;
+  });
+
+  const uniqueCreators = Array.from(new Set(contracts.map(item => item.creator_name).filter(Boolean)));
+
+  const displayContracts = contracts.filter(c => {
+    const matchesSearch = 
+      c.client_company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.contract_title?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+    let matchesDate = true;
+    if (c.start_date) {
+      const cDate = new Date(c.start_date.split("T")[0]);
+      if (startDate) {
+        const start = new Date(startDate);
+        if (cDate < start) matchesDate = false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (cDate > end) matchesDate = false;
+      }
+    }
+    
+    let matchesType = true;
+    if (contractTypeFilter && contractTypeFilter !== "All") {
+      matchesType = c.contract_type === contractTypeFilter;
+    }
+    
+    let matchesCreator = true;
+    if (creatorFilter && creatorFilter !== "All") {
+      matchesCreator = c.creator_name === creatorFilter;
+    }
+    
+    return matchesSearch && matchesDate && matchesType && matchesCreator;
   });
 
   const totalPetrol = filteredServices.reduce((sum, s) => sum + (parseFloat(s.petrol_charges) || 0), 0);
@@ -462,13 +500,13 @@ const fetchContracts = useCallback(async () => {
       */}
 
       {/* Search & Actions */}
-      <div className="bg-[#F3F8FA] p-3 md:p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center shadow mb-4 gap-3">
-        <div className="flex items-center gap-3 bg-white px-3 py-2 rounded-lg shadow border w-full sm:w-80">
-          <Search size={18} className="text-gray-500" />
-          <input type="text" placeholder={`Search ${activeTab}...`} className="outline-none text-sm w-full" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-center mb-4 gap-3">
+        <div className="flex items-center gap-3 bg-gray-50/50 hover:bg-gray-50 focus-within:bg-white focus-within:border-blue-500 transition px-3 py-2 rounded-lg border w-full sm:w-80">
+          <Search size={18} className="text-gray-400" />
+          <input type="text" placeholder={`Search contracts...`} className="outline-none text-sm w-full bg-transparent text-gray-700 placeholder-gray-400" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
         <div className="flex gap-2">
-            <button onClick={() => { resetContractForm(); setContractModalOpen(true); }} className="bg-[#FF3355] text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-[#e62848]">
+            <button onClick={() => { resetContractForm(); setContractModalOpen(true); }} className="bg-[#FF3355] text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-[#e62848] transition shadow-sm">
               <Plus size={18} /> New Contract
             </button>
         </div>
@@ -526,6 +564,68 @@ const fetchContracts = useCallback(async () => {
       )}
       */}
 
+      {/* Filter Panel */}
+      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow mb-4 flex flex-wrap gap-4 items-end">
+        <div className="flex flex-col gap-1 min-w-[150px]">
+          <span className="text-xs font-bold text-gray-500 uppercase">Start Date</span>
+          <input
+            type="date"
+            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+            value={startDate}
+            onChange={e => setStartDate(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1 min-w-[150px]">
+          <span className="text-xs font-bold text-gray-500 uppercase">End Date</span>
+          <input
+            type="date"
+            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+            value={endDate}
+            onChange={e => setEndDate(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1 min-w-[150px]">
+          <span className="text-xs font-bold text-gray-500 uppercase">Contract Type</span>
+          <select
+            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+            value={contractTypeFilter}
+            onChange={e => setContractTypeFilter(e.target.value)}
+          >
+            <option value="All">All Types</option>
+            <option value="AMC">AMC</option>
+            <option value="ALC">ALC</option>
+            <option value="None">None</option>
+          </select>
+        </div>
+        {canEditDelete && (
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">Created By</span>
+            <select
+              className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+              value={creatorFilter}
+              onChange={e => setCreatorFilter(e.target.value)}
+            >
+              <option value="All">All Creators</option>
+              {uniqueCreators.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <button
+          onClick={() => {
+            setStartDate("");
+            setEndDate("");
+            setContractTypeFilter("");
+            setCreatorFilter("");
+            setSearchTerm("");
+          }}
+          className="px-4 py-2 border rounded-lg text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition h-10 flex items-center justify-center gap-1 shadow-sm"
+        >
+          Reset Filters
+        </button>
+      </div>
+
       {/* CONTRACTS TABLE */}
         <div className="bg-white rounded-xl shadow overflow-x-auto mb-4">
           <table className="w-full text-xs md:text-sm border-collapse">
@@ -538,14 +638,17 @@ const fetchContracts = useCallback(async () => {
                 <th className="p-2 md:p-3 text-right">Used</th>
                 <th className="p-2 md:p-3 text-right">Remaining</th>
                 <th className="p-2 md:p-3 text-center">Services</th>
+                {canEditDelete && (
+                  <th className="p-2 md:p-3 text-center">Created By</th>
+                )}
                 <th className="p-2 md:p-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {contracts.filter(c => c.client_company?.toLowerCase().includes(searchTerm.toLowerCase()) || c.contract_title?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
-                <tr><td colSpan="8" className="py-10 text-gray-400 text-center">No contracts found</td></tr>
+              {displayContracts.length === 0 ? (
+                <tr><td colSpan={canEditDelete ? 9 : 8} className="py-10 text-gray-400 text-center">No contracts found</td></tr>
               ) : (
-                contracts.filter(c => c.client_company?.toLowerCase().includes(searchTerm.toLowerCase()) || c.contract_title?.toLowerCase().includes(searchTerm.toLowerCase())).map(c => (
+                displayContracts.map(c => (
                   <tr key={c.id} className="border-b hover:bg-gray-50">
                     <td className="p-2 md:p-3 font-medium">{c.contract_title}</td>
                     <td className="p-2 md:p-3">{c.client_company}</td>
@@ -558,6 +661,9 @@ const fetchContracts = useCallback(async () => {
                     <td className="p-2 md:p-3 text-right text-orange-600">₹{parseFloat(c.used_total || 0).toLocaleString()}</td>
                     <td className="p-2 md:p-3 text-right font-bold text-green-600">₹{parseFloat(c.remaining || 0).toLocaleString()}</td>
                     <td className="p-2 md:p-3 text-center">{c.service_count || 0}</td>
+                    {canEditDelete && (
+                      <td className="p-2 md:p-3 text-center text-xs text-gray-700 font-semibold">{c.creator_name || "---"}</td>
+                    )}
                     <td className="p-2 md:p-3 text-center">
                       <div className="flex gap-1 justify-center">
                         <button onClick={() => openEditContract(c)} className="text-blue-600 hover:underline text-xs">Edit</button>
@@ -571,7 +677,6 @@ const fetchContracts = useCallback(async () => {
             </tbody>
           </table>
         </div>
-
       {/* SERVICES TABLE — removed
       {activeTab === "services" && (
       <div className="bg-white rounded-xl shadow overflow-x-auto">

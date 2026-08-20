@@ -21,14 +21,22 @@ if /I "%~1"=="/update-hosts-only" set "HOSTS_ONLY=1"
 :: Admin check - silently elevate if needed
 :: ----------------------------------------------------------------
 net session >nul 2>&1
-if not errorlevel 1 goto :admin_authenticated
+if not errorlevel 1 (
+  goto :admin_authenticated
+)
 
 if "%SILENT_MODE%"=="1" (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '/silent' -Verb RunAs -WindowStyle Hidden"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '/silent' -Verb RunAs -WindowStyle Hidden -ErrorAction Stop } catch { exit 1 }"
+  if errorlevel 1 (
+    echo ERROR: Administrator privileges are required, but elevation was denied or failed. >> "%LOG_DIR%\manage-local-ip-silent.log" 2>&1
+  )
   exit /b 0
 )
 if "%HOSTS_ONLY%"=="1" (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -ArgumentList '/update-hosts-only' -Verb RunAs -WindowStyle Hidden"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -ArgumentList '/update-hosts-only' -Verb RunAs -WindowStyle Hidden -ErrorAction Stop } catch { exit 1 }"
+  if errorlevel 1 (
+    echo ERROR: Administrator privileges are required, but elevation was denied or failed. >> "%LOG_DIR%\manage-local-ip-silent.log" 2>&1
+  )
   exit /b 0
 )
 
@@ -37,7 +45,17 @@ echo  ================================================================
 echo   ELEVATING TO ADMINISTRATOR PRIVILEGES...
 echo  ================================================================
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+  echo.
+  echo ====================================================================
+  echo ERROR: ACCESS DENIED! Administrator privileges are required.
+  echo Please accept the UAC prompt to run this script.
+  echo ====================================================================
+  echo.
+  pause
+  exit /b 1
+)
 exit /b 0
 
 :admin_authenticated

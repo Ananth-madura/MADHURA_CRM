@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import { X, Search, Plus, Eye, ChevronLeft, ChevronRight, Edit, Trash2, Mail } from "lucide-react";
 import ClientSearchDropdown from "../components/ClientSearchDropdown";
@@ -21,9 +22,10 @@ function Products() {
   const [material, setMaterial] = useState("");
   const [warranty, setWarranty] = useState("");
   const [amc, setAmc] = useState(false);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(getToday());
   const [issues, setIssues] = useState("");
   const [engineerName, setEngineerName] = useState("");
+  const [teamMembers, setTeamMembers] = useState([]);
 
 
   const [images, setImages] = useState([]);
@@ -52,18 +54,50 @@ function Products() {
   };
 
   // 🔥 FETCH SERVICES
-  const fetchServices = async () => {
+  const fetchServices = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/services`, getAuthConfig());
       setServices(res.data);
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [API]);
+
+  // 👥 FETCH TEAM MEMBERS
+  const fetchTeamMembers = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/teammember`, getAuthConfig());
+      setTeamMembers(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [API]);
 
   useEffect(() => {
     fetchServices();
-  }, [fetchServices]);
+    fetchTeamMembers();
+  }, [fetchServices, fetchTeamMembers]);
+
+  const getEngineersList = () => {
+    const staticList = [
+      "Thanapalan AC017", "Rajesh AC080", "Kandhavel AC086", "Gopi AC078",
+      "Saran raj AC087", "Bharani AC105", "Damodaran AC085", "Suresh AC073",
+      "Ranjith AC054", "Sivakumar AC036", "Manikandaraja AC097", "Malar vannan AC016",
+      "Faiz al AC068"
+    ];
+    const dynamicList = teamMembers
+      .filter(t => (t.emp_role || "").toLowerCase() === "engineer")
+      .map(t => `${t.first_name} ${t.last_name || ""}`.trim());
+      
+    // Combine uniquely (ignoring case)
+    const combined = [...staticList];
+    dynamicList.forEach(name => {
+      if (!combined.some(c => c.toLowerCase() === name.toLowerCase())) {
+        combined.push(name);
+      }
+    });
+    return combined.sort((a, b) => a.localeCompare(b));
+  };
 
   // 🔍 CLIENT SEARCH
 
@@ -142,7 +176,7 @@ function Products() {
     setMaterial("");
     setWarranty("");
     setAmc(false);
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(getToday());
     setIssues("");
     setEngineerName("");
     setImages([]);
@@ -327,8 +361,8 @@ function Products() {
       </div>
 
       {/* MODAL FORM */}
-      <div className={`overlay ${showModal ? "show" : ""} justify-items-center`}>
-        <div className={`${showModal ? "show" : ""} task-application bg-white shadow-2xl p-9 rounded-xl w-[60%] z-50 mt-10 max-h-[90vh] overflow-y-auto`}>
+      <div className={`overlay ${showModal ? "show" : ""} flex justify-center items-start overflow-y-auto p-4 md:p-10 z-50`}>
+        <div className={`${showModal ? "show" : ""} task-application bg-white shadow-2xl p-6 md:p-9 rounded-xl w-full max-w-4xl z-50 my-8 overflow-y-auto`}>
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-2xl font-semibold text-gray-700">{isEdit ? "Edit Product" : "Add New Product"}</h2>
             <span className="x-icon cursor-pointer" onClick={() => setShowModal(false)}><X size={24} /></span>
@@ -408,13 +442,18 @@ function Products() {
 
             <div className="flex items-center gap-6">
               <label className="w-40 text-lg">Engineer Name</label>
-              <input
-                type="text"
+              <select
                 value={engineerName}
                 onChange={(e) => setEngineerName(e.target.value)}
-                className="form-control w-[60%] border rounded-lg p-2"
-                placeholder="Enter engineer's name"
-              />
+                className="form-control w-[60%] border rounded-lg p-2 bg-white outline-none"
+              >
+                <option value="">— Select Engineer —</option>
+                {getEngineersList().map((eng) => (
+                  <option key={eng} value={eng}>
+                    {eng}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex items-center gap-6">

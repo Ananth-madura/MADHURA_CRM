@@ -210,6 +210,7 @@ const AdminNotifications = () => {
   const [histCustomTo, setHistCustomTo] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [notifFilter, setNotifFilter] = useState("all");
+  const [systemFilter, setSystemFilter] = useState("all");
 
   const fetchEmployees = async () => {
     try {
@@ -411,6 +412,21 @@ const AdminNotifications = () => {
   const totalApprovalNeeded = pendingApprovals.length + changeRequests.length;
   const filteredHistory = applyHistoryFilter([...olderAdminNotifs, ...olderNotifs], histFilter, histCustomFrom, histCustomTo);
 
+  // System Alerts filter
+  const SYSTEM_FILTERS = [
+    { key: "all", label: "All", emoji: "🔔" },
+    { key: "target_completed", label: "Target Completed", emoji: "🎯" },
+    { key: "target_achievement", label: "Target Achievement", emoji: "📈" },
+    { key: "task_completed", label: "Task Done", emoji: "✅" },
+    { key: "task_assigned", label: "Task Assigned", emoji: "📋" },
+    { key: "approval_request", label: "Approvals", emoji: "🔐" },
+    { key: "overdue_task", label: "Overdue", emoji: "⚠️" },
+    { key: "missed_reminder", label: "Reminders", emoji: "📅" },
+  ];
+  const filteredSystemNotifs = recentAdminNotifs.filter(n =>
+    systemFilter === "all" ? true : n.type === systemFilter
+  );
+
   const filteredEmployees = employees.filter(emp => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
@@ -609,7 +625,7 @@ const AdminNotifications = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             <section>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-3">
                 <Bell size={16} style={{ color: N.primary }} />
                 <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: N.slate, letterSpacing: "1px" }}>
                   System Alerts
@@ -617,16 +633,50 @@ const AdminNotifications = () => {
                 <span className="ml-auto text-xs" style={{ color: N.stone }}>{recentAdminNotifs.length} this week</span>
               </div>
 
-              {recentAdminNotifs.length === 0 ? (
+              {/* Filter Pills */}
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {SYSTEM_FILTERS.map(f => {
+                  const count = f.key === "all" ? recentAdminNotifs.length : recentAdminNotifs.filter(n => n.type === f.key).length;
+                  if (f.key !== "all" && count === 0) return null;
+                  return (
+                    <button
+                      key={f.key}
+                      onClick={() => setSystemFilter(f.key)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all"
+                      style={{
+                        background: systemFilter === f.key ? N.primary : N.surface,
+                        color: systemFilter === f.key ? "#fff" : N.slate,
+                        border: `1px solid ${systemFilter === f.key ? N.primary : N.hairline}`
+                      }}
+                    >
+                      <span>{f.emoji}</span> {f.label}
+                      {count > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                          style={{ background: systemFilter === f.key ? "rgba(255,255,255,0.25)" : N.lavender, color: systemFilter === f.key ? "#fff" : N.primary }}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {filteredSystemNotifs.length === 0 ? (
                 <div className="rounded-xl border border-[#e5e3df] bg-white p-8 text-center" style={{ color: N.stone }}>
                   <CheckCircle size={32} className="mx-auto mb-2 text-[#1aae39]" />
-                  No system alerts in the last 7 days.
+                  {systemFilter === "all" ? "No system alerts in the last 7 days." : `No "${SYSTEM_FILTERS.find(f=>f.key===systemFilter)?.label}" alerts this week.`}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentAdminNotifs.map(n => (
+                  {filteredSystemNotifs.map(n => (
                     <div key={n.id} onClick={() => !n.is_read && markAdminNotifRead(n.id)} className={!n.is_read ? "cursor-pointer" : ""}>
-                      <AdminNotifCard n={n} />
+                      <AdminNotifCard n={n} onDelete={async (id) => {
+                        try {
+                          const token = localStorage.getItem("token");
+                          await axios.delete(`${API}/api/notifications/admin/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+                          fetchAdminNotifs();
+                        } catch(e){}
+                      }} />
                     </div>
                   ))}
                 </div>

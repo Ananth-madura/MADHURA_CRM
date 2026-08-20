@@ -191,6 +191,7 @@ function ToastItem({ toast, onRemove }) {
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
+          WebkitBackdropFilter: "blur(10px)",
           backdropFilter: "blur(10px)",
         }}>
           <Icon size={20} color={textColor} />

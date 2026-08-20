@@ -130,8 +130,8 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body: data.body,
-    icon: "/logo192.png",
-    badge: "/favicon.ico",
+    icon: "/Madhura-logo.png",
+    badge: "/Madhura-logo.png",
     data: {
       url: data.url || "/dashboard"
     },

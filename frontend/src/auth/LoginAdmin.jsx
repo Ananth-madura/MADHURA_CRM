@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 import "../Styles/tailwind.css";
-import logoImage from "../images/logo.png";
+import logoImage from "../layout/Madhura-logo.png";
 import { API } from "../config/api";
 
 import loginBg from "../images/login-image.jpg";

@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 import "../Styles/tailwind.css";
-import logoImage from "../images/logo.png";
+import logoImage from "../layout/Madhura-logo.png";
 import loginBg from "../images/login-image.jpg";
 import { API } from "../config/api";
 
@@ -236,12 +236,6 @@ export default function Login() {
 
             {/* Footer Links */}
             <div className="mt-8 pt-5 border-t border-[#ede9e4] text-center space-y-3">
-              <p className="text-[14px] text-[#787671]">
-                New to the platform?{" "}
-                <Link to="/register" className="text-[#5645d4] hover:underline font-medium">
-                  Create account
-                </Link>
-              </p>
               <p className="text-[14px] text-[#787671]">
                 Are you an administrator?{" "}
                 <Link to="/login/admin" className="text-[#5645d4] hover:underline font-medium">

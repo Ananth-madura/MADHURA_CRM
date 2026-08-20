@@ -2,8 +2,9 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { User, Mail, Phone, MapPin, Lock, Save, X, Eye, EyeOff, Clock, CheckCircle, XCircle, Settings, ToggleLeft, ToggleRight, CheckSquare, Sparkles, Server } from "lucide-react";
+import { User, Mail, Phone, MapPin, Lock, Save, X, Eye, EyeOff, Clock, CheckCircle, XCircle, Settings, ToggleLeft, ToggleRight, CheckSquare, Sparkles, Server, MessageCircle } from "lucide-react";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
+import WAConfigPrompt from "../components/WAConfigPrompt";
 import socket from "../socket/socket";
 
 import { API } from "../config/api";
@@ -38,6 +39,9 @@ const Profile = () => {
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [showSMTPPrompt, setShowSMTPPrompt] = useState(false);
+  const [showWAConfig, setShowWAConfig] = useState(false);
+  const [hasWAConfig, setHasWAConfig] = useState(false);
+  const [waConfigData, setWaConfigData] = useState(null);
   const [smtpData, setSmtpData] = useState(() => {
     try {
       const local = localStorage.getItem("user_smtp_config");
@@ -75,6 +79,7 @@ const Profile = () => {
     fetchProfile();
     fetchChangeRequests();
     fetchSMTPConfig();
+    fetchWAConfig();
 
     if (socket) {
       socket.on("profile_change_response", () => {
@@ -206,6 +211,23 @@ const Profile = () => {
       }
     } catch (err) {
       console.error("Failed to load SMTP config:", err);
+    }
+  };
+
+  const fetchWAConfig = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${API}/api/wa/config/user-config`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data && res.data.hasConfig) {
+        setHasWAConfig(true);
+        setWaConfigData(res.data.config);
+      } else {
+        setHasWAConfig(false);
+      }
+    } catch (err) {
+      console.error("Failed to load WA config:", err);
     }
   };
 
@@ -600,6 +622,81 @@ const Profile = () => {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6 animate-fade-in">
+        <div className="bg-gradient-to-r from-emerald-500 via-green-500 to-teal-600 px-6 py-4 flex justify-between items-center text-white">
+          <div className="flex items-center gap-3">
+            <MessageCircle size={24} className="text-white" />
+            <div>
+              <h3 className="text-lg font-bold">WhatsApp Cloud API</h3>
+              <p className="text-emerald-100 text-xs">Your WhatsApp API credentials for bulk messaging</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowWAConfig(true)}
+            className="px-4 py-1.5 bg-white text-emerald-700 hover:bg-emerald-50 rounded-lg text-xs font-bold uppercase transition-all shadow-sm active:scale-95 outline-none font-sans"
+          >
+            {hasWAConfig ? "Edit Settings" : "Configure WhatsApp"}
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {hasWAConfig ? (
+            <div className="space-y-4">
+              <div className={`p-3.5 border rounded-xl flex items-center gap-3 ${waConfigData?.is_enabled ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+                <div className={`w-3 h-3 rounded-full ${waConfigData?.is_enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                <div>
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Service Status</span>
+                  <span className="text-[11px] text-slate-400">{waConfigData?.is_enabled ? 'Active and ready' : 'Disabled'}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-50/50 border border-slate-100 rounded-lg flex items-center gap-3">
+                  <MessageCircle size={18} className="text-emerald-500" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Phone Number ID</span>
+                    <span className="text-sm font-semibold text-slate-700 select-all">{waConfigData?.phone_number_id?.slice(0, 8)}...</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-50/50 border border-slate-100 rounded-lg flex items-center gap-3">
+                  <Server size={18} className="text-emerald-500" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">WABA ID</span>
+                    <span className="text-sm font-semibold text-slate-700 select-all">{waConfigData?.waba_id?.slice(0, 8) || 'Not set'}...</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/50 border border-emerald-100/50 rounded-xl text-[11px] text-emerald-600 flex items-start gap-2.5">
+                <CheckSquare size={16} className="shrink-0 mt-0.5" />
+                <span>
+                  WhatsApp campaigns, templates, and bulk messaging will use your configured WhatsApp Business API credentials.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                <MessageCircle size={22} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700">No WhatsApp API Configured</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto mt-0.5">Add your Meta WhatsApp Cloud API credentials to send bulk messages and manage campaigns.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWAConfig(true)}
+                className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-bold uppercase transition-all shadow-sm active:scale-95 outline-none font-sans"
+              >
+                Configure WhatsApp API
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
@@ -697,6 +794,15 @@ const Profile = () => {
           onClose={() => {
             setShowSMTPPrompt(false);
             fetchSMTPConfig();
+          }} 
+        />
+      )}
+
+      {showWAConfig && (
+        <WAConfigPrompt 
+          onClose={() => {
+            setShowWAConfig(false);
+            fetchWAConfig();
           }} 
         />
       )}

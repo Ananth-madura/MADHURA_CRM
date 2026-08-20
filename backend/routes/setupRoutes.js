@@ -70,4 +70,11 @@ router.get("/check-domain", (req, res) => {
   });
 });
 
+router.all("/restart-backend", (req, res) => {
+  res.json({ ok: true, message: "Restarting backend process..." });
+  setTimeout(() => {
+    process.exit(0);
+  }, 200);
+});
+
 module.exports = router;

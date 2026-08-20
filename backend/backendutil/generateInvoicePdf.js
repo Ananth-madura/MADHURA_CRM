@@ -3,24 +3,12 @@
 const path = require("path");
 const fs = require("fs");
 
+const LOGO_PATH = path.resolve(__dirname, "../../frontend/src/layout/Madhura-logo.png");
 let LOGO_B64 = "";
-for (const p of [
-  path.resolve(__dirname, "../../frontend/src/images/achme2logo-high.jpeg"),
-  path.resolve(__dirname, "../../frontend/src/images/logo.png"),
-  path.resolve(__dirname, "../../frontend/src/images/logo.jpeg"),
-]) {
-  try { LOGO_B64 = fs.readFileSync(p).toString("base64"); break; } catch (_) {}
-}
-const LOGO_SRC = LOGO_B64 ? `data:image/jpeg;base64,${LOGO_B64}` : "";
+try { LOGO_B64 = fs.readFileSync(LOGO_PATH).toString("base64"); } catch (_) { }
+const LOGO_SRC = LOGO_B64 ? `data:image/png;base64,${LOGO_B64}` : "";
 
-let BRAND_B64 = "";
-for (const p of [
-  path.resolve(__dirname, "../../frontend/src/images/achme-logo-high.jpeg"),
-  path.resolve(__dirname, "../../frontend/src/images/backhead.png"),
-]) {
-  try { BRAND_B64 = fs.readFileSync(p).toString("base64"); break; } catch (_) {}
-}
-const BRAND_SRC = BRAND_B64 ? `data:image/jpeg;base64,${BRAND_B64}` : "";
+const BRAND_SRC = LOGO_SRC;
 
 function esc(v) {
   if (v == null) return "";
@@ -28,9 +16,9 @@ function esc(v) {
 }
 
 const BRANCH_DATA = {
-  "Coimbatore": { address: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004", gstin: "33AAHFA7876M1ZX" },
-  "Bangalore": { address: "14th Main Road, GK Layout, Electronic City Post, Bangalore-560100", gstin: "29AAHFA7876M1ZM" },
-  "Chennai": { address: "5th Floor, 5CD PM Towers, Dreams Road, Thousand Lights, Chennai-600006", gstin: "33AAHFA7876M1ZX" },
+  "Coimbatore": { address: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004", gstin: "33AAHFA7876M1ZX", phone: "0422 4397555 , 2563666" },
+  "Bangalore": { address: "14th Main Road, GK Layout, Electronic City Post, Bangalore-560100", gstin: "29AAHFA7876M1ZM", phone: "9842235515, 8012555718" },
+  "Chennai": { address: "5th Floor, 5CD PM Towers, Greams Road, Thousand Lights, Chennai-600006", gstin: "33AAHFA7876M1ZX", phone: "8012555706, 8012555710" },
 };
 
 const BANK_DETAILS = [
@@ -41,7 +29,7 @@ const BANK_DETAILS = [
 const BRANCHES = {
   Coimbatore: { name: "Coimbatore", address: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004", gstin: "33AAHFA7876M1ZX" },
   Bangalore: { name: "Bangalore", address: "14th Main Road, GK Layout, Electronic City Post, Bangalore-560100", gstin: "29AAHFA7876M1ZM" },
-  Chennai: { name: "Chennai", address: "5th Floor, 5CD PM Towers, Dreams Road, Thousand Lights, Chennai-600006", gstin: "33AAHFA7876M1ZX" },
+  Chennai: { name: "Chennai", address: "5th Floor, 5CD PM Towers, Greams Road, Thousand Lights, Chennai-600006", gstin: "33AAHFA7876M1ZX" },
 };
 
 async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
@@ -59,7 +47,33 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   const h = invoice;
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" }) : "---";
-  const fmtNum = (n) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtNum = (n, showSym = true) => {
+    const v = Number(n || 0);
+    const formatted = v.toLocaleString("en-IN", { minimumFractionDigits: v % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+    return showSym ? `\u20B9 ${formatted}` : formatted;
+  };
+
+  const numberToWords = (num) => {
+    const a = ["", "One ", "Two ", "Three ", "Four ", "Five ", "Six ", "Seven ", "Eight ", "Nine ",
+      "Ten ", "Eleven ", "Twelve ", "Thirteen ", "Fourteen ", "Fifteen ", "Sixteen ",
+      "Seventeen ", "Eighteen ", "Nineteen "];
+    const b = ["", "", "Twenty ", "Thirty ", "Forty ", "Fifty ", "Sixty ", "Seventy ", "Eighty ", "Ninety "];
+    const helper = (n) => {
+      let str = "";
+      if (n >= 10000000) { str += helper(Math.floor(n / 10000000)) + "Crore "; n %= 10000000; }
+      if (n >= 100000) { str += helper(Math.floor(n / 100000)) + "Lakh "; n %= 100000; }
+      if (n >= 1000) { str += helper(Math.floor(n / 1000)) + "Thousand "; n %= 1000; }
+      if (n >= 100) { str += a[Math.floor(n / 100)] + "Hundred "; n %= 100; }
+      if (n > 0) {
+        if (n < 20) str += a[n];
+        else str += b[Math.floor(n / 10)] + a[n % 10];
+      }
+      return str;
+    };
+    let n = Math.round(num);
+    if (n === 0) return "Zero Rupees Only";
+    return helper(n).trim() + " Rupees Only";
+  };
 
   const invoiceDate = h.invoice_date || h.quotation_date || h.estimate_date || new Date().toISOString();
   const docId = h.invoice_id || h.quotation_id || h.id;
@@ -77,16 +91,95 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   const totalIGST = Number(h.total_igst || 0);
   const grandTotal = Number(h.grand_total || 0) || (subtotal - totalDiscount + totalCGST + totalSGST + totalIGST);
 
-  const hasGST = taxRate > 0;
+  const hasGST = taxRate > 0 || totalCGST > 0 || totalSGST > 0 || totalIGST > 0;
   const showCGST = totalCGST > 0;
   const showSGST = totalSGST > 0;
   const showIGST = totalIGST > 0;
   const showDiscount = totalDiscount > 0;
+
+  const gstModeStr = h.gst_mode || "Exclusive";
+
+  let showBreakdown = true;
+  try {
+    const so = typeof h.terms_separate_orders === "string"
+      ? JSON.parse(h.terms_separate_orders)
+      : (h.terms_separate_orders || {});
+    if (so && (so.show_gst_breakdown === false || so.hide_gst_percentage === true)) {
+      showBreakdown = false;
+    }
+  } catch (_) { }
+
+  let gstRows = "";
+  if (gstModeStr !== "Exempt" && gstModeStr !== "Without GST") {
+    if (showBreakdown) {
+      const groups = {};
+      (items || []).forEach(r => {
+        const taxRate = Number(r.tax) || 0;
+        if (taxRate === 0) return;
+        const qty = Number(r.quantity || r.qty || 0);
+        const price = Number(r.price || 0);
+        const discount = Number(r.discount || 0);
+        const base = price * qty - discount;
+
+        let gstAmount = 0;
+        if (gstModeStr === "Inclusive") {
+          const taxableValue = base / (1 + taxRate / 100);
+          gstAmount = base - taxableValue;
+        } else {
+          gstAmount = (base * taxRate) / 100;
+        }
+
+        if (gstAmount > 0) {
+          if (!groups[taxRate]) groups[taxRate] = 0;
+          groups[taxRate] += gstAmount;
+        }
+      });
+
+      const branchState = (h.supplier_branch === "Bangalore" ? "karnataka" : "tamil nadu");
+      const clientState = (h.client_state || "").toLowerCase().trim();
+      const same = branchState === clientState && clientState !== "";
+
+      const hasCgstSgst = totalCGST > 0 || totalSGST > 0;
+      const hasIgst = totalIGST > 0;
+      const isCgstSgst = hasCgstSgst ? true : (hasIgst ? false : same);
+
+      Object.keys(groups).sort((a, b) => Number(b) - Number(a)).forEach(rateStr => {
+        const rate = Number(rateStr);
+        const amt = groups[rateStr];
+        if (isCgstSgst) {
+          gstRows += `<tr><td>CGST ${(rate / 2)}%</td><td>${fmtNum(amt / 2)}</td></tr>`;
+          gstRows += `<tr><td>SGST ${(rate / 2)}%</td><td>${fmtNum(amt / 2)}</td></tr>`;
+        } else {
+          gstRows += `<tr><td>IGST ${rate}%</td><td>${fmtNum(amt)}</td></tr>`;
+        }
+      });
+    } else {
+      const branchState = (h.supplier_branch === "Bangalore" ? "karnataka" : "tamil nadu");
+      const clientState = (h.client_state || "").toLowerCase().trim();
+      const same = branchState === clientState && clientState !== "";
+
+      const hasCgstSgst = totalCGST > 0 || totalSGST > 0;
+      const hasIgst = totalIGST > 0;
+
+      if (hasCgstSgst && hasIgst) {
+        gstRows += `<tr><td>CGST</td><td>${fmtNum(totalCGST)}</td></tr>`;
+        gstRows += `<tr><td>SGST</td><td>${fmtNum(totalSGST)}</td></tr>`;
+        gstRows += `<tr><td>IGST</td><td>${fmtNum(totalIGST)}</td></tr>`;
+      } else if (hasCgstSgst || (totalIGST === 0 && same)) {
+        gstRows += `<tr><td>CGST</td><td>${fmtNum(totalCGST)}</td></tr>`;
+        gstRows += `<tr><td>SGST</td><td>${fmtNum(totalSGST)}</td></tr>`;
+      } else if (hasIgst || (totalCGST === 0 && totalSGST === 0 && !same)) {
+        gstRows += `<tr><td>IGST</td><td>${fmtNum(totalIGST)}</td></tr>`;
+      }
+    }
+  }
   const hasHSN = (items || []).some((i) => i.hsn_sac);
   const hasBrandModel = (items || []).some((r) => r.brand_model && String(r.brand_model).trim() !== "");
+  const hasDescription = (items || []).some((r) => r.description && String(r.description).trim() !== "");
 
   const terms = [];
-  if (h.terms_general) terms.push("General Terms &amp; Conditions apply.");
+  let attachedImages = [];
+  if (h.terms_general) { /* General T&C — checkbox only, no body text */ }
   if (h.terms_tax) terms.push("Prices quoted are exclusive of Sales and Service Tax.");
   if (h.terms_project_period) terms.push(`Project Period: ${esc(h.terms_project_period)}`);
   if (h.terms_validity) terms.push(`Quote valid for ${esc(h.terms_validity)} from quotation date.`);
@@ -96,7 +189,8 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     if (so.installation) terms.push("B. Installation / Services");
     if (so.usd) terms.push("C. Price may vary based on USD rates");
     if (so.boq) terms.push("D. Factory BOQ may vary");
-  } catch (_) {}
+    if (so.attached_images) attachedImages = so.attached_images;
+  } catch (_) { }
   if (h.terms_payment) {
     const pt = h.terms_payment === "Custom" ? h.terms_payment_custom : h.terms_payment;
     if (pt) terms.push(`Payment Terms: ${esc(pt)}`);
@@ -126,6 +220,8 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   const execName = esc(h.exec_name || "");
   const execPhone = esc(h.exec_phone || "");
   const execEmail = h.exec_email ? esc(h.exec_email) : "";
+  const fromPhoneRaw = branchData.phone || "0422 4397555 , 2563666";
+  const fromPhone = fromPhoneRaw.split(",").map(p => `+91 ${p.trim()}`).join("  |  ");
 
   const otherBranches = Object.entries(BRANCHES)
     .filter(([key]) => key !== h.supplier_branch)
@@ -136,10 +232,12 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     const price = Number(item.price || 0);
     const lineTotal = qty * price;
 
-    const desc = item.description || "---";
+    const desc = item.description || "";
     const commaIndex = desc.indexOf(",");
     let descHtml = "";
-    if (commaIndex !== -1) {
+    if (!desc.trim()) {
+      descHtml = "";
+    } else if (commaIndex !== -1) {
       const heading = desc.substring(0, commaIndex + 1);
       const body = desc.substring(commaIndex + 1);
       descHtml = `<div style="display:flex;flex-direction:column;gap:2px;text-align:left;">
@@ -152,27 +250,26 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
 
     return `<tr>
       <td>${i + 1}</td>
-      ${hasBrandModel ? `<td>${esc(item.brand_model || "---")}</td>` : ""}
-      <td>${descHtml}</td>
+      ${hasBrandModel ? `<td style="width:80px;max-width:80px;word-break:break-word;">${esc(item.brand_model || "---")}</td>` : ""}
+      ${hasDescription ? `<td style="width:240px;max-width:240px;word-break:break-word;">${descHtml}</td>` : ""}
       ${hasHSN ? `<td>${esc(item.hsn_sac || "---")}</td>` : ""}
       <td>${qty}</td>
+      <td style="text-align:center;">${fmtNum(price, false)}</td>
       <td>${esc(item.uom || "Nos")}</td>
       ${hasGST ? `<td>${item.tax || taxRate}%</td>` : ""}
-      <td>Rs. ${fmtNum(price)}</td>
-      <td><strong>Rs. ${fmtNum(lineTotal)}</strong></td>
+      <td style="font-weight:bold;">${fmtNum(lineTotal, false)}</td>
     </tr>`;
   }).join("");
 
   const termsListItems = terms.map((t) => `<li style="margin-bottom:4px;">${t}</li>`).join("");
 
   const summaryRows = `
-    <tr><td style="width:50%">Subtotal</td><td style="width:50%">Rs. ${fmtNum(subtotal)}</td></tr>
-    ${showDiscount ? `<tr><td>Discount</td><td>Rs. ${fmtNum(totalDiscount)}</td></tr>` : ""}
-    ${showCGST ? `<tr><td>CGST (${taxRate / 2}%)</td><td>Rs. ${fmtNum(totalCGST)}</td></tr>` : ""}
-    ${showSGST ? `<tr><td>SGST (${taxRate / 2}%)</td><td>Rs. ${fmtNum(totalSGST)}</td></tr>` : ""}
-    ${showIGST ? `<tr><td>IGST (${taxRate}%)</td><td>Rs. ${fmtNum(totalIGST)}</td></tr>` : ""}
+    <tr><td style="width:50%">Subtotal</td><td style="width:50%">${fmtNum(subtotal)}</td></tr>
+    ${showDiscount ? `<tr><td>Discount</td><td>${fmtNum(totalDiscount)}</td></tr>` : ""}
+    ${gstRows}
     ${!hasGST ? `<tr><td style="color:#64748b;font-size:10px;">Without GST</td><td></td></tr>` : ""}
-    <tr class="ft-grand-total"><td style="width:50%">GRAND TOTAL</td><td style="width:50%">Rs. ${fmtNum(grandTotal)}</td></tr>`;
+    <tr class="ft-grand-total"><td style="width:50%">GRAND TOTAL</td><td style="width:50%">${fmtNum(grandTotal)}</td></tr>
+    <tr><td colspan="2" style="font-size:10px;color:#64748b;font-style:italic;text-align:right;padding:4px 6px 6px 6px;"><strong>Amount in Words:</strong> ${numberToWords(grandTotal)}</td></tr>`;
 
   const branchesHtml = otherBranches.length > 0 ? `
     <div class="ft-branch-box">
@@ -192,25 +289,29 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
   <style>
     /* ─── Exact copy of form-template.css (PDF-mode) ─── */
     :root {
-      --ink: #1a1f2e; --muted: #64748b; --line: #cbd5e1; --line-soft: #e2e8f0;
+      --ink: #1a1f2e; --muted: #64748b; --line: #64748b; --line-soft: #94a3b8;
       --brand: #1e3a8a; --brand-deep: #1e293b; --paper: #ffffff;
-      --shadow-sm: 0 2px 8px rgba(30,41,59,0.08); --card-bg: rgba(255,255,255,0.96);
+      --shadow-sm: 0 2px 10px rgba(37,99,235,0.15); --card-bg: rgba(255,255,255,0.96);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: "Poppins", Arial, sans-serif; color: var(--ink); background: #fff; margin: 0; padding: 0; }
 
-    /* ── Wrapper (no ::before bar — pdf-lib draws it at page edge) ── */
+    /* ── Wrapper: flex column so footer group is pushed to page bottom ── */
     .ft-quotation-wrapper {
-      position: relative; width: 100%; min-height: auto;
+      position: relative; width: 100%; min-height: calc(297mm - 20mm);
       background: var(--paper); padding: 0;
+      display: flex; flex-direction: column;
     }
 
     /* Watermark + top bar hidden in HTML — added by pdf-lib post-processing */
     .ft-watermark { display: none; }
     .ft-top-bar { display: none; }
 
-    .ft-content { position: relative; z-index: 1; }
+    .ft-content { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; }
+
+    /* Branches + Executive footer — always pinned to bottom of last page */
+    .ft-page-footer-group { margin-top: 0; padding-top: 0; }
 
     /* ── Header ── */
     .ft-header {
@@ -233,6 +334,7 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
       display: grid; grid-template-columns: 1fr 1fr;
       gap: 12px; margin-top: 14px; align-items: stretch;
     }
+
     .ft-info-box,
     .ft-terms-box, .ft-summary-box, .ft-notes-box,
     .ft-bank-box, .ft-branch-box, .ft-footer {
@@ -246,6 +348,9 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     .ft-box-title { margin-bottom: 8px; font-size: 13px; }
     .ft-info-box h3 { margin-bottom: 3px; font-size: 15px; line-height: 1.25; font-weight: 700; }
     .ft-gst { margin-bottom: 9px; color: var(--muted); font-size: 11px; font-weight: 600; }
+
+    .ft-summary-box { padding: 0; overflow: hidden; height: 100%; }
+
     .ft-compact, .ft-contact-line, .ft-terms-box li,
     .ft-notes-box, .ft-bank-grid, .ft-branch-box, .ft-footer {
       font-size: 11.5px; line-height: 1.55;
@@ -277,14 +382,14 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     /* ── Mid section 2×2 grid ── */
     .ft-mid-section { display: block; margin-top: 12px; }
     .ft-grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .ft-terms-box, .ft-summary-box, .ft-notes-box, .ft-bank-box, .ft-branch-box { padding: 12px; }
+    .ft-terms-box, .ft-notes-box, .ft-bank-box, .ft-branch-box { padding: 12px; }
     .ft-section-heading { margin-bottom: 8px; font-size: 13px; }
     .ft-terms-box ul { padding-left: 16px; }
 
     /* ── Summary table ── */
     .ft-summary-table {
-      border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
-      box-shadow: var(--shadow-sm); table-layout: fixed; width: 100%;
+      border-collapse: collapse; table-layout: fixed; width: 100%;
+      border: none; box-shadow: none; border-radius: 0; background: none;
     }
     .ft-summary-table td { padding: 9px 6px; font-size: 12px; }
     .ft-grand-total td { color: var(--brand); font-size: 14px; font-weight: 700; background: #f0f4ff; }
@@ -296,18 +401,101 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     /* ── Branches ── */
     .ft-branch-box { margin-top: 12px; }
 
-    /* ── Footer ── */
+    /* ── Footer: fixed at bottom of EVERY page ── */
     .ft-footer {
-      display: flex; flex-wrap: wrap; gap: 8px 20px;
-      justify-content: flex-end; align-items: center;
-      margin-top: 12px; padding: 10px 12px;
+      box-sizing: border-box !important;
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      justify-content: flex-end !important;
+      align-items: center !important;
+      gap: 20px !important;
+      padding: 10px 12px !important;
+      width: 100% !important;
     }
     .ft-footer span { color: var(--brand); font-weight: 600; }
 
+    .ft-footer, .ft-branch-box {
+      border: 2px solid #1D3A8A !important;
+      box-shadow: 0 4px 14px rgba(29,58,138,0.20) !important;
+    }
+    .ft-attached-images-box {
+      background: var(--card-bg);
+      border: 2px solid #1D3A8A !important;
+      box-shadow: 0 4px 14px rgba(29,58,138,0.20) !important;
+      border-radius: 10px;
+      padding: 14px;
+      margin-top: 14px;
+    }
+    .ft-attached-images-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .ft-attached-images-grid.count-1 {
+      display: flex;
+      justify-content: center;
+    }
+    .ft-attached-images-grid.count-1 .ft-attached-image-container {
+      width: 608px;
+      height: 226px;
+      margin: 0 auto;
+    }
+    .ft-attached-images-grid.count-2 {
+      display: grid;
+      grid-template-columns: 307px 307px;
+      gap: 11px;
+      justify-content: center;
+    }
+    .ft-attached-images-grid.count-2 .ft-attached-image-container {
+      width: 307px;
+      height: 265px;
+    }
+    .ft-attached-images-grid.count-3 {
+      display: grid;
+      grid-template-columns: 307px 285px;
+      gap: 11px;
+      justify-content: center;
+    }
+    .ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(1) {
+      grid-column: span 2;
+      width: 608px;
+      height: 226px;
+      margin: 0 auto;
+    }
+    .ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(2) {
+      width: 307px;
+      height: 265px;
+    }
+    .ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(3) {
+      width: 285px;
+      height: 267px;
+    }
+    .ft-attached-image-container {
+      background: #fff;
+      border: 2px solid #1D3A8A !important;
+      box-shadow: 0 4px 14px rgba(29,58,138,0.20) !important;
+      border-radius: 8px;
+      padding: 0px !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 140px;
+      overflow: hidden;
+    }
+    .ft-attached-image-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+    }
+
     /* ── Page break controls ── */
     tr, .ft-terms-box, .ft-summary-box, .ft-notes-box,
-    .ft-bank-box, .ft-branch-box { page-break-inside: avoid; }
+    .ft-bank-box, .ft-attached-images-box { page-break-inside: avoid; }
+    .ft-branch-box, .ft-footer { page-break-inside: avoid; }
 
+    /* bottom 12mm reserves space for the footer */
     @page { size: A4 portrait; margin: 8mm 8mm 12mm 8mm; }
   </style>
 </head>
@@ -352,20 +540,20 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
                   <h3>Achme Communication</h3>
                   <div class="ft-gst">GSTIN: ${fromGstin}</div>
                   <div class="ft-compact">${fromAddress}</div>
-                  <div class="ft-contact-line"><span class="label">Ph:</span><span>0422-2569966, 4376555</span></div>
-                  <div class="ft-contact-line"><span class="label">Email:</span><span>info@achmecommunication.com</span></div>
+                  <div class="ft-contact-line"><span class="label">Ph:</span><span>${fromPhone}</span></div>
+                  <div class="ft-contact-line"><span class="label">Email:</span><span>sales@achmecommunication.com</span></div>
                   <div class="ft-contact-line"><span class="label">Web:</span><span>www.achmecommunication.com</span></div>
                 </div>
                 <div class="ft-info-box">
                   <div class="ft-box-title">BILLED TO</div>
                   ${(() => {
-                    const clientCompany = (h.client_company || "").trim();
-                    return `<h3>${esc(clientCompany || h.customer_name || "---")}</h3>
+      const clientCompany = (h.client_company || "").trim();
+      return `<h3>${esc(clientCompany || h.customer_name || "---")}</h3>
                     ${clientCompany ? `<div class="ft-compact" style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(h.customer_name)}</div>` : ""}`;
-                  })()}
+    })()}
                   ${h.gst_number ? `<div class="ft-gst">GSTIN: ${esc(h.gst_number)}</div>` : ""}
                   ${(clientAddr || h.client_pincode) ? `<div class="ft-compact">${esc(clientAddr)}${clientPin}${clientCountry}</div>` : ""}
-                  ${h.mobile_number ? `<div class="ft-contact-line"><span class="label">Ph:</span><span>${esc(h.mobile_number)}</span></div>` : ""}
+                  ${h.mobile_number ? `<div class="ft-contact-line"><span class="label">Ph:</span><span>+91 ${esc(h.mobile_number)}</span></div>` : ""}
                   ${h.email ? `<div class="ft-contact-line"><span class="label">Email:</span><span>${esc(h.email)}</span></div>` : ""}
                 </div>
               </section>
@@ -376,14 +564,14 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
                   <thead>
                     <tr>
                       <th style="width:32px;">S.NO</th>
-                      ${hasBrandModel ? "<th>BRAND / MODEL</th>" : ""}
-                      <th>DESCRIPTION</th>
-                      ${hasHSN ? "<th>HSN/SAC</th>" : ""}
+                      ${hasBrandModel ? '<th style="width:80px;max-width:80px;">BRAND</th>' : ""}
+                      ${hasDescription ? '<th style="width:240px;max-width:240px;">DESCRIPTION</th>' : ""}
+                      ${hasHSN ? '<th style="width:80px;">HSN/SAC</th>' : ""}
                       <th style="width:40px;">QTY</th>
+                      <th style="width:100px;text-align:center;">UNIT PRICE</th>
                       <th style="width:50px;">UOM</th>
                       ${hasGST ? '<th style="width:48px;">GST%</th>' : ""}
-                      <th style="width:80px;text-align:right;">PRICE</th>
-                      <th style="width:90px;text-align:right;">TOTAL</th>
+                      <th style="width:90px;text-align:right;">TOTAL VALUE</th>
                     </tr>
                   </thead>
                   <tbody>${itemRows}</tbody>
@@ -431,16 +619,28 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
                 </div>
               </section>
 
-              <!-- BRANCHES -->
-              ${branchesHtml}
+              ${attachedImages && attachedImages.length > 0 ? `
+              <div class="ft-attached-images-box">
+                <div class="ft-attached-images-grid count-${attachedImages.length}">
+                  ${attachedImages.map((img, idx) => `
+                    <div class="ft-attached-image-container">
+                      <img src="${img}" alt="Attachment ${idx + 1}" />
+                    </div>
+                  `).join("")}
+                </div>
+              </div>` : ""}
 
-              <!-- FOOTER -->
-              ${(execName || execPhone || execEmail) ? `
-              <footer class="ft-footer">
-                ${execName ? `<div><span>Executive:</span> ${execName}</div>` : ""}
-                ${execPhone ? `<div><span>PH:</span> ${execPhone}</div>` : ""}
-                ${execEmail ? `<div><span>Email:</span> ${execEmail}</div>` : ""}
-              </footer>` : ""}
+              <!-- EXECUTIVE (top) + BRANCHES (under): pinned to bottom of last page -->
+              <div class="ft-page-footer-group">
+                ${(execName || execPhone || execEmail) ? `
+                <footer class="ft-footer">
+                  ${execName ? `<span><strong>Executive:</strong> ${execName}</span>` : ""}
+                  ${execPhone ? `<span><strong>PH:</strong> ${execPhone}</span>` : ""}
+                  ${execEmail ? `<span><strong>Email:</strong> ${execEmail}</span>` : ""}
+                </footer>` : ""}
+
+                ${branchesHtml}
+              </div>
 
             </td>
           </tr>
@@ -461,7 +661,7 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
     browser = await puppeteer.launch(launchOptions);
   } catch (launchErr) {
     console.warn("⚠️ Standard Puppeteer launch failed. Attempting system browser fallback...", launchErr.message);
-    
+
     const possiblePaths = [
       // Chrome standard paths on Windows
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -504,11 +704,112 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
         i.complete ? Promise.resolve() : new Promise((r) => { i.addEventListener("load", r); i.addEventListener("error", r); })
       ));
     });
-    const basePdf = await page.pdf({
+
+    // ── Pin footer group to the bottom of the LAST page, WITHOUT touching the
+    //    Notes / Bank boxes above it ──
+    // We rely on Chrome's REAL pagination (not JS math):
+    //   • Probe A counts the CONTENT-ALONE pages (footer hidden).
+    //   • Probe B lays the footer out in NORMAL flow with a clear gap above it and
+    //     page-break-inside:avoid, then counts pages. If the footer can't fit under
+    //     the content with that gap, Chrome moves the WHOLE footer onto a fresh
+    //     page — so the count tells us the correct number of pages N.
+    //   • If B > A the footer was bumped onto an otherwise-empty page (no repeated
+    //     <thead> header there), so we re-stamp the captured header image on it.
+    //   • Finally we make the wrapper exactly N pages tall and pin the footer to
+    //     the very bottom of the last page.
+    // A4 (297mm) minus 8mm top + 12mm bottom margins = 277mm content per page.
+    await page.emulateMediaType('print');
+
+    const PDF_OPTS = {
       format: "A4",
       printBackground: true,
       margin: { top: "8mm", bottom: "12mm", left: "8mm", right: "8mm" },
+    };
+
+    // Capture the header (logo + title + Doc No/Date) as an image so it can be
+    // re-stamped on a bumped, otherwise-empty footer page (see the pdf-lib pass).
+    let headerShot = null;
+    try {
+      const headerEl = await page.$(".ft-header");
+      if (headerEl) headerShot = await headerEl.screenshot({ type: "png" });
+    } catch (e) {
+      console.warn("Could not capture header image:", e.message);
+    }
+
+    const probePageCount = async () => {
+      try {
+        const probePdf = await page.pdf(PDF_OPTS);
+        const { PDFDocument: PDFDocProbe } = require("pdf-lib");
+        return (await PDFDocProbe.load(probePdf)).getPageCount() || 1;
+      } catch (e) {
+        console.warn("Page-count probe failed, defaulting to 1 page:", e.message);
+        return 1;
+      }
+    };
+
+    // Probe A — content-alone page count (footer hidden).
+    await page.evaluate(() => {
+      const wrap = document.querySelector(".ft-quotation-wrapper");
+      const group = document.querySelector(".ft-page-footer-group");
+      if (wrap) wrap.style.removeProperty("min-height");
+      if (group) {
+        group.style.setProperty("display", "none", "important");
+        ["position", "bottom", "left", "right", "margin", "margin-top", "padding-top", "break-inside", "page-break-inside"]
+          .forEach((p) => group.style.removeProperty(p));
+      }
     });
+    const contentPages = await probePageCount();
+
+    // Probe B — footer in natural flow with a reserved gap; the page count is
+    // exactly where the footer belongs (same page if it fits, fresh page if not).
+    await page.evaluate(() => {
+      const GAP_PX = (8 * 96) / 25.4; // ~8mm clear gap kept above the footer
+      const wrap = document.querySelector(".ft-quotation-wrapper");
+      const group = document.querySelector(".ft-page-footer-group");
+      if (wrap) wrap.style.removeProperty("min-height");
+      if (group) {
+        // Override the flex `margin-top:auto` so the footer sits right after the
+        // content (with the gap), and keep the whole group together so it spills
+        // to the next page as one block instead of splitting across the boundary.
+        ["position", "bottom", "left", "right", "padding-top"].forEach((p) => group.style.removeProperty(p));
+        group.style.setProperty("display", "block", "important");
+        group.style.setProperty("margin-top", GAP_PX + "px", "important");
+        group.style.setProperty("break-inside", "avoid", "important");
+        group.style.setProperty("page-break-inside", "avoid", "important");
+      }
+    });
+    const pageCount = await probePageCount();
+
+    // Footer bumped onto a fresh, content-less last page -> it needs a stamped header.
+    const footerBumped = pageCount > contentPages;
+
+    // Pass 2 — size the wrapper to exactly `pageCount` pages and pin the footer
+    // to the very bottom of the last page via absolute positioning.
+    await page.evaluate((nPages) => {
+      const PAGE_H_PX = (277 * 96) / 25.4; // content height per A4 page at 96 dpi
+      const wrap = document.querySelector(".ft-quotation-wrapper");
+      const group = document.querySelector(".ft-page-footer-group");
+      if (!wrap || !group) return;
+
+      // Restore the footer to its pinned-card layout (undo the probe overrides).
+      group.style.removeProperty("display");
+      group.style.removeProperty("break-inside");
+      group.style.removeProperty("page-break-inside");
+      void group.offsetHeight; // reflow with footer visible again
+
+      wrap.style.setProperty("position", "relative", "important");
+      // Fill exactly N pages (−1px so rounding never spills onto a blank N+1 page).
+      wrap.style.setProperty("min-height", (nPages * PAGE_H_PX - 1) + "px", "important");
+
+      group.style.setProperty("position", "absolute", "important");
+      group.style.setProperty("left", "0", "important");
+      group.style.setProperty("right", "0", "important");
+      group.style.setProperty("bottom", "0", "important");
+      group.style.setProperty("margin", "0", "important");
+      group.style.setProperty("padding-top", "0", "important");
+    }, pageCount);
+
+    const basePdf = await page.pdf(PDF_OPTS);
 
     // ── Post-process with pdf-lib: stamp watermark + top bar on EVERY page ──
     const { PDFDocument, rgb } = require("pdf-lib");
@@ -526,8 +827,22 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
       }
     }
 
-    for (const pdfPage of pages) {
+    // Embed the captured header image (used only on a bumped, empty footer page).
+    let hdrImage = null;
+    if (footerBumped && headerShot) {
+      try {
+        hdrImage = await pdfDoc.embedPng(headerShot);
+      } catch (e) {
+        console.warn("Could not embed header image:", e.message);
+      }
+    }
+
+    const MARGIN_PT = (8 * 72) / 25.4; // 8mm page margin in PDF points
+
+    for (let pi = 0; pi < pages.length; pi++) {
+      const pdfPage = pages[pi];
       const { width, height } = pdfPage.getSize();
+      const isLastPage = pi === pages.length - 1;
 
       // Draw top gradient bar at VERY TOP of page, edge-to-edge (corner to corner)
       const barHeight = 5; // ~6px on screen
@@ -550,6 +865,19 @@ async function generateInvoicePdf({ invoice, items, type, label, prefix }) {
         pdfPage.drawImage(wmImage, {
           x: wmX, y: wmY, width: wmW, height: wmH,
           opacity: 0.07,
+        });
+      }
+
+      // On a bumped, content-less last page the repeating <thead> header is gone,
+      // so stamp the captured header image at the top to match a normal page.
+      if (isLastPage && hdrImage) {
+        const drawW = width - 2 * MARGIN_PT;
+        const drawH = hdrImage.height * (drawW / hdrImage.width);
+        pdfPage.drawImage(hdrImage, {
+          x: MARGIN_PT,
+          y: height - MARGIN_PT - drawH,
+          width: drawW,
+          height: drawH,
         });
       }
     }

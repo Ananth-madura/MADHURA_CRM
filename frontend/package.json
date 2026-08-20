@@ -9,6 +9,7 @@
     "@testing-library/user-event": "^13.5.0",
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
+    "agentation": "^3.0.2",
     "axios": "^1.13.2",
     "framer-motion": "^12.25.0",
     "html2pdf.js": "^0.12.1",
@@ -16,15 +17,18 @@
     "lucide-react": "^0.562.0",
     "npm": "^11.7.0",
     "ogl": "^1.0.11",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-is": "^19.2.6",
     "react-router-dom": "^7.11.0",
     "react-scripts": "5.0.1",
     "recharts": "^3.6.0",
+    "rollup-plugin-terser": "^7.0.2",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
     "start": "cross-env HOST=0.0.0.0 react-scripts start",

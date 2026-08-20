@@ -40,23 +40,32 @@ const isReadOnly = (req, res, next) => {
   next();
 };
 
-// Call Report specific: admin role OR malarvannan/priyanka by name
+// Strict admin only (not subadmin) — prevents privilege escalation via role-change
+const isAdminOnly = (req, res, next) => {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ message: "Only admin can perform this action" });
+  }
+  next();
+};
+
+// Call Report specific: admin, subadmin, employee roles OR malarvannan/priyanka by name
 const canEditCallReport = (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({ message: "Not authenticated" });
   }
-  const isAdmin = req.user.role === "admin";
+  const hasValidRole = ["admin", "subadmin", "employee"].includes(req.user.role);
   const userName = (req.user.name || "").trim().toLowerCase();
   const isAllowedUser = CALL_REPORT_EDITORS.includes(userName);
-  if (isAdmin || isAllowedUser) {
+  if (hasValidRole || isAllowedUser) {
     return next();
   }
-  return res.status(403).json({ message: "Access denied: only admin, Malarvannan or Priyanka can modify call reports" });
+  return res.status(403).json({ message: "Access denied" });
 };
 
 module.exports = {
   verifyToken,
   isAdmin,
+  isAdminOnly,
   isEmployee,
   isReadOnly,
   canEditCallReport,

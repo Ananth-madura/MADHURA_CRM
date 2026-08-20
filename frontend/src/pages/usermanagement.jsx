@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import "../Styles/tailwind.css";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
-import { Users, Plus, Edit2, Trash2, Ban, Unlock, Search, X, Check, AlertCircle } from "lucide-react";
+import { Plus, Edit2, Trash2, Ban, Unlock, Search, X, Key } from "lucide-react";
 
 import { API } from "../config";
 
@@ -14,17 +14,18 @@ const UserManagement = () => {
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-const [formData, setFormData] = useState({
-        first_name: "",
-        email: "",
-        user_password: "",
-        emp_id: "",
-        job_title: "Developer",
-        emp_role: "Developer",
-        system_role: "employee",
-        mobile_number: "",
-        emp_address: "",
-      });
+  const [formData, setFormData] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    user_password: "",
+    emp_id: "",
+    job_title: "",
+    emp_role: "",
+    system_role: "employee",
+    mobile_number: "",
+    emp_address: "",
+  });
 
   const fetchUsers = async () => {
     try {
@@ -44,6 +45,19 @@ const [formData, setFormData] = useState({
     fetchUsers();
   }, []);
 
+  const resetFormData = () => ({
+    first_name: "",
+    last_name: "",
+    email: "",
+    user_password: "",
+    emp_id: "",
+    job_title: "",
+    emp_role: "",
+    system_role: "employee",
+    mobile_number: "",
+    emp_address: ""
+  });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -52,33 +66,26 @@ const [formData, setFormData] = useState({
         headers: { Authorization: `Bearer ${token}` }
       });
       setShowModal(false);
-      setFormData({
-        first_name: "",
-        email: "",
-        user_password: "",
-        emp_id: "",
-        job_title: "Developer",
-        emp_role: "Developer",
-        system_role: "employee",
-        mobile_number: "",
-        emp_address: ""
-      });
+      setFormData(resetFormData());
       fetchUsers();
+      alert("Employee created successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create user");
     }
   };
 
-  const handleEdit = (user) => {
-    setSelectedUser(user);
+  const handleEdit = (u) => {
+    setSelectedUser(u);
     setFormData({
-      first_name: user.first_name || "",
-      email: user.email || "",
-      emp_id: user.emp_id || "",
-      job_title: user.position || "Developer",
-      emp_role: user.empRole || "Developer",
-      mobile_number: user.mobile_number || "",
-      emp_address: user.emp_address || ""
+      first_name: u.first_name || "",
+      last_name: u.last_name || "",
+      email: u.email || "",
+      emp_id: u.emp_id || "",
+      job_title: u.job_title || "",
+      emp_role: u.emp_role || "",
+      system_role: u.role || "employee",
+      mobile_number: u.mobile_number || "",
+      emp_address: u.emp_address || ""
     });
     setShowEditModal(true);
   };
@@ -87,11 +94,28 @@ const [formData, setFormData] = useState({
     e.preventDefault();
     try {
       const token = localStorage.getItem("token");
-      await axios.put(`${API}/api/auth/update-user/${selectedUser.id}`, formData, {
+      // Update user info
+      await axios.put(`${API}/api/auth/update-user/${selectedUser.id}`, {
+        ...formData,
+        role: formData.system_role
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      // If role changed, call change-role too (only admin can)
+      if (formData.system_role && formData.system_role !== selectedUser.role) {
+        try {
+          await axios.put(`${API}/api/auth/change-role/${selectedUser.id}`, { role: formData.system_role }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        } catch (roleErr) {
+          console.log("Role update note:", roleErr.response?.data?.message);
+        }
+      }
+
       setShowEditModal(false);
       fetchUsers();
+      alert("Employee updated successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update user");
     }
@@ -125,8 +149,9 @@ const [formData, setFormData] = useState({
   };
 
   const handleResetPassword = async (userId) => {
-    const newPassword = prompt("Enter new password for this user:");
+    const newPassword = prompt("Enter new password for this user (min. 6 chars):");
     if (!newPassword) return;
+    if (newPassword.length < 6) return alert("Password must be at least 6 characters");
     try {
       const token = localStorage.getItem("token");
       await axios.post(`${API}/api/auth/reset-password/${userId}`, { new_password: newPassword }, {
@@ -156,6 +181,16 @@ const [formData, setFormData] = useState({
     }
   };
 
+  const getRoleBadge = (role) => (
+    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+      role === "subadmin" ? "bg-orange-100 text-orange-700" :
+      role === "admin" ? "bg-purple-100 text-purple-700" :
+      "bg-gray-100 text-gray-600"
+    }`}>
+      {role || "employee"}
+    </span>
+  );
+
   if (loading) {
     return <div className="p-6 text-center text-gray-500">Loading users...</div>;
   }
@@ -168,7 +203,7 @@ const [formData, setFormData] = useState({
           <span className="text-sm text-gray-500">Dashboard &gt; User Management</span>
         </div>
         <button
-          onClick={() => { setFormData({ first_name: "", email: "", user_password: "", emp_id: "", job_title: "Developer", emp_role: "Developer", mobile_number: "", emp_address: "" }); setShowModal(true); }}
+          onClick={() => { setFormData(resetFormData()); setShowModal(true); }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
         >
           <Plus size={18} /> Add Employee
@@ -197,48 +232,40 @@ const [formData, setFormData] = useState({
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Email</th>
                 <th className="px-4 py-3 text-left">Emp ID</th>
-                <th className="px-4 py-3 text-left">Position</th>
+                <th className="px-4 py-3 text-left">Job Title</th>
                 <th className="px-4 py-3 text-left">Role</th>
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user, index) => (
-                <tr key={user.id} className="border-b hover:bg-gray-50">
+              {filteredUsers.map((u, index) => (
+                <tr key={u.id} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400">{index + 1}</td>
-                  <td className="px-4 py-3 font-medium">{user.first_name}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.email}</td>
-                  <td className="px-4 py-3">{user.emp_id || "-"}</td>
-                  <td className="px-4 py-3">{user.position || "-"}</td>
-                  <td className="px-4 py-3">
-                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                       user.role === "subadmin" ? "bg-orange-100 text-orange-700" :
-                       user.role === "admin" ? "bg-purple-100 text-purple-700" :
-                       "bg-gray-100 text-gray-600"
-                     }`}>
-                       {user.role || "employee"}
-                     </span>
-                   </td>
-                  <td className="px-4 py-3 text-center">{getStatusBadge(user.status)}</td>
+                  <td className="px-4 py-3 font-medium">{u.first_name} {u.last_name || ""}</td>
+                  <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                  <td className="px-4 py-3">{u.emp_id || "-"}</td>
+                  <td className="px-4 py-3">{u.job_title || "-"}</td>
+                  <td className="px-4 py-3">{getRoleBadge(u.role)}</td>
+                  <td className="px-4 py-3 text-center">{getStatusBadge(u.status)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
-                      user.role === "admin" ? (
+                      {u.email?.toLowerCase() === "kk@achmecommunication.com" ? (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-                          🔒 Admin
+                          🔒 Primary Admin
                         </span>
                       ) : (
                         <>
-                          <button onClick={() => handleEdit(user)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                          <button onClick={() => handleEdit(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleBan(user.id, user.status)} className={`p-2 rounded ${user.status === "banned" ? "text-green-600 hover:bg-green-50" : "text-orange-600 hover:bg-orange-50"}`} title={user.status === "banned" ? "Unban" : "Ban"}>
-                            {user.status === "banned" ? <Unlock size={16} /> : <Ban size={16} />}
+                          <button onClick={() => handleBan(u.id, u.status)} className={`p-2 rounded ${u.status === "banned" ? "text-green-600 hover:bg-green-50" : "text-orange-600 hover:bg-orange-50"}`} title={u.status === "banned" ? "Unban" : "Ban"}>
+                            {u.status === "banned" ? <Unlock size={16} /> : <Ban size={16} />}
                           </button>
-                          <button onClick={() => handleResetPassword(user.id)} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Reset Password">
-                            <AlertCircle size={16} />
+                          <button onClick={() => handleResetPassword(u.id)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded" title="Reset Password">
+                            <Key size={16} />
                           </button>
-                          <button onClick={() => handleDelete(user.id)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete">
+                          <button onClick={() => handleDelete(u.id)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete">
                             <Trash2 size={16} />
                           </button>
                         </>
@@ -268,53 +295,53 @@ const [formData, setFormData] = useState({
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">Full Name *</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">First Name *</label>
                   <input type="text" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} className="w-full border rounded-lg p-2" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">Email *</label>
-                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full border rounded-lg p-2" required />
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Last Name</label>
+                  <input type="text" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} className="w-full border rounded-lg p-2" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Email *</label>
+                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full border rounded-lg p-2" required />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Password *</label>
                   <input type="password" value={formData.user_password} onChange={(e) => setFormData({ ...formData, user_password: e.target.value })} className="w-full border rounded-lg p-2" required />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Employee ID</label>
                   <input type="text" value={formData.emp_id} onChange={(e) => setFormData({ ...formData, emp_id: e.target.value })} className="w-full border rounded-lg p-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Mobile Number</label>
+                  <input type="text" value={formData.mobile_number} onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })} className="w-full border rounded-lg p-2" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Job Title</label>
-                  <select value={formData.job_title} onChange={(e) => setFormData({ ...formData, job_title: e.target.value })} className="w-full border rounded-lg p-2">
-                    <option value="Developer">Developer</option>
-                    <option value="BDM">BDM</option>
-                    <option value="Designer">Designer</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Support">Support</option>
-                  </select>
+                  <input type="text" value={formData.job_title} onChange={(e) => setFormData({ ...formData, job_title: e.target.value })} placeholder="e.g. Sales Manager" className="w-full border rounded-lg p-2" />
                 </div>
-<div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Role</label>
-                <select value={formData.emp_role} onChange={(e) => setFormData({ ...formData, emp_role: e.target.value })} className="w-full border rounded-lg p-2">
-                  <option value="Developer">Developer</option>
-                  <option value="BDM">BDM</option>
-                </select>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Department / Role</label>
+                  <input type="text" value={formData.emp_role} onChange={(e) => setFormData({ ...formData, emp_role: e.target.value })} placeholder="e.g. BDM, Admin, Service" className="w-full border rounded-lg p-2" />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">System Role</label>
-                <select value={formData.system_role || "employee"} onChange={(e) => setFormData({ ...formData, system_role: e.target.value })} className="w-full border rounded-lg p-2">
+                <select value={formData.system_role} onChange={(e) => setFormData({ ...formData, system_role: e.target.value })} className="w-full border rounded-lg p-2">
                   <option value="employee">Employee (Create/Read Only)</option>
                   <option value="subadmin">Sub-Admin (Full Access Except Users)</option>
+                  {user?.role === "admin" && (
+                    <option value="admin">Admin (Full Access)</option>
+                  )}
                 </select>
-              </div>
-            </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Mobile Number</label>
-                <input type="text" value={formData.mobile_number} onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })} className="w-full border rounded-lg p-2" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Address</label>
@@ -342,33 +369,49 @@ const [formData, setFormData] = useState({
             <form onSubmit={handleUpdate} className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">Full Name *</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">First Name *</label>
                   <input type="text" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} className="w-full border rounded-lg p-2" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">Email *</label>
-                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full border rounded-lg p-2" required />
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Last Name</label>
+                  <input type="text" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} className="w-full border rounded-lg p-2" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Email *</label>
+                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full border rounded-lg p-2" required />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Employee ID</label>
                   <input type="text" value={formData.emp_id} onChange={(e) => setFormData({ ...formData, emp_id: e.target.value })} className="w-full border rounded-lg p-2" />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Job Title</label>
-                  <select value={formData.job_title} onChange={(e) => setFormData({ ...formData, job_title: e.target.value })} className="w-full border rounded-lg p-2">
-                    <option value="Developer">Developer</option>
-                    <option value="BDM">BDM</option>
-                    <option value="Designer">Designer</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Support">Support</option>
-                  </select>
+                  <input type="text" value={formData.job_title} onChange={(e) => setFormData({ ...formData, job_title: e.target.value })} placeholder="e.g. Sales Manager" className="w-full border rounded-lg p-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Department / Role</label>
+                  <input type="text" value={formData.emp_role} onChange={(e) => setFormData({ ...formData, emp_role: e.target.value })} placeholder="e.g. BDM, Admin, Service" className="w-full border rounded-lg p-2" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Mobile Number</label>
-                <input type="text" value={formData.mobile_number} onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })} className="w-full border rounded-lg p-2" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Mobile Number</label>
+                  <input type="text" value={formData.mobile_number} onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })} className="w-full border rounded-lg p-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">System Role</label>
+                  <select value={formData.system_role} onChange={(e) => setFormData({ ...formData, system_role: e.target.value })} className="w-full border rounded-lg p-2">
+                    <option value="employee">Employee</option>
+                    <option value="subadmin">Sub-Admin</option>
+                    {user?.role === "admin" && (
+                      <option value="admin">Admin</option>
+                    )}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Address</label>

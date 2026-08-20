@@ -24,6 +24,7 @@ import {
   Building2, MessageSquare, AlertCircle,
   CheckSquare, ListTodo, Briefcase, User
 } from "lucide-react";
+import { useToast } from "../components/Toast";
 
 import { API } from "../config/api";
 
@@ -86,6 +87,7 @@ const StatusBadge = ({ count, label, status, active, onClick }) => {
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { info } = useToast();
   const fetching = useRef(false);
 
   const [leads, setLeads] = useState([]);
@@ -125,11 +127,11 @@ const Dashboard = () => {
     if (fetching.current) return;
     fetching.current = true;
     setLoading(true);
-    const urls = [`${API_BACKEND}/api/Telecalls`,`${API_BACKEND}/api/Walkins`,`${API_BACKEND}/api/Fields`,
-      `${API_BACKEND}/api/quotations`,`${API_BACKEND}/api/invoice`,`${API_BACKEND}/api/payments`,
-      `${API_BACKEND}/api/client`,`${API_BACKEND}/api/task`,`${API_BACKEND}/api/task/activity`,
-      `${API_BACKEND}/api/targets`,`${API_BACKEND}/api/amc`,`${API_BACKEND}/api/call-reports`,
-      `${API_BACKEND}/api/contract`,`${API_BACKEND}/api/estimate`,`${API_BACKEND}/api/performainvoice`];
+    const urls = [`${API_BACKEND}/api/Telecalls`, `${API_BACKEND}/api/Walkins`, `${API_BACKEND}/api/Fields`,
+    `${API_BACKEND}/api/quotations`, `${API_BACKEND}/api/invoice`, `${API_BACKEND}/api/payments`,
+    `${API_BACKEND}/api/client`, `${API_BACKEND}/api/task`, `${API_BACKEND}/api/task/activity`,
+    `${API_BACKEND}/api/targets`, `${API_BACKEND}/api/amc`, `${API_BACKEND}/api/call-reports`,
+    `${API_BACKEND}/api/contract`, `${API_BACKEND}/api/estimate`, `${API_BACKEND}/api/performainvoice`];
     try {
       const res = await Promise.all(urls.map(u => axios.get(u).catch(() => null)));
       const d = res.map(r => r && r.data ? r.data : []);
@@ -140,7 +142,7 @@ const Dashboard = () => {
         const res = await Promise.all(fb.map(u => axios.get(u).catch(() => null)));
         const d = res.map(r => r && r.data ? r.data : []);
         batchSet(d);
-      } catch (__) {}
+      } catch (__) { }
     }
     setLoading(false);
     setLastFetch(new Date());
@@ -156,10 +158,36 @@ const Dashboard = () => {
   }, [fetchAll]);
 
   useEffect(() => {
-    const fn = () => fetchAll();
+    const fn = (payload) => {
+      fetchAll();
+      let message = "Dashboard updated with live changes!";
+      if (payload && payload.path) {
+        const path = payload.path.toLowerCase();
+        let action = "Updated";
+        if (payload.method === "POST") action = "Created";
+        if (payload.method === "DELETE") action = "Deleted";
+
+        if (path.includes("telecall")) {
+          message = `Telecalling Lead ${action} Live!`;
+        } else if (path.includes("walkin")) {
+          message = `Walk-in Lead ${action} Live!`;
+        } else if (path.includes("fields") || path.includes("field")) {
+          message = `Field Visit Lead ${action} Live!`;
+        } else if (path.includes("quotation")) {
+          message = `Quotation ${action} Live!`;
+        } else if (path.includes("invoice") || path.includes("performainvoice")) {
+          message = `Proforma/Invoice ${action} Live!`;
+        } else if (path.includes("task")) {
+          message = `Task ${action} Live!`;
+        } else if (path.includes("amc") || path.includes("contract")) {
+          message = `Contract ${action} Live!`;
+        }
+      }
+      info(message);
+    };
     socket.on("data_changed", fn);
     return () => socket.off("data_changed", fn);
-  }, [fetchAll]);
+  }, [fetchAll, info]);
 
   useEffect(() => {
     const id = setInterval(() => fetchAll(), 20000);
@@ -264,7 +292,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
             { icon: IndianRupee, title: "My Sales Today", value: todaysPerformaSales, sub: `₹${todaysPerformaSales.toLocaleString("en-IN")}`, color: "bg-gradient-to-br from-emerald-500 to-emerald-600", onClick: () => navigate("/dashboard/performainvoice") },
-            { icon: FileText, title: "My Quotations", value: totalQuotations, sub: `₹${(totalQuotationValue/1000).toFixed(1)}K total`, color: "bg-gradient-to-br from-violet-500 to-violet-600", onClick: () => navigate("/dashboard/quotation") },
+            { icon: FileText, title: "My Quotations", value: totalQuotations, sub: `₹${(totalQuotationValue / 1000).toFixed(1)}K total`, color: "bg-gradient-to-br from-violet-500 to-violet-600", onClick: () => navigate("/dashboard/quotation") },
             { icon: ClipboardList, title: "My Tasks", value: `${completedTasks}/${totalTasksCount}`, sub: `${taskCompletionRate}% completed`, color: "bg-gradient-to-br from-rose-500 to-rose-600", onClick: () => navigate("/dashboard/task") },
             { icon: UserCheck, title: "My Clients", value: myClients, sub: `${totalClients} total clients`, color: "bg-gradient-to-br from-indigo-500 to-indigo-600", onClick: () => navigate("/dashboard/clients") },
           ].map(card => (
@@ -277,8 +305,8 @@ const Dashboard = () => {
               <p className="text-xs text-muted font-medium truncate">{card.title}</p>
               <h3 className="text-lg md:text-xl font-bold text-ink mt-1 truncate">
                 {card.title.includes("Sales") ? <><AnimatedCounter value={card.value} prefix="₹" /></> :
-                 card.title.includes("Tasks") ? card.value :
-                 <AnimatedCounter value={card.value} />}
+                  card.title.includes("Tasks") ? card.value :
+                    <AnimatedCounter value={card.value} />}
               </h3>
               <p className="text-[10px] md:text-xs text-muted mt-1 truncate">{card.sub}</p>
             </motion.div>
@@ -335,17 +363,17 @@ const Dashboard = () => {
           ))}
         </div>
 
-        {/* Remainder & Followup */}
+        {/* Remainder & Followup
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="card p-4 md:p-5"><Remainder data={remainderSummary} notes={remainderNotes} /></div>
           <div className="card p-4 md:p-5"><Followup data={followupSummary} notes={followupNotes} /></div>
-        </div>
+        </div> */}
 
         {/* Secondary Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { icon: CreditCard, title: "Payments", value: totalPayments, sub: `₹${(totalPaymentAmount/1000).toFixed(1)}K`, onClick: () => navigate("/dashboard/payments"), color: "bg-gradient-to-br from-teal-500 to-teal-600" },
-            { icon: Calculator, title: "Estimates", value: totalEstimates, sub: `₹${(totalEstimateValue/100000).toFixed(1)}L`, onClick: () => navigate("/dashboard/estimates"), color: "bg-gradient-to-br from-pink-500 to-pink-600" },
+            // { icon: CreditCard, title: "Payments", value: totalPayments, sub: `₹${(totalPaymentAmount / 1000).toFixed(1)}K`, onClick: () => navigate("/dashboard/payments"), color: "bg-gradient-to-br from-teal-500 to-teal-600" },
+            { icon: Calculator, title: "Estimates", value: totalEstimates, sub: `₹${(totalEstimateValue / 100000).toFixed(1)}L`, onClick: () => navigate("/dashboard/estimates"), color: "bg-gradient-to-br from-pink-500 to-pink-600" },
             { icon: Shield, title: "AMC Active", value: activeAmcContracts, sub: `${totalAmcContracts} total`, onClick: () => navigate("/dashboard/amc"), color: "bg-gradient-to-br from-emerald-500 to-emerald-600" },
             { icon: Phone, title: "Call Reports", value: todaysCallReports, sub: `${totalCallReports} total`, onClick: () => navigate("/dashboard/call-report"), color: "bg-gradient-to-br from-orange-500 to-orange-600" },
           ].map(card => (

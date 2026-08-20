@@ -752,12 +752,18 @@ async function ensureTablesAndColumns() {
     { table: "service_estimations", column: "gst_mode", definition: "gst_mode VARCHAR(20) DEFAULT 'Exclusive'" },
     { table: "service_estimations", column: "status", definition: "status VARCHAR(20) DEFAULT 'Pending'" },
     { table: "services", column: "gst_mode", definition: "gst_mode VARCHAR(20) DEFAULT 'Exclusive'" },
-    { table: "estimatenew", column: "gst_mode", definition: "gst_mode VARCHAR(20) DEFAULT 'Exclusive'" }
+    { table: "estimatenew", column: "gst_mode", definition: "gst_mode VARCHAR(20) DEFAULT 'Exclusive'" },
+    // WhatsApp automation dedupe columns (waPaymentDueScheduler.js / waLeadFollowupScheduler.js)
+    { table: "clientinvoices", column: "wa_payment_due_sent", definition: "wa_payment_due_sent TINYINT(1) DEFAULT 0" },
+    { table: "telecalls", column: "wa_followup_sent_date", definition: "wa_followup_sent_date DATE DEFAULT NULL" },
+    { table: "walkins", column: "wa_followup_sent_date", definition: "wa_followup_sent_date DATE DEFAULT NULL" },
+    { table: "fields", column: "wa_followup_sent_date", definition: "wa_followup_sent_date DATE DEFAULT NULL" }
   ];
 
   const enumFixes = [
     { table: "tasks", column: "project_priority", oldEnum: "'Low','Normal','High','Urgent'", newEnum: "'Low','Normal','Medium','High','Urgent'" },
-    { table: "teammember", column: "emp_role", oldEnum: "'Developer','BDM'", newEnum: "'Developer','BDM','Manager','Sales'" },
+    // teammember.emp_role is converted to VARCHAR in seedDefaultEmployees() below — no
+    // enum widen needed (or possible) here anymore.
     { table: "telecalls", column: "call_outcome", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted','Closed','Billed','Custom'" },
     { table: "walkins", column: "walkin_status", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted','Disqualified','Closed','Billed','Custom'" },
     { table: "fields", column: "field_outcome", oldEnum: "'New','Converted','Disqualified'", newEnum: "'New','Hot Case','Warm Case','Cold Case','Not Required','Converted','Disqualified','Closed','Billed','Custom'" }
@@ -838,7 +844,11 @@ async function seedDefaultEmployees() {
       });
     });
     await new Promise((resolve) => {
-      db.query("ALTER TABLE teammember MODIFY COLUMN emp_role ENUM('Developer','BDM','Manager','Sales') DEFAULT 'Sales'", (err) => {
+      // emp_role is freeform ("Admin dept", "sales dept", "Service", ...) everywhere it's
+      // written (authRoutes.js, team.js accept any string) — a fixed ENUM here re-fought
+      // that on every boot and started failing ("Data truncated") the moment any row held
+      // a role outside the 4 hardcoded values. VARCHAR accepts whatever role text is in use.
+      db.query("ALTER TABLE teammember MODIFY COLUMN emp_role VARCHAR(150) DEFAULT 'Sales'", (err) => {
         if (err) console.log("Alter teammember emp_role:", err.message);
         else console.log("Teammember emp_role updated");
         resolve();

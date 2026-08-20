@@ -69,16 +69,15 @@ describe("Auth /api/auth", () => {
       expect(res.body.message).toBe("Invalid or expired OTP");
     });
     it("should succeed", async () => {
-      let call = 0;
       mockDb.query.mockImplementation((sql, values, cb) => {
         const callback = typeof values === "function" ? values : cb;
-        call++;
-        if (call === 1) return callback(null, [{ email: "a@b.com", otp: "1234", expires_at: new Date(Date.now() + 99999) }]);
-        if (call === 2) return callback(null, { insertId: 99 });
-        if (call >= 3) {
-          // DELETE email_otp, INSERT teammember, INSERT admin_notifications, emitNotification
-          if (typeof callback === "function") callback(null, {});
+        if (sql.includes("SELECT * FROM email_otp")) {
+          return callback(null, [{ email: "a@b.com", otp: "1234", expires_at: new Date(Date.now() + 99999) }]);
         }
+        if (sql.includes("INSERT INTO users")) {
+          return callback(null, { insertId: 99 });
+        }
+        if (typeof callback === "function") callback(null, {});
       });
       const res = await request(app).post("/api/auth/register").send({ first_name: "A", email: "a@b.com", otp: "1234", user_password: "pass", emp_id: "E1" });
       expect(res.statusCode).toBe(200);

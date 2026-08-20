@@ -6,116 +6,205 @@ const { getNotificationIO } = require("../sockets/notifications");
 
 /* GET ALL TARGETS (Admin) */
 router.get("/", verifyToken, isAdmin, (req, res) => {
-  const currentMonth = new Date().toISOString().slice(0, 7);
   const now = new Date();
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonthStr = prevMonth.toISOString().slice(0, 7);
-  db.query(`SELECT t.*, COALESCE(a.achieved_amount, 0) as achieved_amount, COALESCE(a.achieved_count, 0) as achieved_count, COALESCE(a.month_year, ?) as current_month FROM task_targets t LEFT JOIN task_achievements a ON t.id = a.target_id AND a.month_year = ? ORDER BY t.created_at DESC`,
-    [currentMonth, currentMonth],
-    (err, rows) => {
+  const currentMonth = now.toISOString().slice(0, 7);
+  const currentYear = now.getFullYear();
+
+  db.query(
+    `SELECT t.*, COALESCE(a.achieved_amount, 0) AS achieved_amount, COALESCE(a.achieved_count, 0) AS achieved_count
+     FROM task_targets t
+     LEFT JOIN task_achievements a ON t.id = a.target_id AND a.month_year = ?
+     ORDER BY t.created_at DESC`,
+    [currentMonth],
+    async (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       if (rows.length === 0) return res.json(rows);
 
-      const carryForwardChecks = rows.map(row => {
-        return new Promise((resolve) => {
-          db.query("SELECT achieved_amount FROM task_achievements WHERE user_name = ? AND month_year = ?",
-            [row.user_name, prevMonthStr],
-            (err2, prevRows) => {
-              let carryForward = 0;
-              if (prevRows && prevRows.length > 0 && prevRows[0].achieved_amount < (row.monthly_target || 0)) {
-                carryForward = (row.monthly_target || 0) - prevRows[0].achieved_amount;
-              }
-              db.query("UPDATE task_targets SET carry_forward = ?, effective_target = ? WHERE id = ?",
-                [carryForward, (row.monthly_target || 0) + carryForward, row.id],
-                () => {
-                  row.carry_forward = carryForward;
-                  row.effective_target = (row.monthly_target || 0) + carryForward;
-                  row.pending_amount = Math.max(0, (row.effective_target || (row.monthly_target || 0)) - (row.achieved_amount || 0));
-                  resolve();
-                }
-              );
-            }
-          );
-        });
-      });
+      // For each user, compute full carry-forward chain and ytd
+      const enrichedRows = await Promise.all(rows.map(row => new Promise(resolve => {
+        db.query(
+          `SELECT a.month_year, a.achieved_amount, a.achieved_count, t.monthly_target AS target_monthly
+           FROM task_achievements a
+           JOIN task_targets t ON a.target_id = t.id
+           WHERE a.user_name = ?
+           ORDER BY a.month_year ASC`,
+          [row.user_name],
+          (err2, allAch) => {
+            const monthlyTarget = parseFloat(row.monthly_target) || 0;
+            const yearlyTarget = parseFloat(row.yearly_target) || 0;
 
-      Promise.all(carryForwardChecks).then(() => {
-        const userNames = rows.map(r => r.user_name).filter(Boolean);
-        if (userNames.length === 0) return res.json(rows);
+            const enrichedHistory = [];
+            let runningCarry = 0;
 
-        const placeholders = userNames.map(() => '?').join(',');
-        db.query(`SELECT a.*, t.monthly_target as target_monthly FROM task_achievements a JOIN task_targets t ON a.target_id = t.id WHERE a.user_name IN (${placeholders}) ORDER BY a.month_year DESC`,
-          userNames,
-          (err2, historyRows) => {
-            if (err2) return res.json(rows);
+            for (const h of (allAch || [])) {
+              const mTarget = parseFloat(h.target_monthly) || monthlyTarget;
+              const achieved = parseFloat(h.achieved_amount) || 0;
+              const effTarget = mTarget + runningCarry;
+              const balance = Math.max(0, effTarget - achieved);
+              const pct = effTarget > 0 ? Math.round((achieved / effTarget) * 100) : 0;
 
-            const historyMap = {};
-            historyRows.forEach(h => {
-              if (!historyMap[h.user_name]) historyMap[h.user_name] = [];
-              historyMap[h.user_name].push({
+              enrichedHistory.push({
                 month_year: h.month_year,
-                monthly_target: h.target_monthly,
-                achieved_amount: h.achieved_amount,
-                achieved_count: h.achieved_count
+                monthly_target: mTarget,
+                carry_forward: runningCarry,
+                effective_target: effTarget,
+                achieved_amount: achieved,
+                achieved_count: h.achieved_count || 0,
+                balance,
+                pct,
+                status: pct >= 100 ? "Completed" : pct >= 50 ? "Process" : "New"
               });
-            });
 
-            const finalRows = rows.map(row => ({
-              ...row,
-              current_month: currentMonth,
-              history: historyMap[row.user_name] || []
-            }));
+              runningCarry = achieved < effTarget ? (effTarget - achieved) : 0;
+            }
 
-            res.json(finalRows);
-          });
-      });
+            const hasCurrentMonth = (allAch || []).some(h => h.month_year === currentMonth);
+            const currentCarry = hasCurrentMonth
+              ? (enrichedHistory.find(h => h.month_year === currentMonth)?.carry_forward ?? 0)
+              : runningCarry;
+
+            const effectiveTarget = monthlyTarget + currentCarry;
+            const pendingAmount = Math.max(0, effectiveTarget - parseFloat(row.achieved_amount || 0));
+
+            const ytdAmount = (allAch || [])
+              .filter(h => h.month_year && h.month_year.startsWith(`${currentYear}`))
+              .reduce((sum, h) => sum + parseFloat(h.achieved_amount || 0), 0);
+
+            // Update carry_forward and effective_target in DB for this user
+            db.query(
+              "UPDATE task_targets SET carry_forward = ?, effective_target = ? WHERE id = ?",
+              [currentCarry, effectiveTarget, row.id],
+              () => resolve({
+                ...row,
+                carry_forward: currentCarry,
+                effective_target: effectiveTarget,
+                pending_amount: pendingAmount,
+                ytd_amount: ytdAmount,
+                current_month: currentMonth,
+                history: [...enrichedHistory].reverse() // DESC for display
+              })
+            );
+          }
+        );
+      })));
+
+      res.json(enrichedRows);
     }
   );
 });
+
+
 
 /* GET TARGET FOR USER */
 router.get("/my", verifyToken, (req, res) => {
   const user_id = req.user.id;
   const user_name = req.query.user_name || req.user.first_name || req.user.name;
-  const currentMonth = new Date().toISOString().slice(0, 7);
   const now = new Date();
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonthStr = prevMonth.toISOString().slice(0, 7);
+  const currentMonth = now.toISOString().slice(0, 7);
+  const currentYear = now.getFullYear();
 
-  db.query(`SELECT t.*, COALESCE(a.achieved_amount, 0) as achieved_amount, COALESCE(a.achieved_count, 0) as achieved_count FROM task_targets t LEFT JOIN task_achievements a ON t.id = a.target_id AND a.month_year = ? WHERE (t.user_id = ? OR t.user_name = ?)`,
+  // Fetch target record
+  db.query(
+    `SELECT t.*, COALESCE(a.achieved_amount, 0) AS achieved_amount, COALESCE(a.achieved_count, 0) AS achieved_count
+     FROM task_targets t
+     LEFT JOIN task_achievements a ON t.id = a.target_id AND a.month_year = ?
+     WHERE (t.user_id = ? OR t.user_name = ?) LIMIT 1`,
     [currentMonth, user_id, user_name],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!rows[0]) return res.json(null);
 
       const target = rows[0];
-      db.query("SELECT achieved_amount FROM task_achievements WHERE user_name = ? AND month_year = ?",
-        [target.user_name, prevMonthStr],
-        (err2, prevRows) => {
-          let carryForward = 0;
-          if (prevRows && prevRows.length > 0 && prevRows[0].achieved_amount < (target.monthly_target || 0)) {
-            carryForward = (target.monthly_target || 0) - prevRows[0].achieved_amount;
-          }
-          const effectiveTarget = (target.monthly_target || 0) + carryForward;
-          const pendingAmount = Math.max(0, effectiveTarget - (target.achieved_amount || 0));
+      const monthlyTarget = parseFloat(target.monthly_target) || 0;
+      const yearlyTarget = parseFloat(target.yearly_target) || 0;
 
-          db.query(`SELECT a.*, t.monthly_target as target_monthly FROM task_achievements a JOIN task_targets t ON a.target_id = t.id WHERE a.user_name = ? ORDER BY a.month_year DESC LIMIT 12`,
+      // Fetch ALL monthly achievements for this user (full history, ordered ASC for carry-forward chain)
+      db.query(
+        `SELECT a.month_year, a.achieved_amount, a.achieved_count, t.monthly_target AS target_monthly
+         FROM task_achievements a
+         JOIN task_targets t ON a.target_id = t.id
+         WHERE a.user_name = ?
+         ORDER BY a.month_year ASC`,
+        [target.user_name],
+        (err2, allAchRows) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+
+          // ── Build enriched history with per-month carry-forward chain ────────
+          const enrichedHistory = [];
+          let runningCarry = 0;
+
+          for (const row of (allAchRows || [])) {
+            const mTarget = parseFloat(row.target_monthly) || monthlyTarget;
+            const achieved = parseFloat(row.achieved_amount) || 0;
+            const effTarget = mTarget + runningCarry;
+            const balance = Math.max(0, effTarget - achieved);
+            const pct = effTarget > 0 ? Math.round((achieved / effTarget) * 100) : 0;
+
+            enrichedHistory.push({
+              month_year: row.month_year,
+              monthly_target: mTarget,
+              carry_forward: runningCarry,
+              effective_target: effTarget,
+              achieved_amount: achieved,
+              achieved_count: row.achieved_count || 0,
+              balance,
+              pct,
+              status: pct >= 100 ? "Completed" : pct >= 50 ? "Process" : "New"
+            });
+
+            // Next month carries forward any unmet portion of EFFECTIVE target
+            if (achieved < effTarget) {
+              runningCarry = effTarget - achieved; // shortfall carries forward
+            } else {
+              runningCarry = 0; // fully met or exceeded — no carry-forward
+            }
+          }
+
+          // Current month carry-forward = last computed runningCarry
+          // (if current month already in allAchRows, it was processed above)
+          // If current month is NOT yet in allAchRows, carry-forward is runningCarry
+          const hasCurrentMonth = (allAchRows || []).some(r => r.month_year === currentMonth);
+          const currentCarry = hasCurrentMonth
+            ? (enrichedHistory.find(h => h.month_year === currentMonth)?.carry_forward ?? 0)
+            : runningCarry;
+
+          const effectiveTarget = monthlyTarget + currentCarry;
+          const currentAchieved = parseFloat(target.achieved_amount) || 0;
+          const pendingAmount = Math.max(0, effectiveTarget - currentAchieved);
+
+          // ── YTD (Year-To-Date): sum all achievements in current calendar year ─
+          const ytdAmount = (allAchRows || [])
+            .filter(r => r.month_year && r.month_year.startsWith(`${currentYear}`))
+            .reduce((sum, r) => sum + parseFloat(r.achieved_amount || 0), 0);
+
+          // Return history in DESC order (most recent first) for display
+          const historyDesc = [...enrichedHistory].reverse();
+
+          // Fetch recent submissions/updates for timeline
+          db.query(
+            `SELECT id, amount, description, month_year, created_at
+             FROM task_updates WHERE user_name = ? ORDER BY created_at DESC LIMIT 20`,
             [target.user_name],
-            (err3, historyRows) => {
-              const history = historyRows ? historyRows.map(h => ({
-                month_year: h.month_year,
-                monthly_target: h.target_monthly,
-                achieved_amount: h.achieved_amount,
-                achieved_count: h.achieved_count
+            (err3, submRows) => {
+              const submissions = submRows ? submRows.map(s => ({
+                id: s.id,
+                amount: s.amount,
+                description: s.description || "",
+                month_year: s.month_year,
+                created_at: s.created_at,
+                source: (s.description || "").toLowerCase().includes("via quotation billed") ? "auto" : "manual"
               })) : [];
 
               res.json({
                 ...target,
-                carry_forward: carryForward,
+                hasTarget: true,
+                carry_forward: currentCarry,
                 effective_target: effectiveTarget,
                 pending_amount: pendingAmount,
+                ytd_amount: ytdAmount,
                 current_month: currentMonth,
-                history
+                history: historyDesc,
+                submissions
               });
             }
           );
@@ -124,6 +213,7 @@ router.get("/my", verifyToken, (req, res) => {
     }
   );
 });
+
 
 /* CREATE/UPDATE TARGET (Admin) */
 router.post("/", verifyToken, isAdmin, (req, res) => {
@@ -236,57 +326,70 @@ router.post("/update", verifyToken, (req, res) => {
               db.query("INSERT INTO task_activity (task_id, action, message) VALUES (?, ?, ?)",
                 [targetId, "Target Update", `${user_name} updated achievement by Rs.${Number(amount).toLocaleString()}`]);
 
-              const notificationIO = getNotificationIO();
               db.query("SELECT SUM(achieved_amount) as total FROM task_achievements WHERE user_name = ? AND month_year = ?",
                 [user_name, currentMonth],
                 (selErr, selRows) => {
-                  const totalAchieved = selRows[0]?.total || 0;
+                  const totalAchieved = Number(selRows?.[0]?.total || 0);
                   const percentage = monthlyTarget > 0 ? Math.round((totalAchieved / monthlyTarget) * 100) : 0;
+                  const isCompleted = percentage >= 100;
 
-                  if (notificationIO) {
-                    // DISABLED: Old notification system
-                    /*
-                    notificationIO.emitNotification("target_updated", { id: targetId, userId: user_id, userName: user_name, newAmount: amount, totalAchieved, percentage, type: "achievement" }, null, true);
-                    if (percentage >= 100) notificationIO.emitNotification("target_achieved", { id: targetId, userId: user_id, userName: user_name, percentage, type: "achievement" }, null, true);
-                    */
-                  }
+                  const notifMsg = isCompleted
+                    ? `🎯 ${user_name} has COMPLETED their monthly target! Achieved ₹${Number(totalAchieved).toLocaleString()} (${percentage}%)`
+                    : `${user_name} achieved ₹${Number(amount).toLocaleString()} — Total: ₹${Number(totalAchieved).toLocaleString()} (${percentage}%)`;
 
-              db.query("INSERT INTO admin_notifications (type, user_id, message, related_id, related_type, priority) VALUES (?, ?, ?, ?, ?, ?)",
-                    ["target_achievement", user_id, `${user_name} achieved Rs.${Number(amount).toLocaleString()} - Total: Rs.${Number(totalAchieved).toLocaleString()} (${percentage}%)`, targetId, "target", percentage >= 100 ? "high" : "normal"],
-                    (err, result) => {
-                      if (!err) {
-                        const notificationIO = getNotificationIO();
-                        if (notificationIO) {
-                          notificationIO.sendToAdmin("new_notification", {
-                            id: result.insertId,
-                            type: "target_achievement",
-                            message: `${user_name} achieved Rs.${Number(amount).toLocaleString()} (${percentage}%)`,
+                  db.query(
+                    "INSERT INTO admin_notifications (type, user_id, message, related_id, related_type, priority) VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                      isCompleted ? "target_completed" : "target_achievement",
+                      user_id, notifMsg, targetId, "target",
+                      isCompleted ? "high" : "normal"
+                    ],
+                    (errN, resultN) => {
+                      if (!errN) {
+                        const io = getNotificationIO();
+                        if (io) {
+                          // Send to admin: achievement update
+                          io.sendToAdmin("new_notification", {
+                            id: resultN.insertId,
+                            type: isCompleted ? "target_completed" : "target_achievement",
+                            message: notifMsg,
                             employee_name: user_name,
-                            priority: percentage >= 100 ? "high" : "normal",
+                            priority: isCompleted ? "high" : "normal",
                             is_read: 0,
                             created_at: new Date().toISOString()
                           });
-                        }
-                      }
 
-                      const notifIO = getNotificationIO();
-                      if (notifIO) {
-                        notifIO.emit("data_changed", {
-                          type: "target_achievement",
-                          user_name,
-                          amount: Number(amount),
-                          totalAchieved: Number(totalAchieved),
-                          percentage,
-                          targetId,
-                          month: currentMonth
-                        });
+                          // If target completed — also send a special celebratory alert
+                          if (isCompleted) {
+                            io.sendToAdmin("target_completed", {
+                              user_name,
+                              totalAchieved: Number(totalAchieved),
+                              percentage,
+                              targetId,
+                              month: currentMonth,
+                              message: `🎯 ${user_name} completed their target for ${currentMonth}!`
+                            });
+                          }
+
+                          // Broadcast data change so all open dashboards refresh
+                          io.emit("data_changed", {
+                            type: "target_achievement",
+                            user_name,
+                            amount: Number(amount),
+                            totalAchieved: Number(totalAchieved),
+                            percentage,
+                            targetId,
+                            month: currentMonth
+                          });
+                        }
                       }
 
                       res.json({
                         message: "Achievement updated",
                         target_id: targetId,
                         achieved_amount: Number(totalAchieved),
-                        percentage
+                        percentage,
+                        is_completed: isCompleted
                       });
                     }
                   );
@@ -324,7 +427,8 @@ router.get("/history", verifyToken, (req, res) => {
             amount: s.amount,
             description: s.description || "",
             month_year: s.month_year,
-            created_at: s.created_at
+            created_at: s.created_at,
+            source: (s.description || "").toLowerCase().includes("via quotation billed") ? "auto" : "manual"
           })) : [];
 
           res.json({ monthly: rows, submissions });

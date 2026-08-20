@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { ToastProvider, useToast } from "./components/Toast";
 import { InAppToastContainer } from "./components/InAppToast";
+import ReminderPopup from "./components/ReminderPopup";
+import EnableNotificationsBanner from "./components/EnableNotificationsBanner";
 import { useEffect } from "react";
 import axios from "axios";
 import Login from "./auth/login";
@@ -34,12 +36,22 @@ import Reports from "./pages/reports";
 import InvoicePreview from "./pages/invoicepreview";
 import Notifications from "./pages/notifications";
 import AMCService from "./pages/amc";
+import WhatsAppPage from "./pages/whatsapp";
+import WATemplates from "./pages/whatsappTemplates";
+import WAGroups from "./pages/whatsappGroups";
+import WACampaigns from "./pages/whatsappCampaigns";
+import WAAnalytics from "./pages/whatsappAnalytics";
+import WAContacts from "./pages/whatsappContacts";
+import WAAutomations from "./pages/whatsappAutomations";
+import WAFlows from "./pages/whatsappFlows";
+import WAAccounts from "./pages/whatsappAccounts";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
 import UserManagement from "./pages/usermanagement";
 import InstallPrompt from "./components/InstallPrompt";
 import PwaManager from "./components/PwaManager";
 import NetworkSetupBanner from "./components/NetworkSetupBanner";
+import { Agentation } from "agentation";
 
 const getApiBackend = () => {
   if (typeof window !== "undefined" && window.location.port !== "3000") {
@@ -125,6 +137,8 @@ export default function App() {
       <NotificationProvider>
         <ToastProvider>
           <InAppToastContainer />
+          <ReminderPopup />
+          <EnableNotificationsBanner />
           <DBConnectionChecker />
           <NetworkSetupBanner />
           <InstallPrompt />
@@ -163,9 +177,19 @@ export default function App() {
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="whatsapp" element={<WhatsAppPage />} />
+                <Route path="whatsapp/contacts" element={<WAContacts />} />
+                <Route path="whatsapp/templates" element={<WATemplates />} />
+                <Route path="whatsapp/groups" element={<WAGroups />} />
+                <Route path="whatsapp/campaigns" element={<WACampaigns />} />
+                <Route path="whatsapp/automations" element={<WAAutomations />} />
+                <Route path="whatsapp/flows" element={<WAFlows />} />
+                <Route path="whatsapp/analytics" element={<WAAnalytics />} />
+                <Route path="whatsapp/accounts" element={<WAAccounts />} />
               </Route>
             </Routes>
           </BrowserRouter>
+          {process.env.NODE_ENV === "development" && <Agentation />}
         </ToastProvider>
       </NotificationProvider>
     </AuthProvider>

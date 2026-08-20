@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { API } from "../config/api";
-import logoImg from "../images/achme2logo-high.jpeg";
-import brandLogo from "../images/achme-logo-high.jpeg";
+import logoImg from "../layout/Madhura-logo.png";
+import brandLogo from "../layout/Madhura-logo.png";
 import { BRANCH_DATA, BANK_DETAILS } from "../config/branchConfig";
 import "../Styles/form-template.css";
 
@@ -13,7 +13,33 @@ const TYPE_MAP = {
   service: { label: "SERVICE ESTIMATION", prefix: "SE" },
 };
 
-const fmt = (val) => `Rs. ${(Number(val || 0)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = (val, showSym = true) => {
+  const n = Number(val || 0);
+  const formatted = n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+  return showSym ? `\u20B9 ${formatted}` : formatted;
+};
+
+const numberToWords = (num) => {
+  const a = ["", "One ", "Two ", "Three ", "Four ", "Five ", "Six ", "Seven ", "Eight ", "Nine ",
+    "Ten ", "Eleven ", "Twelve ", "Thirteen ", "Fourteen ", "Fifteen ", "Sixteen ",
+    "Seventeen ", "Eighteen ", "Nineteen "];
+  const b = ["", "", "Twenty ", "Thirty ", "Forty ", "Fifty ", "Sixty ", "Seventy ", "Eighty ", "Ninety "];
+  const helper = (n) => {
+    let str = "";
+    if (n >= 10000000) { str += helper(Math.floor(n / 10000000)) + "Crore "; n %= 10000000; }
+    if (n >= 100000) { str += helper(Math.floor(n / 100000)) + "Lakh "; n %= 100000; }
+    if (n >= 1000) { str += helper(Math.floor(n / 1000)) + "Thousand "; n %= 1000; }
+    if (n >= 100) { str += a[Math.floor(n / 100)] + "Hundred "; n %= 100; }
+    if (n > 0) {
+      if (n < 20) str += a[n];
+      else str += b[Math.floor(n / 10)] + a[n % 10];
+    }
+    return str;
+  };
+  let n = Math.round(num);
+  if (n === 0) return "Zero Rupees Only";
+  return helper(n).trim() + " Rupees Only";
+};
 
 const formatDate = (d) =>
   d
@@ -70,6 +96,10 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
       });
   }, [quotationId, type]);
 
+  // The footer group is pinned to the bottom of the page via flexbox
+  // (.ft-content is a flex column; .ft-page-footer-group uses margin-top:auto).
+  // No JS pagination simulation is needed for the on-screen preview.
+
   if (loading) {
     return (
       <div className="ft-wrapper">
@@ -113,14 +143,98 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
   const grandTotal = Number(h.grand_total || 0) || (subtotal - totalDiscount + totalCGST + totalSGST + totalIGST);
 
   const taxRate = getTaxRate(h);
-  const hasGST = taxRate > 0;
+  const hasGST = taxRate > 0 || totalCGST > 0 || totalSGST > 0 || totalIGST > 0;
   const showCGST = totalCGST > 0;
   const showSGST = totalSGST > 0;
   const showIGST = totalIGST > 0;
   const showDiscount = totalDiscount > 0;
 
+  // Derive actual % from stored amounts for accurate label display
+  // For Inclusive GST, tax base is subtotal minus the tax amounts themselves
+  const gstModeStr = h.gst_mode || "Exclusive";
+  const grossBase = subtotal - totalDiscount;
+  const taxableBase = gstModeStr === "Inclusive"
+    ? Math.max(grossBase - totalCGST - totalSGST - totalIGST, 0)
+    : grossBase;
+  const cgstRate = showCGST && taxableBase > 0 ? +((totalCGST / taxableBase) * 100).toFixed(2).replace(/\.?0+$/, '') : taxRate / 2;
+  const sgstRate = showSGST && taxableBase > 0 ? +((totalSGST / taxableBase) * 100).toFixed(2).replace(/\.?0+$/, '') : taxRate / 2;
+  const igstRate = showIGST && taxableBase > 0 ? +((totalIGST / taxableBase) * 100).toFixed(2).replace(/\.?0+$/, '') : taxRate;
+
+  let showBreakdown = true;
+  if (h.terms_separate_orders) {
+    try {
+      const so = typeof h.terms_separate_orders === "string"
+        ? JSON.parse(h.terms_separate_orders)
+        : h.terms_separate_orders;
+      if (so && (so.show_gst_breakdown === false || so.hide_gst_percentage === true)) {
+        showBreakdown = false;
+      }
+    } catch (e) { }
+  }
+
+  let attachedImages = [];
+  if (h.terms_separate_orders) {
+    try {
+      const so = typeof h.terms_separate_orders === "string"
+        ? JSON.parse(h.terms_separate_orders)
+        : h.terms_separate_orders;
+      if (so && so.attached_images) {
+        attachedImages = so.attached_images;
+      }
+    } catch (e) { }
+  }
+
+  const branchStateForGst = (h.supplier_branch === "Bangalore" ? "karnataka" : "tamil nadu");
+  const clientStateForGst = (h.client_state || "").toLowerCase().trim();
+  const sameState = branchStateForGst === clientStateForGst && clientStateForGst !== "";
+
+  const gstBreakdown = [];
+  if (gstModeStr !== "Exempt" && gstModeStr !== "Without GST") {
+    const groups = {};
+    rows.forEach(r => {
+      const taxRate = Number(r.tax) || 0;
+      if (taxRate === 0) return;
+      const qty = Number(r.quantity || 0);
+      const price = Number(r.price || 0);
+      const discount = Number(r.discount || 0);
+      const base = price * qty - discount;
+
+      let gstAmount = 0;
+      if (gstModeStr === "Inclusive") {
+        const taxableValue = base / (1 + taxRate / 100);
+        gstAmount = base - taxableValue;
+      } else {
+        gstAmount = (base * taxRate) / 100;
+      }
+
+      if (gstAmount > 0) {
+        if (!groups[taxRate]) groups[taxRate] = 0;
+        groups[taxRate] += gstAmount;
+      }
+    });
+
+    const hasCgstSgst = totalCGST > 0 || totalSGST > 0;
+    const hasIgst = totalIGST > 0;
+    const isCgstSgst = hasCgstSgst ? true : (hasIgst ? false : sameState);
+
+    Object.keys(groups).sort((a, b) => Number(b) - Number(a)).forEach(rateStr => {
+      const rate = Number(rateStr);
+      const amt = groups[rateStr];
+      if (isCgstSgst) {
+        gstBreakdown.push({ label: `CGST ${(rate / 2)}%`, amount: amt / 2 });
+        gstBreakdown.push({ label: `SGST ${(rate / 2)}%`, amount: amt / 2 });
+      } else {
+        gstBreakdown.push({ label: `IGST ${rate}%`, amount: amt });
+      }
+    });
+  }
+
   const hasHSN = rows.some((r) => r.hsn_sac);
   const hasBrandModel = rows.some((r) => r.brand_model && String(r.brand_model).trim() !== "");
+  const hasDescription = rows.some((r) => r.description && String(r.description).trim() !== "");
+
+  const branchPhone = BRANCH_DATA[h.supplier_branch]?.phone || "0422 4397555 , 2563666";
+  const branchPhoneDisplay = branchPhone.split(",").map(p => p.trim()).map(p => `+91 ${p}`).join("  |  ");
 
   const branchData = getBranchData(h.supplier_branch);
   const fromAddress = h.resolved_from_address || h.from_address_custom || branchData.address || "436H Avinashi Road Opp to SMS Hotel, Peelamedu, Coimbatore-641004";
@@ -145,7 +259,7 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
   const clientCountry = h.client_country && h.client_country !== "India" ? `, ${h.client_country}` : "";
 
   const terms = [];
-  if (h.terms_general === 1 || h.terms_general === true) terms.push("General Terms & Conditions apply.");
+  if (h.terms_general === 1 || h.terms_general === true) { /* General T&C — checkbox only, no body text */ }
   if (h.terms_tax === 1 || h.terms_tax === true) terms.push("Prices quoted are exclusive of Sales and Service Tax.");
   if (h.gst_mode) terms.push(`GST: ${h.gst_mode === "Exclusive" ? "GST Extra" : h.gst_mode === "Inclusive" ? "GST Inclusive" : "GST Exempt"}`);
   if (h.terms_project_period) terms.push(`Project Period: ${h.terms_project_period}`);
@@ -157,7 +271,7 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
       if (so?.installation) terms.push("B. Installation / Services");
       if (so?.usd) terms.push("C. Price may vary based on USD rates");
       if (so?.boq) terms.push("D. Factory BOQ may vary");
-    } catch (e) {}
+    } catch (e) { }
   }
   if (h.terms_payment) {
     const pt = h.terms_payment === "Custom" ? h.terms_payment_custom : h.terms_payment;
@@ -214,11 +328,11 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                       <div className="ft-compact">{fromAddress}</div>
                       <div className="ft-contact-line">
                         <span className="label">Ph:</span>
-                        <span>0422-2569966, 4376555</span>
+                        <span>{branchPhoneDisplay}</span>
                       </div>
                       <div className="ft-contact-line">
                         <span className="label">Email:</span>
-                        <span>info@achmecommunication.com</span>
+                        <span>sales@achmecommunication.com</span>
                       </div>
                       <div className="ft-contact-line">
                         <span className="label">Web:</span>
@@ -248,7 +362,7 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                       {h.mobile_number && (
                         <div className="ft-contact-line">
                           <span className="label">Ph:</span>
-                          <span>{h.mobile_number}</span>
+                          <span>+91 {h.mobile_number}</span>
                         </div>
                       )}
                       {h.email && (
@@ -265,16 +379,16 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                     <table>
                       <thead>
                         <tr>
-                          <th>S.NO</th>
-                          {/* Show BRAND / MODEL first if available */}
-                          {hasBrandModel && <th>BRAND / MODEL</th>}
-                          <th>DESCRIPTION</th>
-                          {hasHSN && <th>HSN/SAC</th>}
-                          <th>QTY</th>
-                          <th>UOM</th>
-                          {hasGST && <th>GST%</th>}
-                          <th>PRICE</th>
-                          <th>TOTAL</th>
+                          <th style={{ width: "35px" }}>S.NO</th>
+                          {/* Show BRAND first if available */}
+                          {hasBrandModel && <th style={{ width: "80px", maxWidth: "80px" }}>BRAND</th>}
+                          {hasDescription && <th style={{ width: "240px", maxWidth: "240px" }}>DESCRIPTION</th>}
+                          {hasHSN && <th style={{ width: "80px" }}>HSN/SAC</th>}
+                          <th style={{ width: "40px" }}>QTY</th>
+                          <th style={{ width: "100px", textAlign: "center" }}>UNIT PRICE</th>
+                          <th style={{ width: "50px" }}>UOM</th>
+                          {hasGST && <th style={{ width: "48px" }}>GST%</th>}
+                          <th style={{ width: "90px", textAlign: "right" }}>TOTAL VALUE</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -284,33 +398,38 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                           const lineTotal = qty * price;
                           return (
                             <tr key={i}>
-                              <td data-label="S.NO">{i + 1}</td>
-                              {hasBrandModel && <td data-label="BRAND / MODEL">{r.brand_model || "---"}</td>}
-                              <td data-label="DESCRIPTION">
-                                {(() => {
-                                  const desc = r.description || "---";
-                                  const commaIndex = desc.indexOf(",");
-                                  if (commaIndex !== -1) {
-                                    const heading = desc.substring(0, commaIndex + 1);
-                                    const body = desc.substring(commaIndex + 1);
-                                    return (
-                                      <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
-                                        <span style={{ fontWeight: "700", color: "#1e293b", fontSize: "12px" }}>{heading}</span>
-                                        <span style={{ fontWeight: "400", color: "#64748b", fontSize: "10.5px", marginTop: "2px" }}>{body.trim()}</span>
-                                      </div>
-                                    );
-                                  }
-                                  return <strong>{desc}</strong>;
-                                })()}
-                              </td>
-                              {hasHSN && <td data-label="HSN/SAC">{r.hsn_sac || "---"}</td>}
-                              <td data-label="QTY">{qty}</td>
-                              <td data-label="UOM">{r.uom || "Nos"}</td>
-                              {hasGST && <td data-label="GST%">{r.tax || taxRate}%</td>}
-                              <td data-label="PRICE">{fmt(price)}</td>
-                              <td data-label="TOTAL">
-                                <strong>{fmt(lineTotal)}</strong>
-                              </td>
+                              <td data-label="S.NO" style={{ width: "35px" }}>{i + 1}</td>
+                              {hasBrandModel && (
+                                <td data-label="BRAND" style={{ width: "80px", maxWidth: "80px", wordBreak: "break-word" }}>
+                                  {r.brand_model || "---"}
+                                </td>
+                              )}
+                              {hasDescription && (
+                                <td data-label="DESCRIPTION" style={{ width: "240px", maxWidth: "240px", wordBreak: "break-word" }}>
+                                  {(() => {
+                                    const desc = r.description || "";
+                                    if (!desc.trim()) return "";
+                                    const commaIndex = desc.indexOf(",");
+                                    if (commaIndex !== -1) {
+                                      const heading = desc.substring(0, commaIndex + 1);
+                                      const body = desc.substring(commaIndex + 1);
+                                      return (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "2px", textAlign: "left" }}>
+                                          <span style={{ fontWeight: "700", color: "#1e293b", fontSize: "12px" }}>{heading}</span>
+                                          <span style={{ fontWeight: "400", color: "#64748b", fontSize: "10.5px", marginTop: "2px" }}>{body.trim()}</span>
+                                        </div>
+                                      );
+                                    }
+                                    return <strong>{desc}</strong>;
+                                  })()}
+                                </td>
+                              )}
+                              {hasHSN && <td data-label="HSN/SAC" style={{ width: "80px" }}>{r.hsn_sac || "---"}</td>}
+                              <td data-label="QTY" style={{ width: "40px" }}>{qty}</td>
+                              <td data-label="UNIT PRICE" style={{ width: "100px", textAlign: "center" }}>{fmt(price, false)}</td>
+                              <td data-label="UOM" style={{ width: "50px" }}>{r.uom || "Nos"}</td>
+                              {hasGST && <td data-label="GST%" style={{ width: "48px" }}>{r.tax || taxRate}%</td>}
+                              <td data-label="TOTAL VALUE" style={{ width: "90px", textAlign: "right", fontWeight: "bold" }}>{fmt(lineTotal, false)}</td>
                             </tr>
                           );
                         })}
@@ -346,23 +465,48 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                               <td style={{ width: "50%" }}>{fmt(totalDiscount)}</td>
                             </tr>
                           )}
-                          {showCGST && (
-                            <tr>
-                              <td style={{ width: "50%" }}>CGST ({taxRate / 2}%)</td>
-                              <td style={{ width: "50%" }}>{fmt(totalCGST)}</td>
-                            </tr>
-                          )}
-                          {showSGST && (
-                            <tr>
-                              <td style={{ width: "50%" }}>SGST ({taxRate / 2}%)</td>
-                              <td style={{ width: "50%" }}>{fmt(totalSGST)}</td>
-                            </tr>
-                          )}
-                          {showIGST && (
-                            <tr>
-                              <td style={{ width: "50%" }}>IGST ({taxRate}%)</td>
-                              <td style={{ width: "50%" }}>{fmt(totalIGST)}</td>
-                            </tr>
+                          {showBreakdown ? (
+                            gstBreakdown.map((b, idx) => (
+                              <tr key={idx}>
+                                <td style={{ width: "50%" }}>{b.label}</td>
+                                <td style={{ width: "50%" }}>{fmt(b.amount)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <>
+                              {showCGST && showIGST ? (
+                                <>
+                                  <tr>
+                                    <td style={{ width: "50%" }}>CGST</td>
+                                    <td style={{ width: "50%" }}>{fmt(totalCGST)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ width: "50%" }}>SGST</td>
+                                    <td style={{ width: "50%" }}>{fmt(totalSGST)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ width: "50%" }}>IGST</td>
+                                    <td style={{ width: "50%" }}>{fmt(totalIGST)}</td>
+                                  </tr>
+                                </>
+                              ) : showCGST || showSGST || (totalIGST === 0 && sameState) ? (
+                                <>
+                                  <tr>
+                                    <td style={{ width: "50%" }}>CGST</td>
+                                    <td style={{ width: "50%" }}>{fmt(totalCGST)}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ width: "50%" }}>SGST</td>
+                                    <td style={{ width: "50%" }}>{fmt(totalSGST)}</td>
+                                  </tr>
+                                </>
+                              ) : showIGST || (totalCGST === 0 && totalSGST === 0 && !sameState) ? (
+                                <tr>
+                                  <td style={{ width: "50%" }}>IGST</td>
+                                  <td style={{ width: "50%" }}>{fmt(totalIGST)}</td>
+                                </tr>
+                              ) : null}
+                            </>
                           )}
                           {!hasGST && (
                             <tr>
@@ -373,6 +517,11 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                           <tr className="ft-grand-total">
                             <td style={{ width: "50%" }}>GRAND TOTAL</td>
                             <td style={{ width: "50%" }}>{fmt(grandTotal)}</td>
+                          </tr>
+                          <tr>
+                            <td colSpan="2" style={{ fontSize: "10px", color: "#475569", fontStyle: "italic", paddingTop: "6px", textAlign: "right" }}>
+                              <strong>Amount in Words:</strong> {numberToWords(grandTotal)}
+                            </td>
                           </tr>
                         </table>
                       </div>
@@ -418,39 +567,53 @@ const Invoice = ({ quotationId, type = "quotation", pdfMode = false }) => {
                     </div>
                   </section>
 
-                  {/* BRANCHES */}
-                  {otherBranches.length > 0 && (
-                    <div className="ft-branch-box">
-                      <div className="ft-section-heading">OUR BRANCHES</div>
-                      {otherBranches.map((b, i) => (
-                        <span key={i}>
-                          <strong>{b.name}:</strong> {b.address} | <strong>GSTIN:</strong> {b.gstin}
-                          {i < otherBranches.length - 1 && <br />}
-                        </span>
-                      ))}
+                  {attachedImages && attachedImages.length > 0 && (
+                    <div className="ft-attached-images-box">
+                      <div className={`ft-attached-images-grid count-${attachedImages.length}`}>
+                        {attachedImages.map((img, idx) => (
+                          <div key={idx} className="ft-attached-image-container">
+                            <img src={img} alt={`Attachment ${idx + 1}`} />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
-                  {/* FOOTER */}
-                  {(execName || execPhone || execEmail) && (
-                    <footer className="ft-footer">
-                      {execName && (
-                        <div>
-                          <span>Executive:</span> {execName}
-                        </div>
-                      )}
-                      {execPhone && (
-                        <div>
-                          <span>PH:</span> {execPhone}
-                        </div>
-                      )}
-                      {execEmail && (
-                        <div>
-                          <span>Email:</span> {execEmail}
-                        </div>
-                      )}
-                    </footer>
-                  )}
+                  {/* BRANCHES + FOOTER: always pinned to bottom of last page */}
+                  <div className="ft-page-footer-group" style={{ marginTop: "auto" }}>
+                    {otherBranches.length > 0 && (
+                      <div className="ft-branch-box">
+                        <div className="ft-section-heading">OUR BRANCHES</div>
+                        {otherBranches.map((b, i) => (
+                          <span key={i}>
+                            <strong>{b.name}:</strong> {b.address} | <strong>GSTIN:</strong> {b.gstin}
+                            {i < otherBranches.length - 1 && <br />}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {(execName || execPhone || execEmail) && (
+                      <footer className="ft-footer">
+                        {execName && (
+                          <span>
+                            <strong>Executive:</strong> {execName}
+                          </span>
+                        )}
+                        {execPhone && (
+                          <span>
+                            <strong>PH:</strong> {execPhone}
+                          </span>
+                        )}
+                        {execEmail && (
+                          <span>
+                            <strong>Email:</strong> {execEmail}
+                          </span>
+                        )}
+                      </footer>
+                    )}
+                  </div>
+
                 </td>
               </tr>
             </tbody>

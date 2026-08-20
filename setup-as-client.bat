@@ -15,7 +15,17 @@ echo   ELEVATING TO ADMINISTRATOR PRIVILEGES...
 echo   Required to restore DHCP, disable local tasks, and configure DNS.
 echo  ================================================================
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+    echo.
+    echo ====================================================================
+    echo ERROR: ACCESS DENIED! Administrator privileges are required.
+    echo Please accept the UAC prompt to run this script.
+    echo ====================================================================
+    echo.
+    pause
+    exit /b 1
+)
 exit /b 0
 
 :admin_authenticated

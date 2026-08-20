@@ -1,5 +1,6 @@
 import React, { useState,useEffect } from "react";
 import { Search, Plus, X,ChevronDown,Edit,Trash2 } from "lucide-react";
+import { getToday } from "../utils/leadutil";
 import "../Styles/tailwind.css";
 import axios from "axios";
 
@@ -26,7 +27,7 @@ const Payments = () =>{
   const [form, setForm] = useState({
     invoice_id: "",
     amount: "",
-    payment_date: new Date().toISOString().slice(0, 10),
+    payment_date: getToday(),
     payment_method: "",
     Transaction_ID: "",
     invoice_email: false,
@@ -127,7 +128,7 @@ const resetForm = () => {
   setForm({
     invoice_id: "",
     amount: "",
-    payment_date: new Date().toISOString().slice(0, 10),
+    payment_date: getToday(),
     payment_method: "",
     Transaction_ID: "",
     invoice_email: false,
@@ -159,32 +160,32 @@ const deletePayment = async (id) => {
     return(
     <div className="w-full">
 
-        <div className="payment-heading-tab flex gap-4 justify-between item-center">
+        <div className="payment-heading-tab flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
-          <h2 className="text-2xl font-bold text-[#1694CE] ml-[-75px]">PAYMENTS</h2>
+          <h2 className="text-2xl font-bold text-[#1694CE]">PAYMENTS</h2>
           <a className="text-sm text-gray-500 " href="vii">
             APP &gt; PAYMENTS &gt; INVOICES
           </a>
         </div>
 
-        <div className="flex gap-3">
-          <div className="flex items-center gap-3 bg-gray px-2 py-1 rounded-lg  border w-50 h-9 mt-3">
-            <Search size={18} className="text-gray-500" />
+        <div className="flex gap-3 items-center w-full sm:w-auto mt-2 sm:mt-0">
+          <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border w-full sm:w-64">
+            <Search size={18} className="text-gray-500 shrink-0" />
             <input
               type="text"
               placeholder="Search by Invoice ID..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="Search outline-none text-sm w-full bg-gray-100"
+              className="Search outline-none text-sm w-full bg-transparent"
             />
           </div>
 
-          <div className="mt-2">
+          <div className="shrink-0">
             <button
               onClick={() => tabopen(true)}
-              className="bg-[#FF3355] text-white w-12 h-12 rounded-full flex justify-center items-center shadow-lg hover:bg-[#e62848] "
+              className="bg-[#FF3355] text-white w-10 h-10 rounded-full flex justify-center items-center shadow-lg hover:bg-[#e62848] transition-colors"
             >
-              <Plus size={24} />
+              <Plus size={20} />
             </button>
           </div>
         </div>
@@ -362,8 +363,8 @@ const deletePayment = async (id) => {
           </div>
          </div>
          {/*  */}
-          <div className="mt-[60px]">
-             <table className="w-full border-collapse bg-white text-center font-[Times-New-Roman]">
+          <div className="mt-[60px] bg-white shadow rounded-xl overflow-x-auto">
+             <table className="w-full min-w-[800px] border-collapse bg-white text-center font-[Times-New-Roman]">
                <thead className="border-b">
                <tr className="text-sm text-[#1694CE]">
                 <th className="p-4">Invoice Id</th>

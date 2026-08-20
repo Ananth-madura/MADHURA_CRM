@@ -4,12 +4,13 @@ setlocal enabledelayedexpansion
 :: ACHME CRM - Headless Boot Startup Script
 :: ====================================================================
 :: This script runs automatically via Windows Task Scheduler.
-:: It is triggered TWICE for maximum reliability:
-::   1. At SYSTEM boot (before login) — via ACHME_CRM_AutoBoot task
-::   2. At user login (fallback)      — via ACHME_CRM_Login_Startup task
+:: It is triggered THREE times for maximum reliability:
+::   1. At SYSTEM boot (1 min after power-on) — ACHME_CRM_AutoBoot
+::   2. At user login (30s after login)        — ACHME_CRM_Login_Startup
+::   3. Every 5 minutes (watchdog)             — ACHME_CRM_Watchdog
 ::
 :: It restores MySQL + Nginx + PM2 backend — NO user interaction needed.
-:: Target: All services running within 30 seconds of power-on.
+:: Target: All services running within 2 minutes of power-on.
 :: ====================================================================
 
 set "ROOT=%~dp0"
@@ -20,8 +21,8 @@ set "LOG_DIR=%ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 set "LOGFILE=%LOG_DIR%\startup-restore.log"
 
-echo [%DATE% %TIME%] ===== ACHME Boot Startup (PID: %RANDOM%) ===== >> "%LOGFILE%"
-cd /d "%ROOT%"
+echo [%DATE% %TIME%] ===== ACHME Boot Startup (PID: %RANDOM%, User: %USERNAME%) ===== >> "%LOGFILE%"
+pushd "%ROOT%" >nul 2>&1
 
 :: ====================================================================
 :: PHASE 0: Load saved paths (critical for SYSTEM account)
@@ -66,15 +67,16 @@ if not defined ACHME_NPM_PREFIX (
 :npm_path_done
 
 :: ====================================================================
-:: PHASE 1: Brief wait for system initialization
+:: PHASE 1: Wait for system initialization (network + services)
 :: ====================================================================
-:: At SYSTEM boot, Windows needs a moment to start network stack and
-:: other services. 8 seconds is enough for most systems.
-echo [%DATE% %TIME%] Waiting 8 seconds for system initialization... >> "%LOGFILE%"
-timeout /t 8 /nobreak >nul
+:: At SYSTEM boot, Windows needs time to start the network stack.
+:: The scheduled task already has a 1-minute delay, but we add a small
+:: buffer here for safety on slower machines.
+echo [%DATE% %TIME%] Waiting 10 seconds for system initialization... >> "%LOGFILE%"
+ping -n 11 127.0.0.1 >nul
 
 :: ====================================================================
-:: PHASE 2: Start MySQL (with retry loop — max 6 attempts, 30s total)
+:: PHASE 2: Start MySQL (with retry loop — max 8 attempts, ~60s total)
 :: ====================================================================
 echo [%DATE% %TIME%] Phase 2: MySQL check... >> "%LOGFILE%"
 set "MYSQL_READY=0"
@@ -88,13 +90,13 @@ if not errorlevel 1 (
   goto :mysql_done
 )
 
-if !MYSQL_RETRIES! GEQ 6 (
-  echo [%DATE% %TIME%] WARNING: MySQL not responding after 6 retries. >> "%LOGFILE%"
+if !MYSQL_RETRIES! GEQ 8 (
+  echo [%DATE% %TIME%] WARNING: MySQL not responding after 8 retries. >> "%LOGFILE%"
   goto :mysql_done
 )
 
 set /a MYSQL_RETRIES+=1
-echo [%DATE% %TIME%] MySQL not ready (attempt !MYSQL_RETRIES!/6). Trying to start... >> "%LOGFILE%"
+echo [%DATE% %TIME%] MySQL not ready (attempt !MYSQL_RETRIES!/8). Trying to start... >> "%LOGFILE%"
 net start MySQL80 >nul 2>&1
 net start MySQL >nul 2>&1
 net start MySQL57 >nul 2>&1
@@ -102,7 +104,7 @@ net start MySQL84 >nul 2>&1
 net start MySQL90 >nul 2>&1
 net start mysql >nul 2>&1
 net start MariaDB >nul 2>&1
-timeout /t 5 /nobreak >nul
+ping -n 8 127.0.0.1 >nul
 goto :mysql_retry
 
 :mysql_done
@@ -174,18 +176,20 @@ if exist "%NGINX_DIR%\nginx.exe" (
   call :write_nginx_conf
   echo [%DATE% %TIME%] nginx.conf written >> "%LOGFILE%"
 
-  :: Check if nginx is already running
+  :: Check if nginx is already running and healthy
   tasklist /FI "IMAGENAME eq nginx.exe" 2>nul | findstr /i "nginx.exe" >nul 2>&1
   if errorlevel 1 (
-    :: Not running — start it as a hidden background process
+    :: Not running — kill any zombies and start fresh
+    taskkill /F /IM nginx.exe >nul 2>&1
+    ping -n 2 127.0.0.1 >nul
     pushd "%NGINX_DIR%"
-    start "" /B nginx.exe
+    start "" /B nginx.exe -p "%NGINX_DIR%"
     popd
     echo [%DATE% %TIME%] Nginx started on port 82 >> "%LOGFILE%"
   ) else (
     :: Already running — reload config
     pushd "%NGINX_DIR%"
-    nginx.exe -s reload >nul 2>&1
+    nginx.exe -p "%NGINX_DIR%" -s reload >nul 2>&1
     popd
     echo [%DATE% %TIME%] Nginx reloaded >> "%LOGFILE%"
   )
@@ -197,6 +201,23 @@ if exist "%NGINX_DIR%\nginx.exe" (
 :: PHASE 5: Start PM2 backend
 :: ====================================================================
 echo [%DATE% %TIME%] Phase 5: PM2 backend... >> "%LOGFILE%"
+
+:: Check if port 5000 is already listening (no need to start another backend)
+netstat -ano | findstr ":%BACKEND_PORT% " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+  echo [%DATE% %TIME%] Backend is already running on port %BACKEND_PORT%. Skipping start. >> "%LOGFILE%"
+  goto :backend_done
+)
+
+:: If running as SYSTEM, start the backend directly without PM2 to avoid named pipe conflict
+if "%USERNAME%"=="SYSTEM" (
+  echo [%DATE% %TIME%] Running as SYSTEM. Starting backend directly without PM2... >> "%LOGFILE%"
+  pushd "%ROOT%\backend"
+  start "achme-backend" /B node server.js >> "%ROOT%\logs\backend-boot.log" 2>&1
+  popd
+  echo [%DATE% %TIME%] Direct backend process started. >> "%LOGFILE%"
+  goto :backend_done
+)
 
 :: --- Dynamically find PM2 executable ---
 set "PM2_EXEC="
@@ -303,31 +324,125 @@ if defined PM2_EXEC (
     echo [%DATE% %TIME%] achme-backend not found after resurrect. Starting from config... >> "%LOGFILE%"
     :: Start from ecosystem config
     if exist "%ROOT%\backend\ecosystem.production.config.js" (
-      cd /d "%ROOT%\backend"
+      pushd "%ROOT%\backend"
       call "%PM2_EXEC%" start ecosystem.production.config.js >nul 2>&1
       call "%PM2_EXEC%" save >nul 2>&1
-      cd /d "%ROOT%"
+      popd
     ) else (
       :: Last resort: start server.js directly
-      cd /d "%ROOT%\backend"
+      pushd "%ROOT%\backend"
       call "%PM2_EXEC%" start server.js --name achme-backend >nul 2>&1
       call "%PM2_EXEC%" save >nul 2>&1
-      cd /d "%ROOT%"
+      popd
     )
   ) else (
     echo [%DATE% %TIME%] achme-backend successfully restored via PM2 resurrect >> "%LOGFILE%"
   )
   echo [%DATE% %TIME%] PM2 backend started >> "%LOGFILE%"
 ) else (
-  echo [%DATE% %TIME%] PM2 NOT FOUND — run start-servers.bat to install PM2 >> "%LOGFILE%"
+  :: PM2 not found — fall back to direct node start
+  echo [%DATE% %TIME%] PM2 NOT FOUND — starting backend directly with Node.js... >> "%LOGFILE%"
+  where node >nul 2>&1
+  if not errorlevel 1 (
+    pushd "%ROOT%\backend"
+    start "achme-backend" /B node server.js >> "%ROOT%\logs\backend-boot.log" 2>&1
+    popd
+    echo [%DATE% %TIME%] Backend started directly via node (no PM2) >> "%LOGFILE%"
+  ) else (
+    echo [%DATE% %TIME%] CRITICAL: Neither PM2 nor Node.js found! Backend NOT started! >> "%LOGFILE%"
+  )
 )
+
+:backend_done
+
+:: ====================================================================
+:: PHASE 6: HEALTH CHECK — Retry loop (max 2 minutes total)
+:: ====================================================================
+:: This is the final safety net. We check all services and retry
+:: any that failed. The goal is: ALL services UP within 2 minutes.
+:: ====================================================================
+echo [%DATE% %TIME%] Phase 6: Health check and retry... >> "%LOGFILE%"
+
+set "HEALTH_RETRIES=0"
+set "MAX_HEALTH_RETRIES=6"
+
+:health_check_loop
+set "ALL_HEALTHY=1"
+
+:: Check MySQL
+netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
+if errorlevel 1 (
+  set "ALL_HEALTHY=0"
+  echo [%DATE% %TIME%] Health: MySQL DOWN (retry !HEALTH_RETRIES!/%MAX_HEALTH_RETRIES%) >> "%LOGFILE%"
+  for %%m in (MySQL80 MySQL MySQL57 MySQL84 MySQL90 mysql MariaDB) do (
+    net start %%m >nul 2>&1
+  )
+)
+
+:: Check Nginx
+netstat -ano | findstr ":82 " | findstr "LISTENING" >nul 2>&1
+if errorlevel 1 (
+  set "ALL_HEALTHY=0"
+  echo [%DATE% %TIME%] Health: Nginx DOWN (retry !HEALTH_RETRIES!/%MAX_HEALTH_RETRIES%) >> "%LOGFILE%"
+  taskkill /F /IM nginx.exe >nul 2>&1
+  ping -n 2 127.0.0.1 >nul
+  if exist "%NGINX_DIR%\nginx.exe" (
+    pushd "%NGINX_DIR%"
+    start "" /B nginx.exe -p "%NGINX_DIR%"
+    popd
+  )
+)
+
+:: Check Backend
+netstat -ano | findstr ":%BACKEND_PORT% " | findstr "LISTENING" >nul 2>&1
+if errorlevel 1 (
+  set "ALL_HEALTHY=0"
+  echo [%DATE% %TIME%] Health: Backend DOWN (retry !HEALTH_RETRIES!/%MAX_HEALTH_RETRIES%) >> "%LOGFILE%"
+  :: Try starting with node directly as a last resort
+  where node >nul 2>&1
+  if not errorlevel 1 (
+    pushd "%ROOT%\backend"
+    start "achme-backend" /B node server.js >> "%ROOT%\logs\backend-boot.log" 2>&1
+    popd
+  )
+)
+
+:: If everything is healthy, we're done
+if "!ALL_HEALTHY!"=="1" (
+  echo [%DATE% %TIME%] HEALTH CHECK PASSED: All services running! >> "%LOGFILE%"
+  goto :health_done
+)
+
+:: If we've exceeded retries, stop trying
+set /a HEALTH_RETRIES+=1
+if !HEALTH_RETRIES! GEQ %MAX_HEALTH_RETRIES% (
+  echo [%DATE% %TIME%] Health check exhausted %MAX_HEALTH_RETRIES% retries. Some services may be down. >> "%LOGFILE%"
+  goto :health_done
+)
+
+:: Wait 15 seconds before retrying
+echo [%DATE% %TIME%] Waiting 15 seconds before health re-check... >> "%LOGFILE%"
+ping -n 16 127.0.0.1 >nul
+goto :health_check_loop
+
+:health_done
 
 :: Dynamically open the Access Guide (show.bat) on user login (ignores SYSTEM account)
 if not "%USERNAME%"=="SYSTEM" (
   if exist "%ROOT%\show.bat" start "" "%ROOT%\show.bat"
 )
 
+:: Final summary log
 echo [%DATE% %TIME%] ===== Boot startup complete ===== >> "%LOGFILE%"
+
+:: Log final service status
+netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (echo [%DATE% %TIME%] FINAL: MySQL    = RUNNING >> "%LOGFILE%") else (echo [%DATE% %TIME%] FINAL: MySQL    = DOWN >> "%LOGFILE%")
+netstat -ano | findstr ":82 " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (echo [%DATE% %TIME%] FINAL: Nginx    = RUNNING >> "%LOGFILE%") else (echo [%DATE% %TIME%] FINAL: Nginx    = DOWN >> "%LOGFILE%")
+netstat -ano | findstr ":%BACKEND_PORT% " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (echo [%DATE% %TIME%] FINAL: Backend  = RUNNING >> "%LOGFILE%") else (echo [%DATE% %TIME%] FINAL: Backend  = DOWN >> "%LOGFILE%")
+
 exit /b 0
 
 :: ====================================================================

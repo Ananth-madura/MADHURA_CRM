@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import "../Styles/tailwind.css";
-import logoImage from "../images/logo.png";
+import logoImage from "../layout/Madhura-logo.png";
 import { API } from "../config/api";
 
 const API_BACKEND = API;

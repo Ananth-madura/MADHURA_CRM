@@ -54,6 +54,9 @@ const fixes = [
   "ALTER TABLE service_estimations ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(50) DEFAULT NULL AFTER bank_account",
   "ALTER TABLE service_estimations ADD COLUMN IF NOT EXISTS bank_branch VARCHAR(100) DEFAULT NULL AFTER bank_ifsc",
   "ALTER TABLE service_estimations ADD COLUMN IF NOT EXISTS custom_terms TEXT DEFAULT NULL AFTER bank_branch",
+  "ALTER TABLE amc_alc_services ADD COLUMN IF NOT EXISTS created_by INT DEFAULT NULL",
+  "ALTER TABLE estimateclient ADD COLUMN IF NOT EXISTS created_by INT DEFAULT NULL",
+  "ALTER TABLE estimatenew ADD COLUMN IF NOT EXISTS created_by INT DEFAULT NULL",
 ];
 
 let done = 0;

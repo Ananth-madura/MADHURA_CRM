@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "../Styles/tailwind.css";
 import { Search, Plus, X, Edit2, Trash2 } from "lucide-react";
+import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 
@@ -51,7 +52,7 @@ const Invoice = () => {
     const qName = urlParams.get('client_name');
     if (qName) {
       setClientSearch(decodeURIComponent(qName));
-      setInvoiceDate(new Date().toISOString().slice(0, 10));
+      setInvoiceDate(getToday());
       setOpen(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     }

@@ -39,18 +39,21 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   router.get("/", verifyToken, (req, res) => {
     const { id: user_id, role } = req.user;
     const sql = `
-      SELECT t.id, t.${dateField}, t.grand_total, t.reference_no, t.status,
+      SELECT t.id, t.${dateField}, t.grand_total, t.reference_no, t.status, t.created_by,
              c.customer_name, c.mobile_number, c.email,
              COALESCE(t.client_city, c.location_city) AS location_city,
+             t.client_state, t.client_country,
              t.version, t.parent_id,
+             u.first_name AS creator_name,
              MIN(i.description) AS description
       FROM ${table} t
       JOIN customers c ON c.id = t.customer_id
       LEFT JOIN ${itemsTable} i ON i.invoice_id = t.id
+      LEFT JOIN users u ON u.id = t.created_by
       WHERE t.is_latest = 1
-      ${role === 'employee' ? 'AND t.created_by = ?' : ''}
-      GROUP BY t.id ORDER BY t.id DESC`;
-    const params = role === 'employee' ? [user_id] : [];
+      ${role === 'employee' ? 'AND (t.created_by = ? OR t.customer_id IN (SELECT cust.id FROM customers cust JOIN clients cl ON (cl.phone = cust.mobile_number OR cl.email = cust.email OR cl.name = cust.customer_name) WHERE cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?) OR cl.id IN (SELECT client_id FROM client_shares WHERE shared_to IN (SELECT id FROM teammember WHERE user_id = ?))))' : ''}
+      GROUP BY t.id, u.first_name ORDER BY t.id DESC`;
+    const params = role === 'employee' ? [user_id, user_id, user_id] : [];
     db.query(sql, params, (err, rows) => {
       if (err) return res.status(500).json(err);
       res.json(rows);
@@ -59,6 +62,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
 
   // ── GET BY ID ──────────────────────────────────────────────────────────────
   router.get("/:id", verifyToken, (req, res) => {
+    const { id: user_id, role } = req.user;
     const sql = `
       SELECT t.id AS invoice_id, t.${dateField} AS invoice_date,
              t.subtotal, t.total_tax, t.total_cgst, t.total_sgst, t.total_igst, t.total_discount, t.grand_total,
@@ -80,8 +84,11 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
       JOIN customers c ON c.id = t.customer_id
       JOIN ${itemsTable} i ON i.invoice_id = t.id
       LEFT JOIN pi_from_addresses fa ON fa.id = t.from_address_id
-      WHERE t.id = ?`;
-    db.query(sql, [req.params.id], (err, rows) => {
+      WHERE t.id = ?
+      ${role === 'employee' ? 'AND (t.created_by = ? OR t.customer_id IN (SELECT cust.id FROM customers cust JOIN clients cl ON (cl.phone = cust.mobile_number OR cl.email = cust.email OR cl.name = cust.customer_name) WHERE cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?) OR cl.id IN (SELECT client_id FROM client_shares WHERE shared_to IN (SELECT id FROM teammember WHERE user_id = ?))))' : ''}`;
+    const params = [req.params.id];
+    if (role === 'employee') params.push(user_id, user_id, user_id);
+    db.query(sql, params, (err, rows) => {
       if (err) return res.status(500).json(err);
       if (!rows.length) return res.status(404).json([]);
       res.json(rows);
@@ -160,19 +167,25 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   });
 
   // ── UPDATE ─────────────────────────────────────────────────────────────────
-  // ── VERSION HISTORY ────────────────────────────────────────────────────────
+  // ── VERSION HISTORY — includes all versions (old + current latest) ──────────
   router.get("/version-history/:id", verifyToken, (req, res) => {
+    const { id: user_id, role } = req.user;
     const sql = `
-      SELECT t.id, t.${dateField} AS invoice_date, t.grand_total, t.version, t.is_latest, t.parent_id,
+      SELECT t.id, t.${dateField} AS invoice_date,
+             DATE_FORMAT(t.created_at, '%Y-%m-%d') AS created_at,
+             t.grand_total, t.version, t.is_latest, t.parent_id,
              c.customer_name, c.mobile_number, c.email,
-             COALESCE(t.client_city, c.location_city) AS location_city
+             COALESCE(t.client_city, c.location_city) AS location_city,
+             t.client_state, t.client_country
       FROM ${table} t
       JOIN customers c ON c.id = t.customer_id
-      WHERE t.is_latest = 0
-        AND (t.parent_id = ? OR t.id = (SELECT parent_id FROM ${table} WHERE id = ?)
+      WHERE (t.parent_id = ? OR t.id = ? OR t.id = (SELECT parent_id FROM ${table} WHERE id = ?)
              OR t.parent_id = (SELECT parent_id FROM ${table} WHERE id = ? AND parent_id IS NOT NULL))
-      ORDER BY t.version DESC, t.id DESC`;
-    db.query(sql, [req.params.id, req.params.id, req.params.id], (err, rows) => {
+        ${role === 'employee' ? 'AND (t.created_by = ? OR t.customer_id IN (SELECT cust.id FROM customers cust JOIN clients cl ON (cl.phone = cust.mobile_number OR cl.email = cust.email OR cl.name = cust.customer_name) WHERE cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?) OR cl.id IN (SELECT client_id FROM client_shares WHERE shared_to IN (SELECT id FROM teammember WHERE user_id = ?))))' : ''}
+      ORDER BY t.version ASC, t.id ASC`;
+    const params = [req.params.id, req.params.id, req.params.id, req.params.id];
+    if (role === 'employee') params.push(user_id, user_id, user_id);
+    db.query(sql, params, (err, rows) => {
       if (err) return res.status(500).json(err);
       const seen = new Set();
       res.json(rows.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
@@ -200,9 +213,12 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
 
             const current = rows[0];
             const rootId = current.parent_id || id;
-            const newVersion = (current.version || 1) + 1;
+            
+            db.query(`SELECT MAX(version) AS maxVersion FROM ${table} WHERE id=? OR parent_id=?`, [rootId, rootId], (err, maxRows) => {
+              if (err) return db.rollback(() => res.status(500).json(err));
+              const newVersion = ((maxRows[0] && maxRows[0].maxVersion) || current.version || 1) + 1;
 
-            db.query(`UPDATE ${table} SET is_latest=0 WHERE id=? OR parent_id=?`, [rootId, rootId], err => {
+              db.query(`UPDATE ${table} SET is_latest=0 WHERE id=? OR parent_id=?`, [rootId, rootId], err => {
               if (err) return db.rollback(() => res.status(500).json(err));
 
               db.query(
@@ -256,6 +272,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
                 }
               );
             });
+            });
           });
         }
       );
@@ -286,11 +303,11 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
     db.beginTransaction(err => {
       if (err) return res.status(500).json(err);
       db.query(`DELETE FROM ${itemsTable} WHERE invoice_id=?`, [req.params.id], err => {
-        if (err) return db.rollback(() => res.status(500).json(err));
+        if (err) return res.status(500).json(err);
         db.query(`DELETE FROM ${table} WHERE id=?`, [req.params.id], err => {
-          if (err) return db.rollback(() => res.status(500).json(err));
+          if (err) return res.status(500).json(err);
           db.commit(err => {
-            if (err) return db.rollback(() => res.status(500).json(err));
+            if (err) return res.status(500).json(err);
             res.json({ message: "Deleted" });
           });
         });
@@ -303,14 +320,21 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   // ── DOWNLOAD PDF ───────────────────────────────────────────────────────────
   router.get("/download-pdf/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
+    const { id: user_id, role } = req.user;
     const headerSql = `SELECT t.*, c.email, c.customer_name, c.mobile_number, c.location_city, c.gst_number,
       t.${dateField} AS invoice_date, COALESCE(t.from_address_custom, fa.address) AS resolved_from_address
       FROM ${table} t JOIN customers c ON t.customer_id = c.id
-      LEFT JOIN pi_from_addresses fa ON fa.id = t.from_address_id WHERE t.id = ?`;
+      LEFT JOIN pi_from_addresses fa ON fa.id = t.from_address_id 
+      WHERE t.id = ?
+      ${role === 'employee' ? 'AND (t.created_by = ? OR t.customer_id IN (SELECT cust.id FROM customers cust JOIN clients cl ON (cl.phone = cust.mobile_number OR cl.email = cust.email OR cl.name = cust.customer_name) WHERE cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?) OR cl.id IN (SELECT client_id FROM client_shares WHERE shared_to IN (SELECT id FROM teammember WHERE user_id = ?))))' : ''}`;
     const itemsSql = `SELECT product_number, description, brand_model, hsn_sac, uom, price, quantity, tax, discount, subtotal FROM ${itemsTable} WHERE invoice_id = ? ORDER BY product_number`;
     const typeMap = { QT: "quotation", PI: "proforma", EI: "estimation", SE: "service" };
     const docType = typeMap[prefix] || "estimation";
-    db.query(headerSql, [id], (err, headerRows) => {
+    
+    const params = [id];
+    if (role === 'employee') params.push(user_id, user_id, user_id);
+    
+    db.query(headerSql, params, (err, headerRows) => {
       if (err) { console.error(`${prefix} PDF header error:`, err); return res.status(500).json({ message: "Database error: " + err.message }); }
       if (!headerRows.length) return res.status(404).json({ message: `${label} not found` });
       db.query(itemsSql, [id], async (err, items) => {
@@ -329,6 +353,7 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
   router.post("/send-email/:id", verifyToken, (req, res) => {
     const { id } = req.params;
     const { to, subject, cc, body } = req.body;
+    const { id: user_id, role } = req.user;
     const headerSql = `
       SELECT t.*, c.email, c.customer_name, c.mobile_number, c.location_city,
              t.${dateField} AS invoice_date,
@@ -336,10 +361,14 @@ function createUnifiedRouter({ table, itemsTable, prefix, dateField, label }) {
       FROM ${table} t
       JOIN customers c ON t.customer_id = c.id
       LEFT JOIN pi_from_addresses fa ON fa.id = t.from_address_id
-      WHERE t.id = ?`;
+      WHERE t.id = ?
+      ${role === 'employee' ? 'AND (t.created_by = ? OR t.customer_id IN (SELECT cust.id FROM customers cust JOIN clients cl ON (cl.phone = cust.mobile_number OR cl.email = cust.email OR cl.name = cust.customer_name) WHERE cl.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?) OR cl.id IN (SELECT client_id FROM client_shares WHERE shared_to IN (SELECT id FROM teammember WHERE user_id = ?))))' : ''}`;
     const itemsSql = `SELECT product_number, description, brand_model, hsn_sac, uom, price, quantity, tax, discount, subtotal FROM ${itemsTable} WHERE invoice_id = ? ORDER BY product_number`;
 
-    db.query(headerSql, [id], (err, headerRows) => {
+    const params = [id];
+    if (role === 'employee') params.push(user_id, user_id, user_id);
+
+    db.query(headerSql, params, (err, headerRows) => {
       if (err) return res.status(500).json(err);
       if (!headerRows.length) return res.status(404).json({ message: "Not found" });
       const inv = headerRows[0];

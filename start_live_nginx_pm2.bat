@@ -592,7 +592,7 @@ echo  [OK] Backend is responding on http://localhost:%BACKEND_PORT%/api/health
 echo.
 echo  [!] Starting Nginx on port %NGINX_PORT%...
 cd /d "%NGINX_DIR%"
-start /b nginx.exe
+start /b nginx.exe -p "%NGINX_DIR%"
 :: Give it a moment to start
 timeout /t 2 /nobreak >nul
 tasklist /fi "imagename eq nginx.exe" 2>nul | findstr /i "nginx.exe" >nul

@@ -19,13 +19,13 @@ router.post("/new", verifyToken, (req, res) => {
 
   const sql = `
     INSERT INTO estimateclient
-    (client_company, project_names, Estimate_date, Expiry_date, category)
-    VALUES (?,?,?,?,?)
+    (client_company, project_names, Estimate_date, Expiry_date, category, created_by)
+    VALUES (?,?,?,?,?,?)
   `;
 
   db.query(
     sql,
-    [client_company, project_names, Estimate_date, Expiry_date, category],
+    [client_company, project_names, Estimate_date, Expiry_date, category, req.user.id],
     (err, result) => {
       if (err) {
         console.error(err);
@@ -38,7 +38,25 @@ router.post("/new", verifyToken, (req, res) => {
 
 /* FETCH */
 router.get("/", verifyToken, (req, res) => {
-  db.query("SELECT * FROM estimateclient ORDER BY id DESC", (err, rows) => {
+  const { id: user_id, role } = req.user;
+  let sql = "SELECT * FROM estimateclient";
+  const params = [];
+  if (role === "employee") {
+    sql += ` WHERE (
+      created_by = ? 
+      OR client_company IN (
+        SELECT company_name FROM clients c
+        WHERE c.created_by = ?
+          OR c.assigned_teammember_id IN (SELECT id FROM teammember WHERE user_id = ?)
+          OR (c.original_lead_type = 'telecall' AND c.original_lead_id IN (SELECT id FROM telecalls WHERE created_by = ? OR assigned_to = ?))
+          OR (c.original_lead_type = 'walkin' AND c.original_lead_id IN (SELECT id FROM walkins WHERE created_by = ? OR assigned_to = ?))
+          OR (c.original_lead_type = 'field' AND c.original_lead_id IN (SELECT id FROM fields WHERE created_by = ? OR assigned_to = ?))
+      )
+    )`;
+    params.push(user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id);
+  }
+  sql += " ORDER BY id DESC";
+  db.query(sql, params, (err, rows) => {
     if (err) return res.status(500).json(err);
     res.json(rows);
   });

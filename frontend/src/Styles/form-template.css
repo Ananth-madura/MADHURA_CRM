@@ -3,8 +3,8 @@
 :root {
   --ink: #1a1f2e;
   --muted: #64748b;
-  --line: #cbd5e1;
-  --line-soft: #e2e8f0;
+  --line: #94a3b8;
+  --line-soft: #cbd5e1;
   --brand: #1e3a8a;
   --brand-deep: #1e293b;
   --paper: #ffffff;
@@ -17,6 +17,7 @@
 
 .ft-wrapper {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--page-bg);
   color: var(--ink);
   font-family: "Poppins", sans-serif;
@@ -30,11 +31,13 @@
   width: min(100%, 210mm);
   min-height: 297mm;
   margin: 0 auto;
-  overflow: hidden;
+  overflow: auto;
   background: var(--paper);
   border: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
   padding: clamp(14px, 3vw, 9mm);
+  display: flex;
+  flex-direction: column;
 }
 
 .ft-quotation-wrapper::before {
@@ -69,6 +72,18 @@
 .ft-content {
   position: relative;
   z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Branches + Executive footer — flexbox pins this to the bottom of the page
+   on screen (.ft-content is a flex column, so margin-top:auto eats the free
+   space and pushes the footer down). In print the @media rule below
+   neutralizes margin-top with !important. */
+.ft-page-footer-group {
+  margin-top: auto;
+  padding-top: 0;
 }
 
 .ft-header {
@@ -218,17 +233,17 @@
 .ft-table-wrap th {
   padding: 10px 8px;
   border-bottom: 2px solid var(--brand);
-  color: var(--brand-deep);
+  color: #1e293b;
   font-size: 10.5px;
   font-weight: 700;
   text-align: left;
   white-space: nowrap;
-  background: #f8fafc;
+  background: #d8e3f0;
 }
 
 .ft-table-wrap td {
   padding: 10px 8px;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid #8fa3be;
   font-size: 11px;
   vertical-align: top;
   color: var(--ink);
@@ -240,13 +255,14 @@
 }
 
 .ft-summary-table {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
+  border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
   min-height: 80px;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  background: none;
 }
 
 .ft-summary-table td {
@@ -279,11 +295,16 @@
 }
 
 .ft-terms-box,
-.ft-summary-box,
 .ft-notes-box,
 .ft-bank-box,
 .ft-branch-box {
   padding: 12px;
+}
+
+.ft-summary-box {
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
 }
 
 .ft-section-heading {
@@ -306,7 +327,7 @@
 }
 
 .ft-branch-box {
-  margin-top: 12px;
+  /* margin-top handled by ft-page-footer-group */
 }
 
 .ft-footer {
@@ -345,6 +366,37 @@
   left: 50%;
   transform: translate(-50%, -50%);
   opacity: 0.12;
+}
+
+/* Print behaviour: ensure footer appears at the bottom of every printed page
+   and avoid cutting boxes across page breaks. */
+@media print {
+  .ft-quotation-wrapper {
+    overflow: visible !important;
+    box-shadow: none;
+    border: 0;
+    width: 210mm;
+    min-height: 297mm;
+  }
+
+  /* Prevent key boxes from being split across pages */
+  .ft-bank-box,
+  .ft-notes-box,
+  .ft-summary-box,
+  .ft-terms-box {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .ft-branch-box,
+  .ft-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .ft-footer {
+    box-sizing: border-box !important;
+  }
 }
 
 @media (max-width: 760px) {
@@ -446,7 +498,8 @@
 @media print {
   @page {
     size: A4;
-    margin: 8mm 8mm 12mm 8mm;
+    /* bottom 18mm = space reserved for the fixed .ft-footer bar */
+    margin: 8mm 8mm 18mm 8mm;
   }
 
   .ft-wrapper {
@@ -457,11 +510,23 @@
 
   .ft-quotation-wrapper {
     width: 100%;
-    min-height: auto;
+    min-height: 100vh;
     border: 0;
     box-shadow: none;
     padding: 24px 0 0 0;
     overflow: visible;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ft-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ft-page-footer-group {
+    margin-top: 0 !important;
   }
 
   .ft-header {
@@ -496,7 +561,85 @@
   .ft-summary-box,
   .ft-notes-box,
   .ft-bank-box,
-  .ft-branch-box {
+  .ft-attached-images-box {
     page-break-inside: avoid;
+    break-inside: avoid;
   }
+
+  .ft-branch-box,
+  .ft-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+.ft-attached-images-box {
+  background: var(--card-bg);
+  border: 2px solid #1D3A8A !important;
+  box-shadow: 0 4px 14px rgba(29,58,138,0.20) !important;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+}
+.ft-attached-images-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.ft-attached-images-grid.count-1 {
+  display: flex;
+  justify-content: center;
+}
+.ft-attached-images-grid.count-1 .ft-attached-image-container {
+  width: 608px;
+  height: 226px;
+  margin: 0 auto;
+}
+.ft-attached-images-grid.count-2 {
+  display: grid;
+  grid-template-columns: 307px 307px;
+  gap: 11px;
+  justify-content: center;
+}
+.ft-attached-images-grid.count-2 .ft-attached-image-container {
+  width: 307px;
+  height: 265px;
+}
+.ft-attached-images-grid.count-3 {
+  display: grid;
+  grid-template-columns: 307px 285px;
+  gap: 11px;
+  justify-content: center;
+}
+.ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(1) {
+  grid-column: span 2;
+  width: 608px;
+  height: 226px;
+  margin: 0 auto;
+}
+.ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(2) {
+  width: 307px;
+  height: 265px;
+}
+.ft-attached-images-grid.count-3 .ft-attached-image-container:nth-child(3) {
+  width: 285px;
+  height: 267px;
+}
+.ft-attached-image-container {
+  background: #fff;
+  border: 2px solid #1D3A8A !important;
+  box-shadow: 0 4px 14px rgba(29,58,138,0.20) !important;
+  border-radius: 8px;
+  padding: 0px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  overflow: hidden;
+}
+.ft-attached-image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
 }

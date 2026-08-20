@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Search, Download, X, Edit2, MinusCircle, Trash2, Mail, MapPin, History, FileText } from "lucide-react";
+import { Plus, Search, Download, X, Edit2, MinusCircle, Trash2, Mail, MapPin, History, FileText, Clock } from "lucide-react";
 import ClientSearchDropdown from "../components/ClientSearchDropdown";
 import { calculateItemTotal } from "../utils/invoicecal";
 import { downloadAsHtml } from "../utils/downloadHtml";
@@ -22,6 +22,33 @@ const parseName = (fullName = "") => {
   return { salutation: "", name: fullName };
 };
 
+const resizeAndCompressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 800;
+        const scale = MAX_WIDTH / img.width;
+        if (img.width > MAX_WIDTH) {
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scale;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const base64 = canvas.toDataURL("image/jpeg", 0.7);
+        resolve(base64);
+      };
+    };
+  });
+};
+
 const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", "Liters"];
 const VALIDITY_OPTIONS = ["2 days", "5 days", "10 days", "15 days", "30 days"];
 const PAYMENT_OPTIONS = ["100% Advance", "Payment Against Delivery", "15 Days", "30 Days", "45 Days", "Custom"];
@@ -38,7 +65,7 @@ const emptyExtra = () => ({
   terms_general: false, terms_tax: false,
   terms_project_period: "30-60 days from Purchase Order date",
   terms_validity: "15 days",
-  terms_separate_orders: { material: false, installation: false, usd: false, boq: false },
+  terms_separate_orders: { material: false, installation: false, usd: false, boq: false, hide_gst_percentage: false, attached_images: [] },
   terms_payment: "", terms_payment_custom: "", terms_warranty: "",
   supplier_branch: "Coimbatore",
   bank_details_id: "hdfc",
@@ -88,6 +115,22 @@ const EstimateInvoice = () => {
   const [historyCustomerName, setHistoryCustomerName] = useState("");
   const [historySearch, setHistorySearch] = useState("");
   const [historyRootId, setHistoryRootId] = useState(null);
+  // ── Follow-ups ──────────────────────────────────────────────────────────
+  const [followupOpen, setFollowupOpen] = useState(false);
+  const [followupLeadId, setFollowupLeadId] = useState(null);
+  const [followupLeadName, setFollowupLeadName] = useState("");
+  const [newFollowupDate, setNewFollowupDate] = useState("");
+  const [newFollowupTime, setNewFollowupTime] = useState("");
+  const [newFollowupNote, setNewFollowupNote] = useState("");
+  const [leadFollowups, setLeadFollowups] = useState([]);
+  const [followupFilter, setFollowupFilter] = useState(""); // "" | "has" | "today" | "pending"
+  const [followupDateFilter, setFollowupDateFilter] = useState("");
+  const [followupSummaryMap, setFollowupSummaryMap] = useState({});
+  // ── Filters ─────────────────────────────────────────────────────────────
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [creatorFilter, setCreatorFilter] = useState("");
 
   const formatEINumber = (id, dateStr) => {
     const year = dateStr ? new Date(dateStr).getFullYear() : new Date().getFullYear();
@@ -99,6 +142,7 @@ const EstimateInvoice = () => {
     fetchEstimateInvoices();
     fetchQuotations();
     fetchFromAddresses();
+    fetchFollowupSummary();
 
     // Check for query params
     const urlParams = new URLSearchParams(window.location.search);
@@ -159,6 +203,14 @@ const EstimateInvoice = () => {
     try { const res = await axios.get(`${API}/api/estimate-invoice`, getAuthConfig()); setEstimateInvoices(res.data); }
     catch (err) { console.error(err); }
   };
+  const fetchFollowupSummary = async () => {
+    try {
+      const r = await axios.get(`${API}/api/leads/followups-summary/estimate_invoice`, getAuthConfig());
+      const map = {};
+      (r.data || []).forEach(row => { map[row.lead_id] = row; });
+      setFollowupSummaryMap(map);
+    } catch (_) { }
+  };
   const fetchQuotations = async () => {
     try { const res = await axios.get(`${API}/api/quotations`, getAuthConfig()); setQuotations(res.data); }
     catch (err) { console.error(err); }
@@ -179,6 +231,50 @@ const EstimateInvoice = () => {
       setHistoryOpen(true);
     } catch (err) { alert("Failed to load history"); }
   };
+  // ── Follow-up helpers ────────────────────────────────────────────────────
+  const openFollowupPanel = async (e, inv) => {
+    e.stopPropagation();
+    setFollowupLeadId(inv.id);
+    setFollowupLeadName(inv.customer_name);
+    setNewFollowupDate(""); setNewFollowupTime(""); setNewFollowupNote("");
+    try {
+      const res = await axios.get(`${API}/api/leads/followups/estimate_invoice/${inv.id}`, getAuthConfig());
+      setLeadFollowups(res.data);
+    } catch (_) { setLeadFollowups([]); }
+    setFollowupOpen(true);
+  };
+  const saveFollowup = async () => {
+    if (!newFollowupDate) return alert("Please select a date");
+    try {
+      await axios.post(`${API}/api/leads/followups`, {
+        lead_id: followupLeadId, lead_type: "estimate_invoice",
+        followup_date: newFollowupDate, followup_time: newFollowupTime || null, followup_notes: newFollowupNote,
+      }, getAuthConfig());
+      const res = await axios.get(`${API}/api/leads/followups/estimate_invoice/${followupLeadId}`, getAuthConfig());
+      setLeadFollowups(res.data);
+      setNewFollowupDate(""); setNewFollowupTime(""); setNewFollowupNote("");
+      fetchFollowupSummary();
+    } catch (err) { alert("Failed to save follow-up: " + (err.response?.data?.error || err.message)); }
+  };
+  const deleteFollowup = async (id) => {
+    await axios.delete(`${API}/api/leads/followups/${id}`, getAuthConfig());
+    setLeadFollowups(prev => prev.filter(f => f.id !== id));
+    fetchFollowupSummary();
+  };
+  const sendFollowupEmail = async () => {
+    const inv = estimateInvoices.find(p => p.id === followupLeadId);
+    if (!inv?.email) return alert("No email address found for this customer");
+    try {
+      setMailTo(inv.email);
+      const adminRes = await axios.get(`${API}/api/auth/admin-email`, getAuthConfig()).catch(() => ({ data: {} }));
+      setMailCc(adminRes.data?.email || "");
+      setMailSubject(`Follow-up: ${formatEINumber(inv.id, inv.invoice_date)}`);
+      setMailContent(`Dear ${inv.customer_name},\n\nThis is a follow-up regarding your estimation. Please let us know if you have any questions.\n\nThank you.`);
+      setFollowupOpen(false);
+      setMailOpen(true);
+    } catch (err) { alert("Failed to open mail: " + err.message); }
+  };
+  const fmtFollowDate = (d) => d ? new Date(d.toString().split("T")[0]).toLocaleString("en-IN", { dateStyle: "medium" }) : "---";
 
   const deleteHistoryVersion = async (e, id) => {
     e.stopPropagation();
@@ -223,7 +319,7 @@ const EstimateInvoice = () => {
           client_state: h.client_state || "",
           client_pincode: h.client_pincode || ""
         }));
-        const loadedItems = rows.map(r => ({ name: r.description, brand_model: "", hsn_sac: r.hsn_sac || "", uom: "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: 18, discount: Number(r.discount) || 0 }));
+        const loadedItems = rows.map(r => ({ name: r.description, brand_model: "", hsn_sac: r.hsn_sac || "", uom: "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: r.tax !== undefined && r.tax !== null ? Number(r.tax) : 18, discount: Number(r.discount) || 0 }));
         setItems(loadedItems);
         setDescInput(loadedItems.map(i => i.name).join(", "));
         setBrandInput(loadedItems[0]?.brand_model || "");
@@ -238,7 +334,7 @@ const EstimateInvoice = () => {
     const parsed = parseName(h.customer_name || "");
     setCustomer({ salutation: parsed.salutation, customer_name: parsed.name, mobile_number: h.mobile_number, email: h.email, gst_number: h.gst_number || "", location_city: h.location_city });
     setEstimateInvoice({ invoice_date: h.invoice_date?.split("T")[0] || "" });
-    const loadedItems = rows.map(r => ({ name: r.description, brand_model: r.brand_model || "", hsn_sac: r.hsn_sac || "", uom: r.uom || "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: 18, discount: Number(r.discount) || 0 }));
+    const loadedItems = rows.map(r => ({ name: r.description, brand_model: r.brand_model || "", hsn_sac: r.hsn_sac || "", uom: r.uom || "Nos", price: Number(r.price) || 0, qty: Number(r.quantity) || 1, tax: r.tax !== undefined && r.tax !== null ? Number(r.tax) : 18, discount: Number(r.discount) || 0 }));
     setItems(loadedItems);
     setDescInput(loadedItems.map(i => i.name).join(", "));
     setBrandInput(loadedItems[0]?.brand_model || "");
@@ -253,7 +349,15 @@ const EstimateInvoice = () => {
       terms_general: !!h.terms_general, terms_tax: !!h.terms_tax,
       terms_project_period: h.terms_project_period || "30-60 days from Purchase Order date",
       terms_validity: h.terms_validity || "15 days",
-      terms_separate_orders: h.terms_separate_orders ? JSON.parse(h.terms_separate_orders) : { material: false, installation: false, usd: false, boq: false },
+      terms_separate_orders: (() => {
+        const defaults = { material: false, installation: false, usd: false, boq: false, hide_gst_percentage: false, attached_images: [] };
+        if (h.terms_separate_orders) {
+          try {
+            return { ...defaults, ...JSON.parse(h.terms_separate_orders) };
+          } catch (e) { }
+        }
+        return defaults;
+      })(),
       terms_payment: h.terms_payment || "", terms_payment_custom: h.terms_payment_custom || "",
       terms_warranty: h.terms_warranty || "",
       supplier_branch: branch,
@@ -421,7 +525,38 @@ const EstimateInvoice = () => {
     return () => document.body.classList.remove("modal-open");
   }, [open, mailOpen]);
 
-  const filteredInvoices = estimateInvoices.filter(q => q.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredInvoices = estimateInvoices.filter(q => {
+    const matchesCustomer = q.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    let matchesDate = true;
+    const invDateStr = q.invoice_date;
+    if (invDateStr) {
+      const invDate = new Date(invDateStr.split("T")[0]);
+      if (startDate && invDate < new Date(startDate)) matchesDate = false;
+      if (endDate && invDate > new Date(endDate)) matchesDate = false;
+    }
+    let matchesStatus = true;
+    if (statusFilter && statusFilter !== "All") matchesStatus = (q.status || "Pending") === statusFilter;
+    const uniqueCreators = Array.from(new Set(estimateInvoices.map(item => item.creator_name).filter(Boolean)));
+    let matchesCreator = true;
+    if (creatorFilter && creatorFilter !== "All") matchesCreator = q.creator_name === creatorFilter;
+
+    // Follow-up filters
+    const fuSum = followupSummaryMap[q.id];
+    let matchesFollowup = true;
+    if (followupFilter === "has") matchesFollowup = !!(fuSum && fuSum.total_count > 0);
+    else if (followupFilter === "today") matchesFollowup = !!(fuSum && fuSum.today_count > 0);
+    else if (followupFilter === "pending") matchesFollowup = !!(fuSum && fuSum.pending_count > 0);
+
+    let matchesFollowupDate = true;
+    if (followupDateFilter && fuSum) {
+      matchesFollowupDate = fuSum.earliest_pending?.toString().slice(0, 10) === followupDateFilter;
+    } else if (followupDateFilter && !fuSum) {
+      matchesFollowupDate = false;
+    }
+
+    return matchesCustomer && matchesDate && matchesStatus && matchesCreator && matchesFollowup && matchesFollowupDate;
+  });
+  const uniqueCreators = Array.from(new Set(estimateInvoices.map(item => item.creator_name).filter(Boolean)));
 
   const SectionTitle = ({ children }) => (
     <div className="flex items-center gap-2 mb-4 mt-6">
@@ -472,6 +607,62 @@ const EstimateInvoice = () => {
         </div>
       </div>
 
+      {/* Filter Panel */}
+      {!viewId && (
+        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm mt-6 flex flex-wrap gap-4 items-end">
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">Start Date</span>
+            <input type="date" className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">End Date</span>
+            <input type="date" className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">Status</span>
+            <select className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="All">All Statuses</option>
+              {["Send", "Pending", "Close", "Billed", "Cancel"].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {(userRole === "admin" || userRole === "subadmin") && (
+            <div className="flex flex-col gap-1 min-w-[150px]">
+              <span className="text-xs font-bold text-gray-500 uppercase">Created By</span>
+              <select className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer" value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)}>
+                <option value="All">All Creators</option>
+                {uniqueCreators.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="flex flex-col gap-1 min-w-[170px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">Follow-up Filter</span>
+            <select
+              value={followupFilter}
+              onChange={e => setFollowupFilter(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+            >
+              <option value="">All Records</option>
+              <option value="has">Has Follow-ups</option>
+              <option value="today">Today&apos;s Follow-ups</option>
+              <option value="pending">Pending Follow-ups</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span className="text-xs font-bold text-gray-500 uppercase">Follow-up Date</span>
+            <input
+              type="date"
+              value={followupDateFilter}
+              onChange={e => setFollowupDateFilter(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+            />
+          </div>
+          <button
+            onClick={() => { setStartDate(""); setEndDate(""); setStatusFilter(""); setCreatorFilter(""); setSearchTerm(""); setFollowupFilter(""); setFollowupDateFilter(""); }}
+            className="px-4 py-2 border rounded-lg text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition h-10 flex items-center justify-center gap-1 shadow-sm"
+          >Reset Filters</button>
+        </div>
+      )}
+
       {!viewId && (
         <div className="bg-white shadow-sm rounded-xl mt-6 overflow-hidden border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm text-center border-collapse min-w-[600px]">
@@ -484,7 +675,7 @@ const EstimateInvoice = () => {
                 <th className="px-4 py-4 border-r">Date</th>
                 <th className="px-4 py-4 border-r">Total</th>
                 <th className="px-4 py-4 border-r">City</th>
-                <th className="px-4 py-4">History</th>
+                <th className="px-4 py-4">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -497,12 +688,30 @@ const EstimateInvoice = () => {
                   <td className="px-4 py-4 border-r">{p.mobile_number}</td>
                   <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
                   <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                  <td className="px-4 py-4 border-r">{p.location_city}</td>
+                  <td className="px-4 py-4 border-r">{[p.location_city, p.client_state, p.client_country].filter(Boolean).join(", ") || "---"}</td>
                   <td className="px-4 py-4 text-center">
-                    <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
-                      <History size={13} /> History
-                    </button>
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View"
+                        className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1">View
+                      </button>
+                      <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
+                        <History size={13} /> History
+                      </button>
+                      <button onClick={e => openFollowupPanel(e, p)} title="Follow-ups"
+                        className={`px-2 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${followupSummaryMap[p.id]?.today_count > 0
+                            ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                            : followupSummaryMap[p.id]?.pending_count > 0
+                              ? "bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-100"
+                              : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                          }`}>
+                        <Clock size={12} /> Follow-ups
+                        {followupSummaryMap[p.id]?.pending_count > 0 && (
+                          <span className={`ml-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-full ${followupSummaryMap[p.id]?.today_count > 0 ? "bg-red-500 text-white" : "bg-cyan-500 text-white"
+                            }`}>{followupSummaryMap[p.id]?.pending_count}</span>
+                        )}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -736,7 +945,10 @@ const EstimateInvoice = () => {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Mobile Number *</label>
-                <input type="text" value={customer.mobile_number} onChange={e => { if (/^\d{0,13}$/.test(e.target.value)) setCustomer({ ...customer, mobile_number: e.target.value }); }} maxLength={13} inputMode="numeric" className="border rounded-lg px-3 py-2 outline-none text-sm" required />
+                <div className="flex border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-100">
+                  <span className="bg-gray-100 border-r px-3 py-2 text-sm text-gray-600 font-medium flex items-center select-none">+91</span>
+                  <input type="text" value={customer.mobile_number} onChange={e => { if (/^\d{0,10}$/.test(e.target.value)) setCustomer({ ...customer, mobile_number: e.target.value }); }} maxLength={10} inputMode="numeric" className="px-3 py-2 outline-none text-sm flex-1" required />
+                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
@@ -769,7 +981,7 @@ const EstimateInvoice = () => {
                 </div>
                 {/* 
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Brand / Model</label>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Brand (Optional)</label>
                   <textarea value={brandInput} onChange={e => setBrandInput(e.target.value)} placeholder="e.g. Dell, Cisco..." className="w-full border rounded-lg px-3 py-2 outline-none min-h-[60px] text-sm" />
                 </div>
                 */}
@@ -840,14 +1052,81 @@ const EstimateInvoice = () => {
               <div className="w-full max-w-[320px] border border-gray-200 rounded-2xl bg-white p-5 shadow-sm">
                 {(() => {
                   const t = getTaxCalculations();
+                  const gstMode = "Exclusive";
+                  const taxableValue = t.subtotal - t.total_discount;
+                  const taxBase = t.subtotal - t.total_discount;
+
+                  const showBreakdown = !extra.terms_separate_orders?.hide_gst_percentage;
+
+                  const branchState = (BRANCH_OPTIONS.find(b => b.value === extra.supplier_branch)?.state || "Tamil Nadu").toLowerCase().trim();
+                  const clientState = (extra.client_state || "").toLowerCase().trim();
+                  const same = branchState === clientState && clientState !== "";
+
+                  const gstBreakdown = [];
+                  if (!extra.terms_tax) {
+                    const groups = {};
+                    items.forEach(item => {
+                      const taxRate = Number(item.tax) || 0;
+                      if (taxRate === 0) return;
+                      const qty = Number(item.qty || 0);
+                      const price = Number(item.price || 0);
+                      const discount = Number(item.discount || 0);
+                      const base = price * qty - discount;
+
+                      const gstAmount = (base * taxRate) / 100;
+
+                      if (gstAmount > 0) {
+                        if (!groups[taxRate]) groups[taxRate] = 0;
+                        groups[taxRate] += gstAmount;
+                      }
+                    });
+
+                    const hasCgstSgst = t.total_cgst > 0 || t.total_sgst > 0;
+                    const hasIgst = t.total_igst > 0;
+                    const isCgstSgst = hasCgstSgst ? true : (hasIgst ? false : same);
+
+                    Object.keys(groups).sort((a, b) => Number(b) - Number(a)).forEach(rateStr => {
+                      const rate = Number(rateStr);
+                      const amt = groups[rateStr];
+                      if (isCgstSgst) {
+                        gstBreakdown.push({ label: `CGST ${(rate / 2)}%`, amount: amt / 2 });
+                        gstBreakdown.push({ label: `SGST ${(rate / 2)}%`, amount: amt / 2 });
+                      } else {
+                        gstBreakdown.push({ label: `IGST ${rate}%`, amount: amt });
+                      }
+                    });
+                  }
+
                   return (
                     <div className="space-y-2">
-                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
-                      <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
-                      <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                      <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                      {showBreakdown ? (
+                        gstBreakdown.map((b, idx) => (
+                          <div key={idx} className="flex justify-between text-sm py-1 text-gray-600">
+                            <span>{b.label}</span>
+                            <span className="font-medium">&#8377;{b.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <>
+                          {t.total_cgst > 0 && t.total_igst > 0 ? (
+                            <>
+                              <div className="flex justify-between text-sm py-1 text-gray-600"><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                              <div className="flex justify-between text-sm py-1 text-gray-600"><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                              <div className="flex justify-between text-sm py-1 text-gray-600"><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                            </>
+                          ) : t.total_cgst > 0 || t.total_sgst > 0 || (t.total_igst === 0 && same) ? (
+                            <>
+                              <div className="flex justify-between text-sm py-1 text-gray-600"><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                              <div className="flex justify-between text-sm py-1 text-gray-600"><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                            </>
+                          ) : t.total_igst > 0 || (t.total_cgst === 0 && t.total_sgst === 0 && !same) ? (
+                            <div className="flex justify-between text-sm py-1 text-gray-600"><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                          ) : null}
+                        </>
+                      )}
+                      <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                     </div>
                   );
                 })()}
@@ -876,6 +1155,25 @@ const EstimateInvoice = () => {
                   <p className="text-xs text-gray-500">Prices quoted are exclusive of Sales and Service Tax (SEZ – NIL Tax applicable)</p>
                 </div>
               </label>
+              {!extra.terms_tax && (
+                <div className="ml-7">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!extra.terms_separate_orders?.hide_gst_percentage}
+                      onChange={e => setExtra(ex => ({
+                        ...ex,
+                        terms_separate_orders: {
+                          ...(ex.terms_separate_orders || {}),
+                          hide_gst_percentage: e.target.checked
+                        }
+                      }))}
+                      className="accent-blue-600 w-4 h-4 rounded"
+                    />
+                    <span className="text-sm font-semibold text-gray-700">Not show GST %</span>
+                  </label>
+                </div>
+              )}
 
               {/* Project Period */}
               <div className="flex flex-col gap-1">
@@ -928,18 +1226,14 @@ const EstimateInvoice = () => {
                   ))}
                 </div>
                 {extra.terms_payment === "Custom" && (
-                  <div className="flex items-center gap-2 mt-2">
+                  <div className="mt-2">
                     <input
-                      type="number"
-                      value={extra.terms_payment_custom ? extra.terms_payment_custom.replace(" Days", "") : ""}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setExtra(ex => ({ ...ex, terms_payment_custom: val ? `${val} Days` : "" }));
-                      }}
-                      placeholder="Enter number of days..."
-                      className="border rounded-lg px-3 py-2 outline-none text-sm w-48 bg-white"
+                      type="text"
+                      value={extra.terms_payment_custom || ""}
+                      onChange={e => setExtra(ex => ({ ...ex, terms_payment_custom: e.target.value }))}
+                      placeholder="e.g. 50% advance, balance on delivery..."
+                      className="border rounded-lg px-3 py-2 outline-none text-sm w-full bg-white"
                     />
-                    <span className="text-sm text-gray-600 font-medium">Days</span>
                   </div>
                 )}
               </div>
@@ -958,7 +1252,66 @@ const EstimateInvoice = () => {
               </div>
             </div>
 
-
+            <div className="mt-4">
+              <SectionTitle>Attached Images (Max 3)</SectionTitle>
+              <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 mt-2">
+                <div className="grid grid-cols-3 gap-4">
+                  {[0, 1, 2].map(idx => {
+                    const currentImage = extra.terms_separate_orders?.attached_images?.[idx];
+                    return (
+                      <div key={idx} className="relative aspect-video border-2 border-dashed border-gray-300 rounded-lg flex flex-col justify-center items-center bg-white overflow-hidden hover:border-blue-500 transition">
+                        {currentImage ? (
+                          <>
+                            <img src={currentImage} alt={`Attachment ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newList = [...(extra.terms_separate_orders?.attached_images || [])];
+                                newList.splice(idx, 1);
+                                setExtra(ex => ({
+                                  ...ex,
+                                  terms_separate_orders: {
+                                    ...(ex.terms_separate_orders || {}),
+                                    attached_images: newList
+                                  }
+                                }));
+                              }}
+                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition"
+                            >
+                              <X size={12} />
+                            </button>
+                          </>
+                        ) : (
+                          <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full p-2 text-center">
+                            <Plus size={20} className="text-gray-400" />
+                            <span className="text-[10px] text-gray-500 mt-1 font-semibold">Upload Image</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const compressed = await resizeAndCompressImage(file);
+                                const newList = [...(extra.terms_separate_orders?.attached_images || [])];
+                                newList[idx] = compressed;
+                                setExtra(ex => ({
+                                  ...ex,
+                                  terms_separate_orders: {
+                                    ...(ex.terms_separate_orders || {}),
+                                    attached_images: newList
+                                  }
+                                }));
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             {/* Submit */}
             <div className="flex gap-4 pt-4">
@@ -1081,6 +1434,46 @@ const EstimateInvoice = () => {
           email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()}
           onClose={() => setShowSMTPPrompt(false)}
         />
+      )}
+
+      {/* ── Follow-up Panel ─────────────────────────────────────────────── */}
+      {followupOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex justify-center items-start overflow-y-auto pt-10 pb-10">
+          <div className="bg-white rounded-xl shadow-2xl w-[95%] max-w-lg p-6">
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Clock size={18} className="text-cyan-500" /> Follow-ups — {followupLeadName}</h2>
+              <X className="cursor-pointer text-gray-400 hover:text-red-500" onClick={() => setFollowupOpen(false)} />
+            </div>
+            <button
+              onClick={sendFollowupEmail}
+              className="w-full mb-4 bg-cyan-600 text-white py-2 rounded-lg font-bold hover:bg-cyan-700 text-sm flex items-center justify-center gap-2"
+            >
+              <Mail size={15} /> Send Follow-up Email
+            </button>
+            <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+              <p className="text-xs font-bold text-gray-500 uppercase">Set New Follow-up</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-gray-500 font-semibold">Date *</label><input type="date" value={newFollowupDate} onChange={e => setNewFollowupDate(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+                <div><label className="text-xs text-gray-500 font-semibold">Time</label><input type="time" value={newFollowupTime} onChange={e => setNewFollowupTime(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+              </div>
+              <div><label className="text-xs text-gray-500 font-semibold">Reason / Note</label><input type="text" value={newFollowupNote} onChange={e => setNewFollowupNote(e.target.value)} placeholder="e.g. Call to confirm" className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+              <button onClick={saveFollowup} className="w-full bg-cyan-600 text-white py-2 rounded-lg font-bold hover:bg-cyan-700 text-sm">+ Add Follow-up</button>
+            </div>
+            <p className="text-xs font-bold text-gray-500 uppercase mb-2">Existing Follow-ups</p>
+            {leadFollowups.length === 0 ? <p className="text-xs text-gray-400 italic">No follow-ups yet.</p> : (
+              <div className="space-y-2">{leadFollowups.map(f => (
+                <div key={f.id} className={`flex items-center justify-between p-3 rounded-lg border text-sm ${f.status === "Done" ? "bg-green-50 border-green-200" : "bg-cyan-50 border-cyan-200"}`}>
+                  <div><div className="font-semibold">{fmtFollowDate(f.followup_date)}{f.followup_time ? ` at ${f.followup_time}` : ""}</div>{f.followup_notes && <div className="text-gray-500 text-xs mt-0.5">{f.followup_notes}</div>}</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${f.status === "Done" ? "bg-green-600 text-white" : "bg-cyan-600 text-white"}`}>{f.status}</span>
+                    {f.status === "Pending" && <button onClick={() => { axios.put(`${API}/api/leads/followups/${f.id}`, { status: "Done" }, getAuthConfig()); setLeadFollowups(prev => prev.map(x => x.id === f.id ? { ...x, status: "Done" } : x)); }} className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold">Done</button>}
+                    <button onClick={() => deleteFollowup(f.id)} className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              ))}</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

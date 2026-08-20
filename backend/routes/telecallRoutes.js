@@ -7,14 +7,14 @@ const { getNotificationIO } = require("../sockets/notifications");
 const checkDuplicateLead = (phone, email, excludeId, callback) => {
   if (typeof excludeId === 'function') { callback = excludeId; excludeId = null; }
   const checks = [];
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM telecalls WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM walkins WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM fields WHERE (phone = ? OR mobile_number = ?) AND id != ?", params: [phone, phone, excludeId || 0] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM telecalls WHERE mobile_number = ? AND id != ?", params: [phone, excludeId || 0] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM walkins WHERE mobile_number = ?", params: [phone] });
+  if (phone) checks.push({ sql: "SELECT id, customer_name, mobile_number as phone FROM fields WHERE mobile_number = ?", params: [phone] });
   if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM telecalls WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
-  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM walkins WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
-  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM fields WHERE email = ? AND id != ?", params: [email, excludeId || 0] });
-  if (phone) checks.push({ sql: "SELECT id, name, phone FROM clients WHERE phone = ?", params: [phone] });
-  if (email) checks.push({ sql: "SELECT id, name, email as phone FROM clients WHERE email = ?", params: [email] });
+  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM walkins WHERE email = ?", params: [email] });
+  if (email) checks.push({ sql: "SELECT id, customer_name, email as phone FROM fields WHERE email = ?", params: [email] });
+  if (phone) checks.push({ sql: "SELECT id, name, phone FROM clients WHERE phone = ? AND NOT (original_lead_id = ? AND original_lead_type = 'telecall')", params: [phone, excludeId || 0] });
+  if (email) checks.push({ sql: "SELECT id, name, email as phone FROM clients WHERE email = ? AND NOT (original_lead_id = ? AND original_lead_type = 'telecall')", params: [email, excludeId || 0] });
 
   if (checks.length === 0) return callback(null);
 
@@ -35,6 +35,15 @@ const toDateOnly = (val) => {
   if (!val) return null;
   return val.toString().slice(0, 10);
 };
+
+// Helper to safely format time to HH:MM:SS
+const toTimeOnly = (val) => {
+  if (!val) return null;
+  const s = val.toString().trim();
+  if (s.length >= 8) return s.slice(0, 8); // trim millis/timezone if present
+  return s;
+};
+
 
 const resolveAssignedTo = (staffName, callback) => {
   if (!staffName) return callback(null);
@@ -62,17 +71,21 @@ const isAuthorizedToEdit = (lead, user) => {
 
   if (lead.created_by === user.id) return true;
   if (lead.assigned_to === user.id) return true;
-  
+
   // JWT contains `name` (which is user's first_name)
   if (lead.staff_name && lead.staff_name.trim().toLowerCase().includes(userName) && userName.length > 0) return true;
-  
+
   return false;
 };
 
 router.get("/", verifyToken, (req, res) => {
   const { id: user_id, role, name: user_name } = req.user;
   let sql = `
-    SELECT t.*, u.first_name as creator_name 
+    SELECT t.*, u.first_name as creator_name,
+      (SELECT COUNT(*) FROM lead_reminders WHERE lead_id = t.id AND lead_type = 'telecall' AND status = 'Pending') AS pending_reminder_count,
+      (SELECT COUNT(*) FROM lead_followups WHERE lead_id = t.id AND lead_type = 'telecall' AND status = 'Pending') AS pending_followup_count,
+      (SELECT COUNT(*) FROM lead_reminders WHERE lead_id = t.id AND lead_type = 'telecall' AND status = 'Pending' AND reminder_date = CURDATE()) AS today_reminder_count,
+      (SELECT COUNT(*) FROM lead_followups WHERE lead_id = t.id AND lead_type = 'telecall' AND status = 'Pending' AND followup_date = CURDATE()) AS today_followup_count
     FROM telecalls t
     LEFT JOIN users u ON t.created_by = u.id
   `;
@@ -97,7 +110,7 @@ router.get("/", verifyToken, (req, res) => {
 });
 
 const syncClient = (data, userId, leadId, teammemberId) => {
-  const { customer_name, mobile_number, location_city, service_name, email, call_outcome, gst_number, staff_name } = data;
+  const { customer_name, company_name, mobile_number, location_city, service_name, email, call_outcome, gst_number, staff_name, landline_number, alternate_mobile_number, reference_by, nearest_landmark } = data;
   const leadIdDisplay = `T-${leadId}`;
 
   if (call_outcome === "Converted") {
@@ -118,20 +131,22 @@ const syncClient = (data, userId, leadId, teammemberId) => {
         db.query(`SELECT id FROM clients WHERE (${phoneCheck}) ${emailCheck} AND (original_lead_id IS NULL OR original_lead_type != 'telecall')`, params, (err2, phoneResult) => {
           if (!err2 && phoneResult.length > 0) {
             db.query(
-              `UPDATE clients SET name=?, phone=?, address=?, service=?, email=?, gst_number=?, 
+              `UPDATE clients SET name=?, company_name=?, phone=?, address=?, city=?, service=?, email=?, gst_number=?, 
                original_lead_id=?, original_lead_type='telecall', assigned_teammember_id=?,
-               lead_staff_name=?, lead_id_display=?, client_status='converted', converted_at=NOW()
+               lead_staff_name=?, lead_id_display=?, client_status='converted', converted_at=NOW(),
+               landline_number=?, alternate_mobile_number=?, reference_by=?, nearest_landmark=?
                WHERE id=?`,
-              [customer_name, mobile_number, location_city, service_name, email, gst_number || "", leadId, teammemberId || null,
-                staff_name || "", leadIdDisplay, phoneResult[0].id]
+              [customer_name, company_name || null, mobile_number, location_city, location_city, service_name, email, gst_number || "", leadId, teammemberId || null,
+                staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null, phoneResult[0].id]
             );
           } else {
             db.query(
-              `INSERT INTO clients (name, phone, address, service, email, gst_number, created_by, assigned_teammember_id, 
-               original_lead_id, original_lead_type, lead_staff_name, lead_id_display, client_status, converted_at) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'telecall', ?, ?, 'converted', NOW())`,
-              [customer_name, mobile_number, location_city, service_name, email, gst_number || "", userId, teammemberId || null,
-                leadId, staff_name || "", leadIdDisplay],
+              `INSERT INTO clients (name, company_name, phone, address, city, service, email, gst_number, created_by, assigned_teammember_id, 
+               original_lead_id, original_lead_type, lead_staff_name, lead_id_display, client_status, converted_at,
+               landline_number, alternate_mobile_number, reference_by, nearest_landmark) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'telecall', ?, ?, 'converted', NOW(), ?, ?, ?, ?)`,
+              [customer_name, company_name || null, mobile_number, location_city, location_city, service_name, email, gst_number || "", userId, teammemberId || null,
+                leadId, staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null],
               (insertErr) => {
                 if (insertErr) console.error("Client conversion (telecall insert) failed:", insertErr);
               }
@@ -140,11 +155,12 @@ const syncClient = (data, userId, leadId, teammemberId) => {
         });
       } else {
         db.query(
-          `UPDATE clients SET name=?, phone=?, address=?, service=?, email=?, gst_number=?, 
-           assigned_teammember_id=?, lead_staff_name=?, lead_id_display=?
+          `UPDATE clients SET name=?, company_name=?, phone=?, address=?, city=?, service=?, email=?, gst_number=?, 
+           assigned_teammember_id=?, lead_staff_name=?, lead_id_display=?,
+           landline_number=?, alternate_mobile_number=?, reference_by=?, nearest_landmark=?
            WHERE original_lead_id=? AND original_lead_type='telecall'`,
-          [customer_name, mobile_number, location_city, service_name, email, gst_number || "", teammemberId || null,
-            staff_name || "", leadIdDisplay, leadId],
+          [customer_name, company_name || null, mobile_number, location_city, location_city, service_name, email, gst_number || "", teammemberId || null,
+            staff_name || "", leadIdDisplay, landline_number || null, alternate_mobile_number || null, reference_by || null, nearest_landmark || null, leadId],
           (updateErr) => {
             if (updateErr) console.error("Client conversion (telecall update) failed:", updateErr);
           }
@@ -153,6 +169,7 @@ const syncClient = (data, userId, leadId, teammemberId) => {
     });
   }
 };
+
 
 // GET single telecall (EDIT)
 router.get("/:id", verifyToken, (req, res) => {
@@ -183,6 +200,7 @@ router.get("/:id", verifyToken, (req, res) => {
 router.post("/", verifyToken, (req, res) => {
   const {
     customer_name,
+    company_name,
     mobile_number,
     location_city,
     call_date,
@@ -197,7 +215,11 @@ router.post("/", verifyToken, (req, res) => {
     reminder_notes,
     reference,
     gst_number,
-    email
+    email,
+    landline_number,
+    alternate_mobile_number,
+    reference_by,
+    nearest_landmark
   } = req.body;
 
   // Check for duplicates across all lead tables and clients
@@ -212,6 +234,7 @@ router.post("/", verifyToken, (req, res) => {
       const sql = `
         INSERT INTO telecalls (
           customer_name,
+          company_name,
           mobile_number,
           location_city,
           call_date,
@@ -228,15 +251,20 @@ router.post("/", verifyToken, (req, res) => {
           gst_number,
           email,
           created_by,
-          assigned_to
+          assigned_to,
+          landline_number,
+          alternate_mobile_number,
+          reference_by,
+          nearest_landmark
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       db.query(
         sql,
         [
           customer_name,
+          company_name || null,
           mobile_number,
           location_city,
           toDateOnly(call_date),
@@ -253,7 +281,11 @@ router.post("/", verifyToken, (req, res) => {
           gst_number,
           email,
           req.user.id,
-          finalAssignedTo
+          finalAssignedTo,
+          landline_number || null,
+          alternate_mobile_number || null,
+          reference_by || null,
+          nearest_landmark || null
         ],
         (err, result) => {
           if (err) return res.status(500).json({ error: err.message });
@@ -273,6 +305,16 @@ router.post("/", verifyToken, (req, res) => {
             );
           }
 
+          // Auto-trigger WhatsApp Automations
+          try {
+            const { triggerAutomation } = require("../services/waAutomationService");
+            triggerAutomation("new_lead", {
+              phone: mobile_number,
+              contactName: customer_name,
+              data: { customer_name, company_name, service_name, location_city }
+            }).catch(e => console.error("WA Automation trigger error:", e.message));
+          } catch (_) {}
+
           res.json({ message: "Telecall added", id: newId });
         }
       );
@@ -286,6 +328,7 @@ router.post("/", verifyToken, (req, res) => {
 router.put("/:id", verifyToken, (req, res) => {
   const {
     customer_name,
+    company_name,
     mobile_number,
     location_city,
     call_date,
@@ -300,7 +343,11 @@ router.put("/:id", verifyToken, (req, res) => {
     reminder_notes,
     reference,
     gst_number,
-    email
+    email,
+    landline_number,
+    alternate_mobile_number,
+    reference_by,
+    nearest_landmark
   } = req.body;
 
   // Check ownership & authorization
@@ -324,6 +371,7 @@ router.put("/:id", verifyToken, (req, res) => {
         db.query(
           `UPDATE telecalls SET
               customer_name=?,
+              company_name=?,
               mobile_number=?,
               location_city=?,
               call_date=?,
@@ -339,10 +387,15 @@ router.put("/:id", verifyToken, (req, res) => {
               reference=?,
               gst_number=?,
               email=?,
-              assigned_to=?
+              assigned_to=?,
+              landline_number=?,
+              alternate_mobile_number=?,
+              reference_by=?,
+              nearest_landmark=?
              WHERE id=?`,
           [
             customer_name,
+            company_name || null,
             mobile_number,
             location_city,
             toDateOnly(call_date),
@@ -359,6 +412,10 @@ router.put("/:id", verifyToken, (req, res) => {
             gst_number,
             email,
             finalAssignedTo,
+            landline_number || null,
+            alternate_mobile_number || null,
+            reference_by || null,
+            nearest_landmark || null,
             req.params.id
           ],
           (err) => {
@@ -434,6 +491,9 @@ router.patch("/:id", verifyToken, (req, res) => {
       }
       if (req.body.followup_required === "Yes") {
         db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "telecall", "Follow-up Scheduled", `Date: ${toDateOnly(req.body.followup_date) || "Today"}`]);
+      }
+      if (req.body.followup_required === "No") {
+        db.query("INSERT INTO lead_activity (lead_id, lead_type, action, details) VALUES (?,?,?,?)", [req.params.id, "telecall", "Follow-up Completed", "Marked as done via shortcut"]);
       }
       res.json({ message: "Updated successfully" });
     });

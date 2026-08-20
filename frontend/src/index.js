@@ -1,14 +1,20 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
-
+import { installSafariDateShim } from './utils/dateCompat';
 import socket from './socket/socket';
+
+// Make Safari/iOS tolerant of MySQL "YYYY-MM-DD HH:MM:SS" date strings before
+// any component renders. No-op on Chrome/Firefox which already parse them.
+installSafariDateShim();
+
 window.socket = socket;
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const container = document.getElementById('root');
+const root = createRoot(container);
 root.render(
   <React.StrictMode>
     <App />

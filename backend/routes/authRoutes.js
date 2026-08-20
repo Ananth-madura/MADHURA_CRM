@@ -6,7 +6,7 @@ const db = require("../config/database");
 const { encrypt, decrypt } = require("../backendutil/cryptoHelper");
 const { generateOtp } = require("../backendutil/otp");
 const sendEmailOtp = require("../backendutil/sendSms");
-const { verifyToken, isAdmin } = require("../middleware/authMiddleware");
+const { verifyToken, isAdmin, isAdminOnly } = require("../middleware/authMiddleware");
 const { getNotificationIO } = require("../sockets/notifications");
 
 const router = express.Router();
@@ -20,7 +20,7 @@ const fieldLabels = {
 };
 
 /* ================= GET ALL USERS (for admin) ================= */
-router.get("/users", verifyToken, (req, res) => {
+router.get("/users", verifyToken, isAdmin, (req, res) => {
   db.query(`SELECT id, first_name, email, role, status, emp_id, created_at FROM users ORDER BY created_at DESC`, (err, rows) => {
     if (err) return res.status(500).json({ message: "Failed to fetch users" });
     res.json({ users: rows });
@@ -296,7 +296,7 @@ router.put("/update-user/:id", verifyToken, isAdmin, (req, res) => {
     if (err || !rows.length) return res.status(404).json({ message: "User not found" });
     const oldEmail = rows[0].email;
     // Protect: cannot edit the primary admin user's record
-    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") {
+    if (rows[0].email && rows[0].email.toLowerCase() === "kk@achmecommunication.com") {
       return res.status(403).json({ message: "Cannot modify the primary admin account" });
     }
 
@@ -312,15 +312,16 @@ router.put("/update-user/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 /* ================= ADMIN: CHANGE USER ROLE ================= */
-router.put("/change-role/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/change-role/:id", verifyToken, isAdminOnly, (req, res) => {
   const { role } = req.body;
   if (!["admin", "subadmin", "employee"].includes(role)) {
     return res.status(400).json({ message: "Invalid role. Can only set admin, subadmin or employee" });
   }
   // Check if target user is primary admin — primary admin is protected
   db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
-    if (err || !rows.length) return res.status(404).json({ message: "User not found" });
-    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") {
+    if (err || !rows || (Array.isArray(rows) && !rows.length)) return res.status(404).json({ message: "User not found" });
+    const user = (rows && Array.isArray(rows) && rows[0]) ? rows[0] : {};
+    if (user.email && user.email.toLowerCase() === "kk@achmecommunication.com") {
       return res.status(403).json({ message: "Cannot change the role of the primary admin account" });
     }
     db.query(`UPDATE users SET role = ? WHERE id = ?`, [role, req.params.id], (err2) => {
@@ -331,28 +332,32 @@ router.put("/change-role/:id", verifyToken, isAdmin, (req, res) => {
 });
 
 /* ================= ADMIN: BAN USER ================= */
-router.put("/ban-user/:id", verifyToken, isAdmin, (req, res) => {
+router.put("/ban-user/:id", verifyToken, isAdminOnly, (req, res) => {
   const { status } = req.body;
   if (!["active", "banned", "pending"].includes(status)) return res.status(400).json({ message: "Invalid status" });
 
   // Protect primary admin account from being banned
   db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err0, rows0) => {
-    if (err0 || !rows0.length) return res.status(404).json({ message: "User not found" });
-    if (rows0[0].role === "admin" && rows0[0].email === "Kk@achmecommunication.com") return res.status(403).json({ message: "Cannot ban the primary admin account" });
+    if (err0 || !rows0 || (Array.isArray(rows0) && !rows0.length)) return res.status(404).json({ message: "User not found" });
+    const user0 = (rows0 && Array.isArray(rows0) && rows0[0]) ? rows0[0] : {};
+    if (user0.email && user0.email.toLowerCase() === "kk@achmecommunication.com") return res.status(403).json({ message: "Cannot ban the primary admin account" });
 
     db.query(`UPDATE users SET status = ? WHERE id = ?`, [status, req.params.id], (err) => {
-      if (err) return res.status(500).json({ message: "Update failed" });
+      if (err) {
+        console.error("ban-user update error:", err);
+        return res.status(500).json({ message: "Update failed", error: err.message });
+      }
       res.json({ message: "User status updated" });
     });
   });
 });
 
 /* ================= ADMIN: DELETE USER ================= */
-router.delete("/delete-user/:id", verifyToken, isAdmin, (req, res) => {
+router.delete("/delete-user/:id", verifyToken, isAdminOnly, (req, res) => {
   db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
     if (err || !rows.length) return res.status(404).json({ message: "User not found" });
     // Protect primary admin account from being deleted
-    if (rows[0].role === "admin" && rows[0].email === "Kk@achmecommunication.com") return res.status(403).json({ message: "Cannot delete the primary admin account" });
+    if (rows[0].email && rows[0].email.toLowerCase() === "kk@achmecommunication.com") return res.status(403).json({ message: "Cannot delete the primary admin account" });
 
 
     db.query(`DELETE FROM users WHERE id = ?`, [req.params.id], (err2) => {
@@ -368,11 +373,21 @@ router.post("/reset-password/:id", verifyToken, isAdmin, (req, res) => {
   const { new_password } = req.body;
   if (!new_password) return res.status(400).json({ message: "New password required" });
 
-  bcrypt.hash(new_password, 10, (err, hash) => {
-    if (err) return res.status(500).json({ message: "Hash failed" });
-    db.query(`UPDATE users SET user_password = ? WHERE id = ?`, [hash, req.params.id], (err2) => {
-      if (err2) return res.status(500).json({ message: "Reset failed" });
-      res.json({ message: "Password reset successfully" });
+  db.query(`SELECT email, role FROM users WHERE id = ?`, [req.params.id], (err, rows) => {
+    if (err || !rows || !rows.length) return res.status(404).json({ message: "User not found" });
+    // If resetting the primary admin's password, allow it ONLY if they are doing it themselves
+    if (rows[0].email && rows[0].email.toLowerCase() === "kk@achmecommunication.com") {
+      if (req.user.id !== parseInt(req.params.id)) {
+        return res.status(403).json({ message: "Cannot reset the password of the primary admin account" });
+      }
+    }
+
+    bcrypt.hash(new_password, 10, (errHash, hash) => {
+      if (errHash) return res.status(500).json({ message: "Hash failed" });
+      db.query(`UPDATE users SET user_password = ? WHERE id = ?`, [hash, req.params.id], (err2) => {
+        if (err2) return res.status(500).json({ message: "Reset failed" });
+        res.json({ message: "Password reset successfully" });
+      });
     });
   });
 });
@@ -544,15 +559,38 @@ router.put("/profile", verifyToken, (req, res) => {
         return res.status(500).json({ message: "Failed to update profile" });
       }
 
+      // mobile_number / emp_address live only in `teammember`. Upsert so the
+      // values are saved permanently even if this user has no teammember row
+      // yet — otherwise the mobile number would silently fail to persist.
+      const done = (err2) => {
+        if (err2) {
+          console.error("PUT /profile teammember upsert error:", err2);
+          return res.status(500).json({ message: "Failed to update profile details" });
+        }
+        res.json({ message: "Profile updated successfully" });
+      };
+
       db.query(
-        "UPDATE teammember SET first_name = ?, emp_email = ?, mobile_number = ?, emp_address = ? WHERE user_id = ?",
-        [first_name, email, mobile_number, emp_address, userId],
-        (err2) => {
-          if (err2) {
-            console.error("PUT /profile teammember update error:", err2);
+        "SELECT id FROM teammember WHERE user_id = ?",
+        [userId],
+        (errSel, tmRows) => {
+          if (errSel) {
+            console.error("PUT /profile teammember lookup error:", errSel);
             return res.status(500).json({ message: "Failed to update profile details" });
           }
-          res.json({ message: "Profile updated successfully" });
+          if (tmRows && tmRows.length) {
+            db.query(
+              "UPDATE teammember SET first_name = ?, emp_email = ?, mobile_number = ?, emp_address = ? WHERE user_id = ?",
+              [first_name, email, mobile_number, emp_address, userId],
+              done
+            );
+          } else {
+            db.query(
+              "INSERT INTO teammember (first_name, emp_email, mobile_number, emp_address, user_id) VALUES (?, ?, ?, ?, ?)",
+              [first_name, email, mobile_number, emp_address, userId],
+              done
+            );
+          }
         }
       );
     }

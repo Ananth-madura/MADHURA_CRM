@@ -103,7 +103,7 @@ const NotifDetailPopup = ({ notification, onClose }) => {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      style={{ background: "rgba(0,0,0,0.5)", WebkitBackdropFilter: "blur(4px)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div

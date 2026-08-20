@@ -35,9 +35,23 @@ const mockDb = {
   promise: jest.fn(() => ({
     query: jest.fn((sql, params) => Promise.resolve([[], []])),
   })),
+  escape: jest.fn((val) => {
+    if (val === undefined || val === null) return "NULL";
+    if (typeof val === "number") return String(val);
+    if (typeof val === "boolean") return val ? "true" : "false";
+    if (val instanceof Date) return `'${val.toISOString()}'`;
+    return `'${String(val).replace(/'/g, "''")}'`;
+  }),
 };
 
 module.exports = {
   createConnection: jest.fn(() => mockDb),
   _mockDb: mockDb,
+  escape: jest.fn((val) => {
+    if (val === undefined || val === null) return "NULL";
+    if (typeof val === "number") return String(val);
+    if (typeof val === "boolean") return val ? "true" : "false";
+    if (val instanceof Date) return `'${val.toISOString()}'`;
+    return `'${String(val).replace(/'/g, "''")}'`;
+  }),
 };

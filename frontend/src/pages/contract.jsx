@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "../Styles/tailwind.css";
 import { Search, Plus, X, Trash2, Edit, FileText } from "lucide-react";
+import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
 
@@ -71,8 +72,8 @@ const Contracts = () => {
     if (qName) {
       setClientSearch(decodeURIComponent(qName));
       setContracts(`Contract for ${decodeURIComponent(qName)}`);
-      setInvoiceDate(new Date().toISOString().slice(0, 10));
-      setInvoiceDueDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+      setInvoiceDate(getToday());
+      setInvoiceDueDate((() => { const d = new Date(); d.setDate(d.getDate() + 365); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
       setOpen(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
@@ -81,10 +82,10 @@ const Contracts = () => {
       if (prefillData) {
         try {
           const data = JSON.parse(prefillData);
-          setClientSearch(data.customer_name || "");
-          setContracts(data.customer_name ? `Contract for ${data.customer_name}` : "");
-          setInvoiceDate(new Date().toISOString().slice(0, 10));
-          setInvoiceDueDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+          setClientSearch(data.company_name || data.customer_name || "");
+          setContracts(data.company_name ? `Contract for ${data.company_name}` : (data.customer_name ? `Contract for ${data.customer_name}` : ""));
+          setInvoiceDate(getToday());
+          setInvoiceDueDate((() => { const d = new Date(); d.setDate(d.getDate() + 365); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
           setContractType("AMC");
           setCategory("AMC");
           setOpen(true);
@@ -186,8 +187,8 @@ const Contracts = () => {
       setClientSearch(quotation.client_company || quotation.customer_name || "");
       setProjectname(quotation.project_name || quotation.template_names || "");
       setContracts(`Contract for ${quotation.project_name || quotation.template_names || "Service"}`);
-      setInvoiceDate(new Date().toISOString().slice(0, 10));
-      setInvoiceDueDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+      setInvoiceDate(getToday());
+      setInvoiceDueDate((() => { const d = new Date(); d.setDate(d.getDate() + 365); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
       Setamount(quotation.grand_total || quotation.amount_value || "");
       setCategory("AMC");
       setContractType("AMC");

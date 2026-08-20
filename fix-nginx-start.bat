@@ -4,15 +4,25 @@ color 0B
 
 :: ---- Must run as Administrator ----
 net session >nul 2>&1
+if errorlevel 1 goto :elevate
+goto :elevated_ok
+
+:elevate
+echo Requesting Admin rights (UAC prompt)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 if errorlevel 1 (
-    echo Requesting Admin rights...
-    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" 2>nul
-    if errorlevel 1 (
-        :: PowerShell broken - use alternative elevation
-        mshta vbscript:CreateObject("Shell.Application").ShellExecute("""%~f0""","","","runas",1)(window.close)
-    )
-    exit /b 0
+    echo.
+    echo ====================================================================
+    echo ERROR: ACCESS DENIED! Administrator privileges are required.
+    echo Please accept the UAC prompt to run this script.
+    echo ====================================================================
+    echo.
+    pause
+    exit /b 1
 )
+exit /b 0
+
+:elevated_ok
 
 set "NGINX_DIR=C:\nginx"
 

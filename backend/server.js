@@ -20,6 +20,46 @@ const app = express();
 const server = http.createServer(app);
 module.exports = app;
 
+// ── Crash guard for whatsapp-web.js / Puppeteer ─────────────────────────────
+// whatsapp-web.js occasionally throws an unhandled rejection deep inside
+// Puppeteer during a WhatsApp Web page navigation (e.g. "Execution context
+// was destroyed"), outside of any of its own event handlers. Left alone this
+// takes down the entire CRM process, not just the WhatsApp session. Only this
+// known, benign error class is swallowed here — anything else still crashes
+// the process as Node intends, so real bugs aren't masked.
+function isRecoverableWaError(err) {
+  const text = `${(err && err.message) || err} ${(err && err.stack) || ""}`;
+  return /puppeteer|whatsapp-web\.js|Execution context was destroyed|Protocol error|Session closed|Target closed/i.test(text);
+}
+function handleFatal(label, err) {
+  if (isRecoverableWaError(err)) {
+    console.error(`⚠️ Recovered from WhatsApp Web session error (${label}):`, err?.message || err);
+    // whatsapp-web.js throws plenty of these (page-navigation races, etc.) while
+    // the session is still perfectly linked. forceReset() destroys the client
+    // and forces a fresh QR scan — calling it unconditionally on every one of
+    // these was logging people out of a healthy WhatsApp session for no reason.
+    // Only reset when the session is already down; a real disconnect is caught
+    // by the client's own "disconnected" handler, which calls forceReset itself.
+    //
+    // getStatus() is async: `!wa.getStatus().connected` read `.connected` off a
+    // Promise, got undefined, and so force-reset on EVERY one of these benign
+    // errors — the exact behaviour the paragraph above says it avoids. That is
+    // what kept unlinking healthy sessions and breaking outbound sends.
+    // `ready` is a plain boolean and handleFatal is sync, so check that.
+    try {
+      const wa = require("./services/whatsappService");
+      wa.all().forEach((s) => {
+        if (!s.ready) s.forceReset(label);
+      });
+    } catch (_) {}
+    return;
+  }
+  console.error(`❌ ${label}:`, err);
+  process.exit(1);
+}
+process.on("unhandledRejection", (reason) => handleFatal("unhandledRejection", reason));
+process.on("uncaughtException", (err) => handleFatal("uncaughtException", err));
+
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // Dynamically echo back any origin in self-hosted mode to avoid CORS errors with dynamic IPs/hostnames
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
@@ -34,7 +74,8 @@ app.use(cors({
 }));
 const corsOrigins = dynamicOrigin;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb", verify: (req, res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.get(["/health", "/api/health"], (req, res) => {
   res.json({
@@ -93,8 +134,26 @@ app.use("/api/amc", require("./routes/amcRoutes"));
 app.use("/api/reports", require("./routes/reportRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/setup", require("./routes/setupRoutes"));
+// verifyToken here is both a fix (every /api/whatsapp/* route was public,
+// including /send and /logout) and a requirement — per-user sessions are
+// resolved from req.user.id.
+app.use("/api/whatsapp", require("./middleware/authMiddleware").verifyToken, require("./routes/whatsappRoutes"));
+app.use("/api/wa/templates", require("./routes/waTemplateRoutes"));
+app.use("/api/wa/groups", require("./routes/waGroupRoutes"));
+app.use("/api/wa/campaigns", require("./routes/waCampaignRoutes"));
+app.use("/api/wa/analytics", require("./routes/waAnalyticsRoutes"));
+app.use("/api/wa/config", require("./routes/waConfigRoutes"));
+app.use("/api/wa/webhook", require("./routes/waWebhookRoutes"));
+app.use("/api/wa/contacts", require("./routes/waContactRoutes"));
+app.use("/api/wa/automations", require("./routes/waAutomationRoutes"));
+app.use("/api/wa/flows", require("./routes/waFlowRoutes"));
+app.use("/api/wa/ai", require("./routes/waAiRoutes"));
+app.use("/api/wa/payments", require("./routes/waPaymentsRoutes"));
+app.use("/api/wa/drip", require("./routes/waDripRoutes"));
 
-app.use("/uploads", express.static("uploads"));
+// Absolute path: express.static("uploads") resolves against process.cwd(), so
+// uploaded media 404'd whenever the server was started from anywhere but backend/.
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ── Serve React Frontend statically in production ───────────────────────────
 if (process.env.NODE_ENV === "production") {
@@ -126,12 +185,46 @@ server.on("error", (error) => {
 });
 
 function startServer() {
-  return db.ready.then(() => {
+  return db.ready.then(async () => {
     const io = initSocket(server, corsOrigins);
     const notificationIO = initNotificationsSocket(io, corsOrigins);
     app.set("io", io);
     app.set("notificationIO", io);
     require("./backendutil/reminderScheduler").startSchedulers();
+
+    // Ensure WhatsApp tables exist
+    try {
+      await require("./services/waDatabase").ensureWATables();
+    } catch (e) {
+      console.warn("⚠️ WhatsApp tables setup warning:", e.message);
+    }
+
+    // Restore saved WhatsApp sessions. Nothing used to call init() at boot, so
+    // after every restart `ready` was false and every outbound send threw until
+    // a human opened the QR page. Launches nothing when no session is saved.
+    try {
+      await require("./services/whatsappService").restoreExisting();
+    } catch (e) {
+      console.warn("⚠️ WhatsApp session restore warning:", e.message);
+    }
+
+    // Daily payment_due WhatsApp reminder for invoices due tomorrow
+    try {
+      require("./services/waPaymentDueScheduler").startPaymentDueScheduler();
+    } catch (e) {
+      console.warn("⚠️ WA payment-due scheduler warning:", e.message);
+    }
+
+    // Daily lead_followup WhatsApp reminder for telecalls/walkins/fields due today
+    try {
+      require("./services/waLeadFollowupScheduler").startLeadFollowupScheduler();
+    } catch (e) {
+      console.warn("⚠️ WA lead-followup scheduler warning:", e.message);
+    }
+
+    // Start WhatsApp Cloud API queue worker (no Redis fallback = synchronous)
+    const { startWorker } = require("./services/waQueue");
+    startWorker().catch(() => {});
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server running: http://0.0.0.0:${PORT} [${process.env.NODE_ENV || "development"}]`);
 

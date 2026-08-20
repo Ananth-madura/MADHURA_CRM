@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import "../Styles/tailwind.css";
 import Followup from "../components/followupsummary";
 import Remainder from "../components/remaindersummary";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, Legend, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import {
   departmentCount,
   bottomText,
@@ -26,6 +26,7 @@ import {
   Search, Eye, Activity, Calendar, UserPlus,
   BarChart3, ChevronRight, Building2, Wifi
 } from "lucide-react";
+import { useToast } from "../components/Toast";
 
 import { API } from "../config/api";
 
@@ -90,6 +91,7 @@ const Dashboard = () => {
   const { setReminderData, setReminderNotes } = useContext(ReminderContext);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { info } = useToast();
   const fetching = useRef(false);
 
   const [leads, setLeads] = useState([]);
@@ -120,6 +122,7 @@ const Dashboard = () => {
   const [activeTelecall, setActiveTelecall] = useState("New");
   const [activeWalkin, setActiveWalkin] = useState("New");
   const [activeField, setActiveField] = useState("New");
+  const [isStaffExpanded, setIsStaffExpanded] = useState(false);
 
   const today = getToday();
 
@@ -138,25 +141,27 @@ const Dashboard = () => {
     if (fetching.current) return;
     fetching.current = true;
     setLoading(true);
-    const urls = [`${API_BACKEND}/api/Telecalls`,`${API_BACKEND}/api/Walkins`,`${API_BACKEND}/api/Fields`,
-      `${API_BACKEND}/api/teammember`,`${API_BACKEND}/api/performainvoice`,
-      `${API_BACKEND}/api/auth/pending-users`,`${API_BACKEND}/api/leads/escalations`,
-      `${API_BACKEND}/api/quotations`,`${API_BACKEND}/api/invoice`,`${API_BACKEND}/api/payments`,
-      `${API_BACKEND}/api/client`,`${API_BACKEND}/api/task`,`${API_BACKEND}/api/targets`,
-      `${API_BACKEND}/api/amc`,`${API_BACKEND}/api/services`,`${API_BACKEND}/api/call-reports`,
-      `${API_BACKEND}/api/contract`,`${API_BACKEND}/api/estimate`,
-      `${API_BACKEND}/api/estimate-invoice`,`${API_BACKEND}/api/service-estimation`];
+    const urls = [`${API_BACKEND}/api/Telecalls`, `${API_BACKEND}/api/Walkins`, `${API_BACKEND}/api/Fields`,
+    `${API_BACKEND}/api/teammember`, `${API_BACKEND}/api/performainvoice`,
+    `${API_BACKEND}/api/auth/pending-users`, `${API_BACKEND}/api/leads/escalations`,
+    `${API_BACKEND}/api/quotations`, `${API_BACKEND}/api/invoice`, `${API_BACKEND}/api/payments`,
+    `${API_BACKEND}/api/client`, `${API_BACKEND}/api/task`, `${API_BACKEND}/api/targets`,
+    `${API_BACKEND}/api/amc`, `${API_BACKEND}/api/services`, `${API_BACKEND}/api/call-reports`,
+    `${API_BACKEND}/api/contract`, `${API_BACKEND}/api/estimate`,
+    `${API_BACKEND}/api/estimate-invoice`, `${API_BACKEND}/api/service-estimation`];
+    const token = localStorage.getItem("token");
+    const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
     try {
-      const res = await Promise.all(urls.map(u => axios.get(u).catch(() => null)));
+      const res = await Promise.all(urls.map(u => axios.get(u, config).catch(() => null)));
       const d = res.map(r => r && r.data ? r.data : []);
       batchSet(d);
     } catch (_) {
       try {
         const fallback = urls.map(u => u.replace(API_BACKEND, ""));
-        const res = await Promise.all(fallback.map(u => axios.get(u).catch(() => null)));
+        const res = await Promise.all(fallback.map(u => axios.get(u, config).catch(() => null)));
         const d = res.map(r => r && r.data ? r.data : []);
         batchSet(d);
-      } catch (__) {}
+      } catch (__) { }
     }
     setLoading(false);
     setLastFetch(new Date());
@@ -172,10 +177,36 @@ const Dashboard = () => {
   }, [fetchAll]);
 
   useEffect(() => {
-    const fn = () => fetchAll();
+    const fn = (payload) => {
+      fetchAll();
+      let message = "Dashboard updated with live changes!";
+      if (payload && payload.path) {
+        const path = payload.path.toLowerCase();
+        let action = "Updated";
+        if (payload.method === "POST") action = "Created";
+        if (payload.method === "DELETE") action = "Deleted";
+
+        if (path.includes("telecall")) {
+          message = `Telecalling Lead ${action} Live!`;
+        } else if (path.includes("walkin")) {
+          message = `Walk-in Lead ${action} Live!`;
+        } else if (path.includes("fields") || path.includes("field")) {
+          message = `Field Visit Lead ${action} Live!`;
+        } else if (path.includes("quotation")) {
+          message = `Quotation ${action} Live!`;
+        } else if (path.includes("invoice") || path.includes("performainvoice")) {
+          message = `Proforma/Invoice ${action} Live!`;
+        } else if (path.includes("task")) {
+          message = `Task ${action} Live!`;
+        } else if (path.includes("amc") || path.includes("contract")) {
+          message = `Contract ${action} Live!`;
+        }
+      }
+      info(message);
+    };
     socket.on("data_changed", fn);
     return () => socket.off("data_changed", fn);
-  }, [fetchAll]);
+  }, [fetchAll, info]);
 
   useEffect(() => {
     const id = setInterval(() => fetchAll(), 20000);
@@ -253,7 +284,7 @@ const Dashboard = () => {
   const fieldYesterday = useMemo(() => fields.filter(f => normalizeDate(f.visit_date) === yesterday).length, [fields, yesterday]);
   const fieldChange = useMemo(() => fieldYesterday > 0 ? (((fieldToday2 - fieldYesterday) / fieldYesterday) * 100).toFixed(1) : fieldToday2 > 0 ? 100 : 0, [fieldToday2, fieldYesterday]);
 
-  const monthNames = useMemo(() => ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], []);
+  const monthNames = useMemo(() => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], []);
   const currentYear = new Date().getFullYear();
   const revenueByMonth = useMemo(() => monthNames.map((month, idx) => {
     const profit = performaInvoices.filter(p => {
@@ -289,6 +320,16 @@ const Dashboard = () => {
   const totalTargets = targets.length;
   const achievedTargets = useMemo(() => targets.filter(t => (Number(t.achieved_amount) || 0) >= (Number(t.monthly_target) || 0)).length, [targets]);
 
+  const totalMonthlyTargetSum = useMemo(() => targets.reduce((s, t) => s + (Number(t.monthly_target) || 0), 0), [targets]);
+  const totalAchievedTargetSum = useMemo(() => targets.reduce((s, t) => s + (Number(t.achieved_amount) || 0), 0), [targets]);
+  const targetAchievementPercentage = useMemo(() => totalMonthlyTargetSum > 0 ? Math.min(100, Math.round((totalAchievedTargetSum / totalMonthlyTargetSum) * 100)) : 0, [totalAchievedTargetSum, totalMonthlyTargetSum]);
+
+  const leadSourceData = useMemo(() => [
+    { name: "Telecalling", value: leads.length, color: "#a855f7" },
+    { name: "Walk-ins", value: walkins.length, color: "#3b82f6" },
+    { name: "Field Visits", value: fields.length, color: "#eab308" }
+  ], [leads.length, walkins.length, fields.length]);
+
   const totalAmcContracts = amcContracts.length;
   const activeAmcContracts = useMemo(() => amcContracts.filter(a => a.status === "Active").length, [amcContracts]);
 
@@ -299,7 +340,7 @@ const Dashboard = () => {
   const todaysCallReports = useMemo(() => callReports.filter(c => normalizeDate(c.call_date) === today).length, [callReports, today]);
 
   const q = searchQuery.toLowerCase().trim();
-  const anyMatch = q && ["Lead Summary","Telecalling Summary","Walkin Summary","Fieldwork Summary","Remainder Summary","Followup Summary","Total Sales","Visitors","Total Calls","Field Work","Revenue","Team Summary"].some(l => l.toLowerCase().includes(q));
+  const anyMatch = q && ["Lead Summary", "Telecalling Summary", "Walkin Summary", "Fieldwork Summary", "Remainder Summary", "Followup Summary", "Total Sales", "Visitors", "Total Calls", "Field Work", "Revenue", "Team Summary"].some(l => l.toLowerCase().includes(q));
   const dim = (key, labels) => anyMatch && !labels.some(l => l.toLowerCase().includes(q)) ? "opacity-30 pointer-events-none" : "";
 
   const StatCard = ({ icon: Icon, title, value, change, sub, positive, color, labels, onClick }) => (
@@ -385,7 +426,20 @@ const Dashboard = () => {
               {uniqueStaff.slice(0, 8).map(name => (
                 <button key={name} onClick={() => setSelectedUser(name)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${selectedUser === name ? "bg-primary text-white shadow-sm" : "bg-surface text-muted hover:bg-hairline"}`}>{name}</button>
               ))}
-              {uniqueStaff.length > 8 && <span className="text-xs text-muted self-center">+{uniqueStaff.length - 8}</span>}
+              {isStaffExpanded ? (
+                <>
+                  {uniqueStaff.slice(8).map(name => (
+                    <button key={name} onClick={() => setSelectedUser(name)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${selectedUser === name ? "bg-primary text-white shadow-sm" : "bg-surface text-muted hover:bg-hairline"}`}>{name}</button>
+                  ))}
+                  <button onClick={() => setIsStaffExpanded(false)} className="text-xs text-primary hover:text-primary-dark font-semibold bg-primary/10 hover:bg-primary/20 px-2.5 py-1.5 rounded-lg transition-all self-center cursor-pointer whitespace-nowrap ml-1">Show Less</button>
+                </>
+              ) : (
+                uniqueStaff.length > 8 && (
+                  <button onClick={() => setIsStaffExpanded(true)} className="text-xs text-primary hover:text-primary-dark font-semibold bg-primary/10 hover:bg-primary/20 px-2.5 py-1.5 rounded-lg transition-all self-center cursor-pointer whitespace-nowrap ml-1">
+                    +{uniqueStaff.length - 8}
+                  </button>
+                )
+              )}
             </div>
           </div>
         </motion.div>
@@ -397,8 +451,8 @@ const Dashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
                 { label: "Clients", data: clients, filter: c => (c.first_name || c.client_company || c.mobile || c.email || c.customer_name || "").toString().toLowerCase().includes(q), nav: "/dashboard/clients", display: c => c.first_name || c.client_company, sub: c => c.mobile || c.email },
-                { label: "Quotations", data: quotations, filter: qt => (qt.customer_name || qt.quotation_id || qt.invoice_id || "").toString().toLowerCase().includes(q), nav: "/dashboard/quotation", display: qt => qt.customer_name || "#"+qt.id, sub: qt => qt.quotation_date ? new Date(qt.quotation_date).toLocaleDateString() : '' },
-                { label: "Leads", data: leads, filter: ld => (ld.customer_name || ld.mobile_number || ld.staff_name || "").toString().toLowerCase().includes(q), nav: "/dashboard/telecalling", display: ld => ld.customer_name || ld.mobile_number, sub: ld => ld.staff_name },
+                { label: "Quotations", data: quotations, filter: qt => (qt.customer_name || qt.quotation_id || qt.invoice_id || "").toString().toLowerCase().includes(q), nav: "/dashboard/quotation", display: qt => qt.customer_name || "#" + qt.id, sub: qt => qt.quotation_date ? new Date(qt.quotation_date).toLocaleDateString() : '' },
+                { label: "Leads", data: leads, filter: ld => (ld.customer_name || ld.company_name || ld.mobile_number || ld.staff_name || "").toString().toLowerCase().includes(q), nav: "/dashboard/telecalling", display: ld => ld.customer_name || ld.mobile_number, sub: ld => ld.staff_name },
               ].map(section => (
                 <div key={section.label}>
                   <div className="text-xs font-bold text-muted uppercase tracking-wider mb-2">{section.label}</div>
@@ -489,28 +543,56 @@ const Dashboard = () => {
           ))}
         </div>
 
-        {/* Remainder & Followup */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="card p-4 md:p-5"><Remainder data={remainderSummary} notes={remainderNotes} /></div>
-          <div className="card p-4 md:p-5"><Followup data={followupSummary} notes={followupNotes} /></div>
-        </div>
 
-        {/* Metrics + Revenue */}
+
+        {/* Team Targets Achievement Tracker */}
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="card p-4 md:p-6 bg-gradient-to-r from-violet-50 to-indigo-50 border border-indigo-100 shadow-sm rounded-2xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm md:text-base font-bold text-ink flex items-center gap-2">
+                <Target className="w-5 h-5 text-indigo-600 animate-pulse" />
+                Active Sales Target Progress
+              </h2>
+              <p className="text-xs text-muted mt-1">Real-time tracker of combined team monthly targets vs payments achieved</p>
+            </div>
+            <div className="text-right">
+              <span className="text-lg md:text-2xl font-black text-indigo-700">{targetAchievementPercentage}%</span>
+              <span className="text-xs text-muted ml-2">({achievedTargets} of {totalTargets} targets achieved)</span>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="flex justify-between text-[11px] font-bold text-indigo-600 mb-1">
+              <span>₹{totalAchievedTargetSum.toLocaleString("en-IN")} Achieved</span>
+              <span>Target: ₹{totalMonthlyTargetSum.toLocaleString("en-IN")}</span>
+            </div>
+            <div className="w-full h-3 bg-indigo-100 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${targetAchievementPercentage}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className="h-full bg-gradient-to-r from-violet-500 to-indigo-600 rounded-full"
+              />
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Metrics + Revenue Charts */}
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 md:gap-6">
           <div className="xl:col-span-3 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {[
-              { icon: FileText, title: "Quotations", value: totalQuotations, sub: `₹${(totalQuotationValue/100000).toFixed(1)}L · ${todaysQuotations} today`, onClick: () => navigate("/dashboard/quotation"), color: "bg-gradient-to-br from-violet-500 to-violet-600" },
-              { icon: FileSpreadsheet, title: "Invoices", value: totalInvoices, sub: `₹${(totalInvoiceValue/100000).toFixed(1)}L · ${todaysInvoices} today`, onClick: () => navigate("/dashboard/invoice"), color: "bg-gradient-to-br from-sky-500 to-sky-600" },
-              { icon: CreditCard, title: "Payments", value: totalPayments, sub: `₹${(todaysPaymentAmount/1000).toFixed(1)}K today`, onClick: () => navigate("/dashboard/payments"), color: "bg-gradient-to-br from-teal-500 to-teal-600" },
+              { icon: FileText, title: "Quotations", value: totalQuotations, sub: `₹${(totalQuotationValue / 100000).toFixed(1)}L · ${todaysQuotations} today`, onClick: () => navigate("/dashboard/quotation"), color: "bg-gradient-to-br from-violet-500 to-violet-600" },
+              // { icon: FileSpreadsheet, title: "Invoices", value: totalInvoices, sub: `₹${(totalInvoiceValue / 100000).toFixed(1)}L · ${todaysInvoices} today`, onClick: () => navigate("/dashboard/invoice"), color: "bg-gradient-to-br from-sky-500 to-sky-600" },
+              // { icon: CreditCard, title: "Payments", value: totalPayments, sub: `₹${(todaysPaymentAmount / 1000).toFixed(1)}K today`, onClick: () => navigate("/dashboard/payments"), color: "bg-gradient-to-br from-teal-500 to-teal-600" },
               { icon: UserCheck, title: "Clients", value: totalClients, sub: `${newClientsThisMonth} new this month`, onClick: () => navigate("/dashboard/clients"), color: "bg-gradient-to-br from-indigo-500 to-indigo-600" },
               { icon: ClipboardList, title: "Tasks", value: totalTasks, sub: `${completedTasks} done · ${taskCompletionRate}% rate`, onClick: () => navigate("/dashboard/task"), color: "bg-gradient-to-br from-rose-500 to-rose-600" },
               { icon: Target, title: "Targets", value: totalTargets, sub: `${achievedTargets} achieved · ${totalTargets - achievedTargets} left`, onClick: () => navigate("/dashboard/targets"), color: "bg-gradient-to-br from-cyan-500 to-cyan-600" },
               { icon: Shield, title: "AMC Contracts", value: totalAmcContracts, sub: `${activeAmcContracts} active`, onClick: () => navigate("/dashboard/amc"), color: "bg-gradient-to-br from-emerald-500 to-emerald-600" },
-              { icon: Calculator, title: "Estimates", value: totalEstimates, sub: `₹${(totalEstimateValue/100000).toFixed(1)}L total`, onClick: () => navigate("/dashboard/estimates"), color: "bg-gradient-to-br from-pink-500 to-pink-600" },
+              { icon: Calculator, title: "Estimates", value: totalEstimates, sub: `₹${(totalEstimateValue / 100000).toFixed(1)}L total`, onClick: () => navigate("/dashboard/estimates"), color: "bg-gradient-to-br from-pink-500 to-pink-600" },
               { icon: Phone, title: "Call Reports", value: totalCallReports, sub: `${todaysCallReports} today`, onClick: () => navigate("/dashboard/call-report"), color: "bg-gradient-to-br from-orange-500 to-orange-600" },
             ].map(card => (
               <motion.div key={card.title} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="card p-3 md:p-4 cursor-pointer transition-all duration-200 hover:shadow-level-2 active:scale-[0.97]" onClick={card.onClick}
+                className="card p-3 md:p-4 cursor-pointer transition-all duration-200 hover:shadow-level-2 hover:-translate-y-0.5 active:scale-[0.97]" onClick={card.onClick}
               >
                 <div className="flex items-center gap-3 mb-2">
                   <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center ${card.color}`}>
@@ -528,37 +610,117 @@ const Dashboard = () => {
 
           {/* Revenue Chart */}
           <div className="xl:col-span-2">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-4 md:p-6 h-full">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-sm md:text-base font-bold text-ink">Revenue</h2>
-                  <p className="text-xl md:text-2xl font-bold text-primary mt-1">
-                    <AnimatedCounter value={monthlyRevenue} prefix="₹" />
-                    <span className="text-xs text-success font-semibold ml-2">&uarr; Monthly</span>
-                  </p>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-4 md:p-6 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-sm md:text-base font-bold text-ink flex items-center gap-2">
+                      <TrendingUp className="w-4.5 h-4.5 text-indigo-500" />
+                      Sales & Revenue
+                    </h2>
+                    <p className="text-xl md:text-2xl font-bold text-primary mt-1">
+                      <AnimatedCounter value={monthlyRevenue} prefix="₹" />
+                      <span className="text-xs text-success font-semibold ml-2">&uarr; Monthly</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted">
+                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Profit</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-200"></span> Projected</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-muted">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span> Profit</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-200"></span> Projected</span>
+                <div className="h-[200px] md:h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={revenueByMonth}>
+                      <defs>
+                        <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="projectedGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#a5b4fc" stopOpacity={0.1} />
+                          <stop offset="95%" stopColor="#a5b4fc" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e3df" vertical={false} />
+                      <XAxis dataKey="month" stroke="#bbb8b1" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#bbb8b1" fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e5e3df", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} formatter={(value) => [`₹${value.toLocaleString("en-IN")}`, undefined]} />
+                      <Area type="monotone" dataKey="profit" stroke="#6366f1" strokeWidth={2.5} fillOpacity={1} fill="url(#profitGrad)" name="Profit" />
+                      <Area type="monotone" dataKey="loss" stroke="#a5b4fc" strokeWidth={1.5} strokeDasharray="4 4" fillOpacity={1} fill="url(#projectedGrad)" name="Projected" />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              </div>
-              <div className="h-[200px] md:h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={revenueByMonth} barGap={4}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e3df" />
-                    <XAxis dataKey="month" stroke="#bbb8b1" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#bbb8b1" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e5e3df", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
-                    <Bar dataKey="profit" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="loss" fill="#c7d2fe" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
               </div>
             </motion.div>
           </div>
         </div>
 
+        {/* Lead Source Breakdown Chart & Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="md:col-span-1 card p-4 md:p-6 flex flex-col justify-between min-h-[300px]">
+            <div>
+              <h2 className="text-base font-bold text-ink flex items-center gap-2 mb-1">
+                <Users className="w-5 h-5 text-indigo-500" />
+                Lead Sources
+              </h2>
+              <p className="text-xs text-muted mb-4">Distribution of total leads by source type</p>
+            </div>
+
+            <div className="relative h-[160px] w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={leadSourceData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={65}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {leadSourceData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value} leads`, undefined]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute flex flex-col items-center justify-center">
+                <span className="text-xl font-bold text-ink">{leads.length + walkins.length + fields.length}</span>
+                <span className="text-[9px] text-muted uppercase font-bold tracking-wide">Total Leads</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 mt-4">
+              {leadSourceData.map((src) => {
+                const total = leads.length + walkins.length + fields.length;
+                const pct = total > 0 ? Math.round((src.value / total) * 100) : 0;
+                return (
+                  <div key={src.name} className="flex items-center justify-between text-xs border-b border-hairline/30 pb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: src.color }}></span>
+                      <span className="font-semibold text-ink">{src.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted">{src.value}</span>
+                      <span className="font-bold text-primary-text min-w-[28px] text-right">{pct}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          {/* <div className="md:col-span-2 grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="card p-4 md:p-5"><Remainder data={remainderSummary} notes={remainderNotes} /></div>
+              <div className="card p-4 md:p-5"><Followup data={followupSummary} notes={followupNotes} /></div>
+            </div>
+          </div> */}
+        </div>
+
         {/* Team Summary */}
+        {/* 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card p-4 md:p-6">
           <h2 className="text-base md:text-lg font-bold text-ink mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-primary" />
@@ -598,8 +760,10 @@ const Dashboard = () => {
             </div>
           </div>
         </motion.div>
+        */}
 
         {/* Escalations */}
+        {/* 
         {escalations.length > 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-4 md:p-5 border-l-4 border-l-error">
             <div className="flex items-center justify-between mb-3">
@@ -640,6 +804,7 @@ const Dashboard = () => {
             )}
           </motion.div>
         )}
+        */}
 
         <div className="text-center text-[10px] text-muted py-2">
           <RefreshCw className="w-3 h-3 inline mr-1" />

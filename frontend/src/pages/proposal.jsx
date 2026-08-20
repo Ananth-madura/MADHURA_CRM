@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Quotation from "./quotation";
 import PerformaInvoice from "./performainvoice";
 import EstimateInvoice from "./estimateinvoice";
@@ -12,7 +12,15 @@ const TABS = [
 ];
 
 const Proposal = () => {
-  const [activeTab, setActiveTab] = useState("quotation");
+  // Default to "quotation"; if a lead redirected here with a tab hint, use that tab instead
+  const [activeTab, setActiveTab] = useState(() => {
+    const hint = sessionStorage.getItem("qt_prefill_tab");
+    if (hint && TABS.find(t => t.key === hint)) {
+      sessionStorage.removeItem("qt_prefill_tab");
+      return hint;
+    }
+    return "quotation";
+  });
 
   return (
     <div className="w-full">

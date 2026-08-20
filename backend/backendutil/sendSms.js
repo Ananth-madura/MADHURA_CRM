@@ -1,4 +1,6 @@
 const nodemailer = require("nodemailer");
+const db = require("../config/database");
+const { getTransporterForUser } = require("./emailConfig");
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -23,25 +25,6 @@ transporter.verify((error) => {
     console.log("OTP email transporter is ready");
   }
 });
-
-const sendWithRetry = async (mailOptions, retries = 3) => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await transporter.sendMail(mailOptions);
-      return;
-    } catch (err) {
-      if (err.code === "ENOTFOUND" || err.code === "ESOCKET") {
-        transporter = createTransporter();
-      }
-      if (i < retries - 1) {
-        await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-      } else {
-        console.error("OTP email failed after", retries, "attempts:", err.message);
-        throw err;
-      }
-    }
-  }
-};
 
 const sendEmailOtp = async (email, otp, customSubject, is2fa = false) => {
   const subject = customSubject || (is2fa ? "Your ACHME CRM 2FA Login Verification Code" : "Your Registration OTP");
@@ -71,12 +54,47 @@ const sendEmailOtp = async (email, otp, customSubject, is2fa = false) => {
     </div>
   `;
 
-  await sendWithRetry({
-    from: `"ACHME CRM Security" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: subject,
-    html: htmlContent,
-  });
+  let activeTransporter = transporter;
+  let activeFrom = `"ACHME CRM Security" <${process.env.EMAIL_USER}>`;
+
+  try {
+    const user = await new Promise((resolve) => {
+      db.query("SELECT id FROM users WHERE email = ? LIMIT 1", [email.toLowerCase()], (err, rows) => {
+        if (!err && rows && rows.length > 0) resolve(rows[0]);
+        else resolve(null);
+      });
+    });
+
+    if (user) {
+      const customConfig = await getTransporterForUser(user.id);
+      if (customConfig && customConfig.transporter) {
+        activeTransporter = customConfig.transporter;
+        activeFrom = customConfig.fromAddress;
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to retrieve custom user transporter for OTP, falling back to default:", e.message);
+  }
+
+  // Auto retry sending once if it fails
+  let retries = 2;
+  for (let i = 0; i < retries; i++) {
+    try {
+      await activeTransporter.sendMail({
+        from: activeFrom,
+        to: email,
+        subject: subject,
+        html: htmlContent,
+      });
+      return;
+    } catch (err) {
+      if (i === retries - 1) {
+        console.error("OTP email sending failed after attempts:", err.message);
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
 };
 
 module.exports = sendEmailOtp;

@@ -20,6 +20,21 @@ services:
       retries: 5
       start_period: 15s
 
+  # Redis for WhatsApp message queue (BullMQ)
+  redis:
+    image: redis:7-alpine
+    container_name: achme-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Backend Express Server Service
   backend:
     build:
@@ -43,10 +58,17 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - EMAIL_USER=${EMAIL_USER:-thanan757@gmail.com}
       - EMAIL_PASS=${EMAIL_PASS:-ghjv omqm hwji kerq}
+      - REDIS_URL=redis://redis:6379
+      - WA_MESSAGE_INTERVAL=2000
+      - WA_PHONE_NUMBER_ID=${WA_PHONE_NUMBER_ID:-}
+      - WA_ACCESS_TOKEN=${WA_ACCESS_TOKEN:-}
+      - WA_WABA_ID=${WA_WABA_ID:-}
     volumes:
       - ./backend/uploads:/app/uploads
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: always
 
@@ -69,3 +91,4 @@ services:
 # Persistent Volume Declarations
 volumes:
   mysql_data:
+  redis_data:

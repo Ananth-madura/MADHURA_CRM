@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Search, Download, X, Edit2, MinusCircle, Trash2, Mail, MapPin, History, FileText } from "lucide-react";
+import { Plus, Search, Download, X, Edit2, MinusCircle, Trash2, Mail, MapPin, History, FileText, Clock } from "lucide-react";
 import { calculateItemTotal } from "../utils/invoicecal";
 import ClientSearchDropdown from "../components/ClientSearchDropdown";
 import { downloadAsHtml } from "../utils/downloadHtml";
@@ -11,15 +11,42 @@ import { BRANCH_DATA, BRANCH_OPTIONS } from "../config/branchConfig";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
 
 const parseName = (fullName = "") => {
-  const prefixes = ["Mr.", "Mrs.", "M/S."];
-  for (const prefix of prefixes) {
-    if (fullName.startsWith(prefix + " ")) {
-      return { salutation: prefix, name: fullName.substring(prefix.length + 1) };
-    } else if (fullName.startsWith(prefix)) {
-      return { salutation: prefix, name: fullName.substring(prefix.length) };
+    const prefixes = ["Mr.", "Mrs.", "M/S."];
+    for (const prefix of prefixes) {
+        if (fullName.startsWith(prefix + " ")) {
+            return { salutation: prefix, name: fullName.substring(prefix.length + 1) };
+        } else if (fullName.startsWith(prefix)) {
+            return { salutation: prefix, name: fullName.substring(prefix.length) };
+        }
     }
-  }
-  return { salutation: "", name: fullName };
+    return { salutation: "", name: fullName };
+};
+
+const resizeAndCompressImage = (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                const MAX_WIDTH = 800;
+                const scale = MAX_WIDTH / img.width;
+                if (img.width > MAX_WIDTH) {
+                    canvas.width = MAX_WIDTH;
+                    canvas.height = img.height * scale;
+                } else {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                }
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const base64 = canvas.toDataURL("image/jpeg", 0.7);
+                resolve(base64);
+            };
+        };
+    });
 };
 
 const UOM_OPTIONS = ["Nos", "Units", "Pieces", "Boxes", "Sets", "Meters", "Kg", "Liters"];
@@ -32,11 +59,11 @@ const WARRANTY_OPTIONS = ["No Warranty", "Testing Warranty", "1 Month", "3 Month
 const GST_MODES = ["Exclusive", "Inclusive", "Exempt"];
 const STATUS_OPTIONS = ["Send", "Pending", "Close", "Billed", "Cancel"];
 const STATUS_COLORS = {
-  Send: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
-  Pending: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
-  Close: { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" },
-  Billed: { bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
-  Cancel: { bg: "bg-red-100", text: "text-red-700", border: "border-red-200" },
+    Send: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
+    Pending: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
+    Close: { bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" },
+    Billed: { bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
+    Cancel: { bg: "bg-red-100", text: "text-red-700", border: "border-red-200" },
 };
 const GST_STATE_MAP = {
     "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand",
@@ -53,16 +80,31 @@ const BANK_DETAILS_CONFIG = [
     { id: "hdfc", company: "ACHME COMMUNICATION", bank: "HDFC BANK", account: "00312320005822", ifsc: "HDFC0000031", branch: "Coimbatore" },
     { id: "kotak", company: "Achme Communication", bank: "KOTAK MAHINDRA BANK", account: "9211242667", ifsc: "KKBK0000491", branch: "Avinashi Road, Coimbatore" }
 ];
+// Reads the currently logged-in user so the Executive Details section can
+// auto-fetch their name, email and mobile number. The mobile (and any name the
+// user edits on /dashboard/profile) are pulled from the profile on form mount
+// and cached onto the stored user. Admins fall back to "KrishnaKumar" when no
+// profile name is set. Returns blanks if no user / parse fails.
+const getCurrentExec = () => {
+    try {
+        const u = JSON.parse(localStorage.getItem("user") || "{}");
+        return {
+            name: u.name || (u.role === "admin" ? "KrishnaKumar" : ""),
+            email: u.email || "",
+            phone: u.mobile_number || "",
+        };
+    } catch (_) { return { name: "", email: "", phone: "" }; }
+};
 const emptyExtra = () => ({
     from_address_id: "", from_address_custom: "Opp to SMS Hotel, Peelamedu, Avinashi Road, Coimbatore-641004 | GSTIN: 33AAHFA7876M1ZX",
     client_company: "", client_address1: "", client_address2: "",
     client_city: "", client_state: "", client_pincode: "", client_country: "India",
     tax_type: "GST18", custom_tax: "",
-    exec_name: "", exec_phone: "", exec_email: "",
+    exec_name: getCurrentExec().name, exec_phone: getCurrentExec().phone, exec_email: getCurrentExec().email,
     terms_general: false, terms_tax: false,
     terms_project_period: "30-60 days from Purchase Order date",
     terms_validity: "15 days",
-    terms_separate_orders: { material: false, installation: false, usd: false, boq: false },
+    terms_separate_orders: { material: false, installation: false, usd: false, boq: false, hide_gst_percentage: false, attached_images: [] },
     terms_payment: "", terms_payment_custom: "", terms_warranty: "",
     supplier_branch: "Coimbatore",
     bank_details_id: "hdfc",
@@ -86,6 +128,10 @@ const ServiceEstimation = () => {
     const [viewId, setViewId] = useState(null);
     const [showinvoice, setShowInvoice] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [creatorFilter, setCreatorFilter] = useState("");
     const [mailOpen, setMailOpen] = useState(false);
     const [mailTo, setMailTo] = useState("");
     const [mailCc, setMailCc] = useState("");
@@ -110,6 +156,17 @@ const ServiceEstimation = () => {
     const [historyCustomerName, setHistoryCustomerName] = useState("");
     const [historySearch, setHistorySearch] = useState("");
     const [historyRootId, setHistoryRootId] = useState(null);
+    // ── Follow-ups ────────────────────────────────────────────────────────────
+    const [followupOpen, setFollowupOpen] = useState(false);
+    const [followupLeadId, setFollowupLeadId] = useState(null);
+    const [followupLeadName, setFollowupLeadName] = useState("");
+    const [newFollowupDate, setNewFollowupDate] = useState("");
+    const [newFollowupTime, setNewFollowupTime] = useState("");
+    const [newFollowupNote, setNewFollowupNote] = useState("");
+    const [leadFollowups, setLeadFollowups] = useState([]);
+    const [followupFilter, setFollowupFilter] = useState(""); // "" | "has" | "today" | "pending"
+    const [followupDateFilter, setFollowupDateFilter] = useState("");
+    const [followupSummaryMap, setFollowupSummaryMap] = useState({});
     const formatSENumber = (id, dateStr) => {
         const year = dateStr ? new Date(dateStr).getFullYear() : new Date().getFullYear();
         return `SE-${year}-${String(id).padStart(3, "0")}`;
@@ -120,6 +177,7 @@ const ServiceEstimation = () => {
         fetchServiceInvoices();
         fetchQuotations();
         fetchFromAddresses();
+        fetchFollowupSummary();
 
         // Check for query params
         const urlParams = new URLSearchParams(window.location.search);
@@ -174,9 +232,48 @@ const ServiceEstimation = () => {
         const token = localStorage.getItem("token");
         return { headers: { Authorization: `Bearer ${token}` } };
     };
+
+    // Auto-fetch the logged-in user's executive details (name, email, mobile) from
+    // their /dashboard/profile data so the Executive Details section is pre-filled.
+    // The mobile number isn't part of the login payload, so we pull the full
+    // profile here and cache it back onto the stored user. Admins fall back to
+    // "KrishnaKumar" when no profile name is set. Fields stay fully editable.
+    useEffect(() => {
+        (async () => {
+            try {
+                const r = await axios.get(`${API}/api/auth/profile`, getAuthConfig());
+                const p = r.data || {};
+                let u = {};
+                try { u = JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { u = {}; }
+                u = {
+                    ...u,
+                    name: p.first_name || u.name || (u.role === "admin" ? "KrishnaKumar" : ""),
+                    email: p.email || u.email || "",
+                    mobile_number: p.mobile_number || u.mobile_number || "",
+                };
+                localStorage.setItem("user", JSON.stringify(u));
+                setExtra(ex => ({
+                    ...ex,
+                    exec_name: ex.exec_name || u.name,
+                    exec_phone: ex.exec_phone || u.mobile_number,
+                    exec_email: ex.exec_email || u.email,
+                }));
+            } catch (_) { /* keep whatever defaults emptyExtra produced */ }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const fetchServiceInvoices = async () => {
         try { const res = await axios.get(`${API}/api/service-estimation`, getAuthConfig()); setServiceInvoices(res.data); }
         catch (err) { console.error(err); }
+    };
+    const fetchFollowupSummary = async () => {
+        try {
+            const r = await axios.get(`${API}/api/leads/followups-summary/service_estimation`, getAuthConfig());
+            const map = {};
+            (r.data || []).forEach(row => { map[row.lead_id] = row; });
+            setFollowupSummaryMap(map);
+        } catch (_) { }
     };
     const fetchQuotations = async () => {
         try { const res = await axios.get(`${API}/api/quotations`, getAuthConfig()); setQuotations(res.data); }
@@ -213,6 +310,50 @@ const ServiceEstimation = () => {
             alert("Failed to update status: " + (err.response?.data?.message || err.message));
         }
     };
+    // ── Follow-up helpers ─────────────────────────────────────────────────
+    const openFollowupPanel = async (e, inv) => {
+        e.stopPropagation();
+        setFollowupLeadId(inv.id);
+        setFollowupLeadName(inv.customer_name);
+        setNewFollowupDate(""); setNewFollowupTime(""); setNewFollowupNote("");
+        try {
+            const res = await axios.get(`${API}/api/leads/followups/service_estimation/${inv.id}`, getAuthConfig());
+            setLeadFollowups(res.data);
+        } catch (_) { setLeadFollowups([]); }
+        setFollowupOpen(true);
+    };
+    const saveFollowup = async () => {
+        if (!newFollowupDate) return alert("Please select a date");
+        try {
+            await axios.post(`${API}/api/leads/followups`, {
+                lead_id: followupLeadId, lead_type: "service_estimation",
+                followup_date: newFollowupDate, followup_time: newFollowupTime || null, followup_notes: newFollowupNote,
+            }, getAuthConfig());
+            const res = await axios.get(`${API}/api/leads/followups/service_estimation/${followupLeadId}`, getAuthConfig());
+            setLeadFollowups(res.data);
+            setNewFollowupDate(""); setNewFollowupTime(""); setNewFollowupNote("");
+            fetchFollowupSummary();
+        } catch (err) { alert("Failed to save follow-up: " + (err.response?.data?.error || err.message)); }
+    };
+    const deleteFollowup = async (id) => {
+        await axios.delete(`${API}/api/leads/followups/${id}`, getAuthConfig());
+        setLeadFollowups(prev => prev.filter(f => f.id !== id));
+        fetchFollowupSummary();
+    };
+    const sendFollowupEmail = async () => {
+        const inv = serviceInvoices.find(p => p.id === followupLeadId);
+        if (!inv?.email) return alert("No email address found for this customer");
+        try {
+            setMailTo(inv.email);
+            const adminRes = await axios.get(`${API}/api/auth/admin-email`, getAuthConfig()).catch(() => ({ data: {} }));
+            setMailCc(adminRes.data?.email || "");
+            setMailSubject(`Follow-up: ${formatSENumber(inv.id, inv.invoice_date)}`);
+            setMailContent(`Dear ${inv.customer_name},\n\nThis is a follow-up regarding your service estimation. Please let us know if you have any questions.\n\nThank you.`);
+            setFollowupOpen(false);
+            setMailOpen(true);
+        } catch (err) { alert("Failed to open mail: " + err.message); }
+    };
+    const fmtFollowDate = (d) => d ? new Date(d.toString().split("T")[0]).toLocaleString("en-IN", { dateStyle: "medium" }) : "---";
     const formatSubSENumber = (rootId, version, dateStr) => {
         const year = dateStr ? new Date(dateStr).getFullYear() : new Date().getFullYear();
         return `SE-${year}-${String(rootId).padStart(3, "0")}-${version}`;
@@ -299,10 +440,12 @@ const ServiceEstimation = () => {
             setItems(loadedItems);
             setDescInput(loadedItems.map(i => i.name).join(", "));
             setBrandInput(loadedItems[0]?.brand_model || "");
-            let termsSep = { material: false, installation: false, usd: false, boq: false };
+            let termsSep = { material: false, installation: false, usd: false, boq: false, hide_gst_percentage: false, attached_images: [] };
             try {
-                termsSep = h.terms_separate_orders ? JSON.parse(h.terms_separate_orders) : termsSep;
-            } catch (_) {}
+                if (h.terms_separate_orders) {
+                    termsSep = { ...termsSep, ...JSON.parse(h.terms_separate_orders) };
+                }
+            } catch (_) { }
             setExtra({
                 from_address_id: h.from_address_id || "",
                 from_address_custom: h.from_address_custom || (BRANCH_DATA[h.supplier_branch || "Coimbatore"] ? `${BRANCH_DATA[h.supplier_branch || "Coimbatore"].address} | GSTIN: ${BRANCH_DATA[h.supplier_branch || "Coimbatore"].gstin}` : ""),
@@ -315,9 +458,9 @@ const ServiceEstimation = () => {
                 client_country: h.client_country || "India",
                 tax_type: h.tax_type || "GST18",
                 custom_tax: h.custom_tax || "",
-                exec_name: h.exec_name || "",
-                exec_phone: h.exec_phone || "",
-                exec_email: h.exec_email || "",
+                exec_name: h.exec_name || getCurrentExec().name,
+                exec_phone: h.exec_phone || getCurrentExec().phone,
+                exec_email: h.exec_email || getCurrentExec().email,
                 terms_general: !!h.terms_general,
                 terms_tax: !!h.terms_tax,
                 terms_project_period: h.terms_project_period || "30-60 days from Purchase Order date",
@@ -406,7 +549,7 @@ const ServiceEstimation = () => {
         e.preventDefault();
         if (!serviceInvoice.invoice_date) return alert("Please select date");
         if (!customer.customer_name?.trim()) return alert("Customer name is required");
-        if (items.some(i => !i.name.trim())) return alert("Description cannot be empty");
+        // Description is optional — no validation required
         try {
             const totals = getTaxCalculations();
             const fullCustomerName = (customer.salutation ? customer.salutation + " " : "") + customer.customer_name;
@@ -530,13 +673,61 @@ const ServiceEstimation = () => {
         finally { setMailSending(false); }
     };
     const updateItem = (i, field, value) => { const copy = [...items]; copy[i][field] = value; setItems(copy); };
-    const removeItem = () => { if (items.length <= 1) return; const n = items.slice(0, -1); setItems(n); setDescInput(n.map(i => i.name).join(", ")); setBrandInput(n[n.length-1]?.brand_model||""); };
+    const removeItem = () => { if (items.length <= 1) return; const n = items.slice(0, -1); setItems(n); setDescInput(n.map(i => i.name).join(", ")); setBrandInput(n[n.length - 1]?.brand_model || ""); };
     const formatDate = (date) => date ? new Date(date).toLocaleString("en-IN", { dateStyle: "medium" }) : "---";
+    const formatSavedDate = (created_at, invoice_date) => {
+        if (created_at) return new Date(created_at).toLocaleString("en-IN", { dateStyle: "medium" });
+        return invoice_date ? new Date(invoice_date).toLocaleString("en-IN", { dateStyle: "medium" }) : "---";
+    };
     useEffect(() => {
         document.body.classList.toggle("modal-open", open || mailOpen);
         return () => document.body.classList.remove("modal-open");
     }, [open, mailOpen]);
-    const filteredInvoices = serviceInvoices.filter(q => q.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()));
+    const uniqueCreators = Array.from(new Set(serviceInvoices.map(item => item.creator_name).filter(Boolean)));
+
+    const filteredInvoices = serviceInvoices.filter(q => {
+        const matchesCustomer = q.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        let matchesDate = true;
+        const invDateStr = q.invoice_date;
+        if (invDateStr) {
+            const invDate = new Date(invDateStr.split("T")[0]);
+            if (startDate) {
+                const start = new Date(startDate);
+                if (invDate < start) matchesDate = false;
+            }
+            if (endDate) {
+                const end = new Date(endDate);
+                if (invDate > end) matchesDate = false;
+            }
+        }
+
+        let matchesStatus = true;
+        if (statusFilter && statusFilter !== "All") {
+            matchesStatus = (q.status || "Pending") === statusFilter;
+        }
+
+        let matchesCreator = true;
+        if (creatorFilter && creatorFilter !== "All") {
+            matchesCreator = q.creator_name === creatorFilter;
+        }
+
+        // Follow-up filters
+        const fuSum = followupSummaryMap[q.id];
+        let matchesFollowup = true;
+        if (followupFilter === "has") matchesFollowup = !!(fuSum && fuSum.total_count > 0);
+        else if (followupFilter === "today") matchesFollowup = !!(fuSum && fuSum.today_count > 0);
+        else if (followupFilter === "pending") matchesFollowup = !!(fuSum && fuSum.pending_count > 0);
+
+        let matchesFollowupDate = true;
+        if (followupDateFilter && fuSum) {
+            matchesFollowupDate = fuSum.earliest_pending?.toString().slice(0, 10) === followupDateFilter;
+        } else if (followupDateFilter && !fuSum) {
+            matchesFollowupDate = false;
+        }
+
+        return matchesCustomer && matchesDate && matchesStatus && matchesCreator && matchesFollowup && matchesFollowupDate;
+    });
     const SectionTitle = ({ children }) => (
         <div className="flex items-center gap-2 mb-4 mt-6">
             <div className="h-1 w-6 bg-blue-500 rounded"></div>
@@ -585,6 +776,94 @@ const ServiceEstimation = () => {
                     </div>
                 </div>
             </div>
+            {/* Filter Panel */}
+            {!viewId && (
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm mt-6 flex flex-wrap gap-4 items-end">
+                    <div className="flex flex-col gap-1 min-w-[150px]">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Start Date</span>
+                        <input
+                            type="date"
+                            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+                            value={startDate}
+                            onChange={e => setStartDate(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1 min-w-[150px]">
+                        <span className="text-xs font-bold text-gray-500 uppercase">End Date</span>
+                        <input
+                            type="date"
+                            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+                            value={endDate}
+                            onChange={e => setEndDate(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1 min-w-[150px]">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Status</span>
+                        <select
+                            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+                            value={statusFilter}
+                            onChange={e => setStatusFilter(e.target.value)}
+                        >
+                            <option value="All">All Statuses</option>
+                            {STATUS_OPTIONS.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                    </div>
+                    {(userRole === "admin" || userRole === "subadmin") && (
+                        <div className="flex flex-col gap-1 min-w-[150px]">
+                            <span className="text-xs font-bold text-gray-500 uppercase">Created By</span>
+                            <select
+                                className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+                                value={creatorFilter}
+                                onChange={e => setCreatorFilter(e.target.value)}
+                            >
+                                <option value="All">All Creators</option>
+                                {uniqueCreators.map(name => (
+                                    <option key={name} value={name}>{name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    <div className="flex flex-col gap-1 min-w-[170px]">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Follow-up Filter</span>
+                        <select
+                            value={followupFilter}
+                            onChange={e => setFollowupFilter(e.target.value)}
+                            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition cursor-pointer"
+                        >
+                            <option value="">All Records</option>
+                            <option value="has">Has Follow-ups</option>
+                            <option value="today">Today&apos;s Follow-ups</option>
+                            <option value="pending">Pending Follow-ups</option>
+                        </select>
+                    </div>
+                    <div className="flex flex-col gap-1 min-w-[150px]">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Follow-up Date</span>
+                        <input
+                            type="date"
+                            value={followupDateFilter}
+                            onChange={e => setFollowupDateFilter(e.target.value)}
+                            className="border rounded-lg px-3 py-1.5 outline-none text-sm bg-gray-50/50 hover:bg-gray-50 focus:bg-white transition"
+                        />
+                    </div>
+                    <button
+                        onClick={() => {
+                            setStartDate("");
+                            setEndDate("");
+                            setStatusFilter("");
+                            setCreatorFilter("");
+                            setSearchTerm("");
+                            setFollowupFilter("");
+                            setFollowupDateFilter("");
+                        }}
+                        className="px-4 py-2 border rounded-lg text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition h-10 flex items-center justify-center gap-1 shadow-sm"
+                    >
+                        Reset Filters
+                    </button>
+                </div>
+            )}
+
             {/* Table */}
             {!viewId && (
                 <div className="bg-white shadow-sm rounded-xl mt-6 overflow-hidden border border-gray-100 overflow-x-auto">
@@ -598,46 +877,72 @@ const ServiceEstimation = () => {
                                 <th className="px-4 py-4 border-r">Date</th>
                                 <th className="px-4 py-4 border-r">Total</th>
                                 <th className="px-4 py-4 border-r">City</th>
+                                {(userRole === "admin" || userRole === "subadmin") && (
+                                    <th className="px-4 py-4 border-r">Created By</th>
+                                )}
                                 <th className="px-4 py-4 border-r">Status</th>
-                                <th className="px-4 py-4">History</th>
+                                <th className="px-4 py-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredInvoices.map(p => {
                                 const sc = STATUS_COLORS[p.status] || STATUS_COLORS.Pending;
                                 return (
-                                <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
-                                    className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
-                                    <td className="px-4 py-4 border-r font-medium text-blue-600">{formatSENumber(p.id, p.invoice_date)}</td>
-                                    <td className="px-4 py-4 border-r">{p.customer_name}</td>
-                                    <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
-                                    <td className="px-4 py-4 border-r">{p.mobile_number}</td>
-                                    <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
-                                    <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
-                                    <td className="px-4 py-4 border-r">{p.location_city}</td>
-                                    <td className="px-4 py-4 border-r">
-                                        <select
-                                            value={p.status || "Pending"}
-                                            onClick={e => e.stopPropagation()}
-                                            onChange={e => handleStatusUpdate(p.id, e.target.value)}
-                                            className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
-                                        >
-                                            {STATUS_OPTIONS.map(s => (
-                                                <option key={s} value={s} className="bg-white text-gray-700 font-normal">
-                                                    {s}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                    <td className="px-4 py-4 text-center">
-                                        <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
-                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
-                                            <History size={13} /> History
-                                        </button>
-                                    </td>
-                                </tr>
-                            );})}
-                            {filteredInvoices.length === 0 && (<tr><td colSpan="9" className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
+                                    <tr key={p.id} onClick={() => setSelectedId(p.id)} onDoubleClick={() => { setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }}
+                                        className={`cursor-pointer border-b hover:bg-gray-50 transition ${selectedId === p.id ? "bg-blue-50/50" : ""}`}>
+                                        <td className="px-4 py-4 border-r font-medium text-blue-600">{formatSENumber(p.id, p.invoice_date)}</td>
+                                        <td className="px-4 py-4 border-r">{p.customer_name}</td>
+                                        <td className="px-4 py-4 border-r text-gray-500">{p.email || "---"}</td>
+                                        <td className="px-4 py-4 border-r">{p.mobile_number}</td>
+                                        <td className="px-4 py-4 border-r">{formatDate(p.invoice_date)}</td>
+                                        <td className="px-4 py-4 border-r font-bold text-gray-900">&#8377;{p.grand_total?.toLocaleString()}</td>
+                                        <td className="px-4 py-4 border-r">{[p.location_city, p.client_state, p.client_country].filter(Boolean).join(", ") || "---"}</td>
+                                        {(userRole === "admin" || userRole === "subadmin") && (
+                                            <td className="px-4 py-4 border-r font-medium text-gray-700">{p.creator_name || "---"}</td>
+                                        )}
+                                        <td className="px-4 py-4 border-r">
+                                            <select
+                                                value={p.status || "Pending"}
+                                                onClick={e => e.stopPropagation()}
+                                                onChange={e => handleStatusUpdate(p.id, e.target.value)}
+                                                className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border outline-none cursor-pointer ${sc.bg} ${sc.text} ${sc.border}`}
+                                            >
+                                                {STATUS_OPTIONS.map(s => (
+                                                    <option key={s} value={s} className="bg-white text-gray-700 font-normal">
+                                                        {s}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className="px-4 py-4 text-center">
+                                            <div className="flex gap-2 justify-center flex-wrap">
+                                                <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View"
+                                                    className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1">
+                                                    View
+                                                </button>
+                                                <button onClick={e => openHistory(e, p.id, p.customer_name, p.parent_id)}
+                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold transition">
+                                                    <History size={13} /> History
+                                                </button>
+                                                <button onClick={e => openFollowupPanel(e, p)} title="Follow-ups"
+                                                    className={`px-2 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${followupSummaryMap[p.id]?.today_count > 0
+                                                            ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                                                            : followupSummaryMap[p.id]?.pending_count > 0
+                                                                ? "bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-100"
+                                                                : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"
+                                                        }`}>
+                                                    <Clock size={12} /> Follow-ups
+                                                    {followupSummaryMap[p.id]?.pending_count > 0 && (
+                                                        <span className={`ml-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-full ${followupSummaryMap[p.id]?.today_count > 0 ? "bg-red-500 text-white" : "bg-cyan-500 text-white"
+                                                            }`}>{followupSummaryMap[p.id]?.pending_count}</span>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {filteredInvoices.length === 0 && (<tr><td colSpan={userRole === "admin" || userRole === "subadmin" ? 10 : 9} className="py-10 text-gray-400 italic">No invoices found</td></tr>)}
                         </tbody>
                     </table>
                 </div>
@@ -857,7 +1162,7 @@ const ServiceEstimation = () => {
                                                     ...ex,
                                                     client_company: client.company_name || "",
                                                     client_address1: client.address || "",
-                                                    client_address2: "",
+                                                    client_address2: client.address_2 || "",
                                                     client_city: client.lead_city || client.city || "",
                                                     client_state: client.state || "",
                                                     client_pincode: client.pincode || "",
@@ -871,7 +1176,10 @@ const ServiceEstimation = () => {
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Mobile Number *</label>
-                                <input type="text" value={customer.mobile_number} onChange={e => { if (/^\d{0,13}$/.test(e.target.value)) setCustomer({ ...customer, mobile_number: e.target.value }); }} maxLength={13} inputMode="numeric" className="border rounded-lg px-3 py-2 outline-none text-sm" required />
+                                <div className="flex border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-100">
+                                    <span className="bg-gray-100 border-r px-3 py-2 text-sm text-gray-600 font-medium flex items-center select-none">+91</span>
+                                    <input type="text" value={customer.mobile_number} onChange={e => { if (/^\d{0,10}$/.test(e.target.value)) setCustomer({ ...customer, mobile_number: e.target.value }); }} maxLength={10} inputMode="numeric" className="px-3 py-2 outline-none text-sm flex-1" required />
+                                </div>
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
@@ -928,7 +1236,7 @@ const ServiceEstimation = () => {
                         <div className="flex flex-col gap-1 mb-3">
                             <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
                                 <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Description</label>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Description <span className="text-gray-400 font-normal normal-case">(Optional)</span></label>
                                     <textarea value={descInput} onChange={e => setDescInput(e.target.value)} placeholder="e.g. Laptop, specs..." className="w-full border rounded-lg px-3 py-2 outline-none min-h-[60px] text-sm" />
                                 </div>
                                 {/* 
@@ -967,28 +1275,28 @@ const ServiceEstimation = () => {
                                         <tr key={i} className="border-b last:border-0">
                                             <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
                                             <td className="px-3 py-2">
-                                                    <input
+                                                <input
                                                     type="text"
                                                     value={item.name}
                                                     onChange={e => updateItem(i, "name", e.target.value)}
                                                     onClick={() => { setDescInput(item.name); setBrandInput(item.brand_model); setEditingIndex(i); }}
-                                                    className="w-full outline-none bg-transparent text-sm cursor-text hover:text-blue-600 font-medium"
+                                                    className="w-full border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500 font-medium"
                                                     placeholder="Enter item description..."
-                                                  />
+                                                />
                                             </td>
-                                            <td className="px-3 py-2"><input type="text" value={item.brand_model} onChange={e => updateItem(i, "brand_model", e.target.value)} onClick={() => { setDescInput(item.name); setBrandInput(item.brand_model); setEditingIndex(i); }} className="w-full outline-none bg-transparent text-sm cursor-text hover:text-blue-600" placeholder="Brand/Model" /></td>
-                                            <td className="px-3 py-2"><input type="text" value={item.hsn_sac} onChange={e => updateItem(i, "hsn_sac", e.target.value)} className="w-full outline-none bg-transparent text-sm" placeholder="HSN/SAC" /></td>
+                                            <td className="px-3 py-2"><input type="text" value={item.brand_model} onChange={e => updateItem(i, "brand_model", e.target.value)} onClick={() => { setDescInput(item.name); setBrandInput(item.brand_model); setEditingIndex(i); }} className="w-full border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="Brand/Model" /></td>
+                                            <td className="px-3 py-2"><input type="text" value={item.hsn_sac} onChange={e => updateItem(i, "hsn_sac", e.target.value)} className="w-full border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="HSN/SAC" /></td>
                                             <td className="px-3 py-2">
                                                 <select value={item.uom} onChange={e => updateItem(i, "uom", e.target.value)} className="border rounded px-2 py-1 text-xs outline-none bg-white">
                                                     {UOM_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
                                                     <option value="custom">Custom</option>
                                                 </select>
-                                                {item.uom === "custom" && <input type="text" placeholder="Enter UOM" onChange={e => updateItem(i, "uom", e.target.value)} className="mt-1 border rounded px-2 py-1 text-xs w-full outline-none" />}
+                                                {item.uom === "custom" && <input type="text" placeholder="Enter UOM" onChange={e => updateItem(i, "uom", e.target.value)} className="mt-1 border rounded px-2 py-1 text-xs w-full bg-white outline-none" />}
                                             </td>
-                                            <td className="px-3 py-2"><input type="number" value={item.price} onChange={e => updateItem(i, "price", Number(e.target.value))} className="w-20 text-center outline-none bg-transparent text-sm" /></td>
-                                            <td className="px-3 py-2"><input type="number" value={item.qty} onChange={e => updateItem(i, "qty", Number(e.target.value))} className="w-12 text-center outline-none bg-transparent text-sm" /></td>
-                                            <td className="px-3 py-2"><input type="number" value={item.tax} onChange={e => updateItem(i, "tax", Number(e.target.value))} className="w-12 text-center bg-transparent outline-none text-sm border-b border-gray-200" /></td>
-                                            <td className="px-3 py-2"><input type="number" value={item.discount} onChange={e => updateItem(i, "discount", Number(e.target.value))} className="w-20 text-center outline-none bg-transparent text-sm" /></td>
+                                            <td className="px-3 py-2"><input type="number" value={item.price === 0 ? "" : item.price} onChange={e => updateItem(i, "price", Number(e.target.value))} className="w-20 text-center border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="0" /></td>
+                                            <td className="px-3 py-2"><input type="number" value={item.qty === 0 ? "" : item.qty} onChange={e => updateItem(i, "qty", Number(e.target.value))} className="w-12 text-center border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="1" /></td>
+                                            <td className="px-3 py-2"><input type="number" value={item.tax === 0 ? "" : item.tax} onChange={e => updateItem(i, "tax", Number(e.target.value))} className="w-12 text-center border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="18" /></td>
+                                            <td className="px-3 py-2"><input type="number" value={item.discount === 0 ? "" : item.discount} onChange={e => updateItem(i, "discount", Number(e.target.value))} className="w-20 text-center border rounded px-2 py-1 text-sm bg-white outline-none focus:ring-1 focus:ring-blue-500" placeholder="0" /></td>
                                             <td className="px-3 py-2 text-right font-bold text-sm">&#8377;{calculateItemTotal(item).toLocaleString()}</td>
                                         </tr>
                                     ))}
@@ -1005,23 +1313,95 @@ const ServiceEstimation = () => {
                                     const t = getTaxCalculations();
                                     const gstMode = extra.gst_mode || "Exclusive";
                                     const taxableValue = gstMode === "Inclusive" ? t.subtotal - t.total_discount - t.total_cgst - t.total_sgst - t.total_igst : t.subtotal - t.total_discount;
+                                    const taxBase = gstMode === "Inclusive" ? taxableValue : (t.subtotal - t.total_discount);
+
+                                    const showBreakdown = !extra.terms_separate_orders?.hide_gst_percentage;
+
+                                    const branchState = (BRANCH_OPTIONS.find(b => b.value === extra.supplier_branch)?.state || "Tamil Nadu").toLowerCase().trim();
+                                    const clientState = (extra.client_state || "").toLowerCase().trim();
+                                    const same = branchState === clientState && clientState !== "";
+
+                                    const gstBreakdown = [];
+                                    if (gstMode !== "Exempt" && gstMode !== "Without GST") {
+                                        const groups = {};
+                                        items.forEach(item => {
+                                            const taxRate = Number(item.tax) || 0;
+                                            if (taxRate === 0) return;
+                                            const qty = Number(item.qty || item.quantity || 0);
+                                            const price = Number(item.price || 0);
+                                            const discount = Number(item.discount || 0);
+                                            const base = price * qty - discount;
+
+                                            let gstAmount = 0;
+                                            if (gstMode === "Inclusive") {
+                                                const taxableVal = base / (1 + taxRate / 100);
+                                                gstAmount = base - taxableVal;
+                                            } else {
+                                                gstAmount = (base * taxRate) / 100;
+                                            }
+
+                                            if (gstAmount > 0) {
+                                                if (!groups[taxRate]) groups[taxRate] = 0;
+                                                groups[taxRate] += gstAmount;
+                                            }
+                                        });
+
+                                        const hasCgstSgst = t.total_cgst > 0 || t.total_sgst > 0;
+                                        const hasIgst = t.total_igst > 0;
+                                        const isCgstSgst = hasCgstSgst ? true : (hasIgst ? false : same);
+
+                                        Object.keys(groups).sort((a, b) => Number(b) - Number(a)).forEach(rateStr => {
+                                            const rate = Number(rateStr);
+                                            const amt = groups[rateStr];
+                                            if (isCgstSgst) {
+                                                gstBreakdown.push({ label: `CGST ${(rate / 2)}%`, amount: amt / 2 });
+                                                gstBreakdown.push({ label: `SGST ${(rate / 2)}%`, amount: amt / 2 });
+                                            } else {
+                                                gstBreakdown.push({ label: `IGST ${rate}%`, amount: amt });
+                                            }
+                                        });
+                                    }
+
                                     return (<>
-                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString()}</span></div>
+                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Subtotal</span><span className="font-medium">&#8377;{t.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                        <div className="flex justify-between text-sm text-gray-600 py-1"><span>Discount</span><span className="font-medium">-&#8377;{t.total_discount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                                         {gstMode === "Inclusive" && (
-                                            <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString()}</span></div>
+                                            <div className="flex justify-between text-sm py-1 text-gray-600"><span>Taxable Value</span><span className="font-medium">&#8377;{taxableValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                                         )}
-                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_cgst > 0 ? "#4b5563" : "#d1d5db" }}><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_sgst > 0 ? "#4b5563" : "#d1d5db" }}><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between text-sm py-1" style={{ color: t.total_igst > 0 ? "#4b5563" : "#d1d5db" }}><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString()}</span></div>
-                                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString()}</span></div>
+                                        {showBreakdown ? (
+                                            gstBreakdown.map((b, idx) => (
+                                                <div key={idx} className="flex justify-between text-sm py-1 text-gray-600">
+                                                    <span>{b.label}</span>
+                                                    <span className="font-medium">&#8377;{b.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <>
+                                                {t.total_cgst > 0 && t.total_igst > 0 ? (
+                                                    <>
+                                                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                    </>
+                                                ) : t.total_cgst > 0 || t.total_sgst > 0 || (t.total_igst === 0 && same) ? (
+                                                    <>
+                                                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>CGST</span><span className="font-medium">&#8377;{t.total_cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                        <div className="flex justify-between text-sm py-1 text-gray-600"><span>SGST</span><span className="font-medium">&#8377;{t.total_sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                    </>
+                                                ) : t.total_igst > 0 || (t.total_cgst === 0 && t.total_sgst === 0 && !same) ? (
+                                                    <div className="flex justify-between text-sm py-1 text-gray-600"><span>IGST</span><span className="font-medium">&#8377;{t.total_igst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                ) : null}
+                                            </>
+                                        )}
+                                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-lg font-bold text-blue-700"><span>Grand Total</span><span>&#8377;{t.grand_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                                     </>);
                                 })()}
                             </div>
                         </div>
                         {/* ── SECTION 5: EXECUTIVE DETAILS ── */}
                         <SectionTitle>Executive Details</SectionTitle>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <p className="text-[11px] text-gray-400 -mt-3 mb-1">Auto-filled from your account — you can edit these.</p>
+                        <div className="grid grid-cols-3 gap-4">
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase">Executive Name</label>
                                 <input type="text" value={extra.exec_name} onChange={e => { if (!/[0-9]/.test(e.nativeEvent.data)) setExtra(ex => ({ ...ex, exec_name: e.target.value })); }} placeholder="e.g. Anbu Selvan" className="border rounded-lg px-3 py-2 outline-none text-sm" />
@@ -1072,6 +1452,25 @@ const ServiceEstimation = () => {
                                             </label>
                                         ))}
                                     </div>
+                                    {extra.gst_mode !== "Exempt" && (
+                                        <div className="mt-3">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!extra.terms_separate_orders?.hide_gst_percentage}
+                                                    onChange={e => setExtra(ex => ({
+                                                        ...ex,
+                                                        terms_separate_orders: {
+                                                            ...(ex.terms_separate_orders || {}),
+                                                            hide_gst_percentage: e.target.checked
+                                                        }
+                                                    }))}
+                                                    className="accent-blue-600 w-4 h-4 rounded"
+                                                />
+                                                <span className="text-sm font-semibold text-gray-700">Not show GST %</span>
+                                            </label>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1123,18 +1522,14 @@ const ServiceEstimation = () => {
                                     ))}
                                 </div>
                                 {extra.terms_payment === "Custom" && (
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <input 
-                                            type="number" 
-                                            value={extra.terms_payment_custom ? extra.terms_payment_custom.replace(" Days", "") : ""} 
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setExtra(ex => ({ ...ex, terms_payment_custom: val ? `${val} Days` : "" }));
-                                            }} 
-                                            placeholder="Enter number of days..." 
-                                            className="border rounded-lg px-3 py-2 outline-none text-sm w-48 bg-white" 
+                                    <div className="mt-2">
+                                        <input
+                                            type="text"
+                                            value={extra.terms_payment_custom || ""}
+                                            onChange={e => setExtra(ex => ({ ...ex, terms_payment_custom: e.target.value }))}
+                                            placeholder="e.g. 50% advance, balance on delivery..."
+                                            className="border rounded-lg px-3 py-2 outline-none text-sm w-full bg-white"
                                         />
-                                        <span className="text-sm text-gray-600 font-medium">Days</span>
                                     </div>
                                 )}
                             </div>
@@ -1151,6 +1546,68 @@ const ServiceEstimation = () => {
                                 </div>
                             </div>
                         </div>
+
+                        <div className="mt-4">
+                            <SectionTitle>Attached Images (Max 3)</SectionTitle>
+                            <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 mt-2">
+                                <div className="grid grid-cols-3 gap-4">
+                                    {[0, 1, 2].map(idx => {
+                                        const currentImage = extra.terms_separate_orders?.attached_images?.[idx];
+                                        return (
+                                            <div key={idx} className="relative aspect-video border-2 border-dashed border-gray-300 rounded-lg flex flex-col justify-center items-center bg-white overflow-hidden hover:border-blue-500 transition">
+                                                {currentImage ? (
+                                                    <>
+                                                        <img src={currentImage} alt={`Attachment ${idx + 1}`} className="w-full h-full object-cover" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const newList = [...(extra.terms_separate_orders?.attached_images || [])];
+                                                                newList.splice(idx, 1);
+                                                                setExtra(ex => ({
+                                                                    ...ex,
+                                                                    terms_separate_orders: {
+                                                                        ...(ex.terms_separate_orders || {}),
+                                                                        attached_images: newList
+                                                                    }
+                                                                }));
+                                                            }}
+                                                            className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md transition"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <label className="cursor-pointer flex flex-col items-center justify-center w-full h-full p-2 text-center">
+                                                        <Plus size={20} className="text-gray-400" />
+                                                        <span className="text-[10px] text-gray-500 mt-1 font-semibold">Upload Image</span>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (!file) return;
+                                                                const compressed = await resizeAndCompressImage(file);
+                                                                const newList = [...(extra.terms_separate_orders?.attached_images || [])];
+                                                                newList[idx] = compressed;
+                                                                setExtra(ex => ({
+                                                                    ...ex,
+                                                                    terms_separate_orders: {
+                                                                        ...(ex.terms_separate_orders || {}),
+                                                                        attached_images: newList
+                                                                    }
+                                                                }));
+                                                            }}
+                                                            className="hidden"
+                                                        />
+                                                    </label>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Submit */}
                         <div className="flex gap-4 pt-4">
                             <button type="submit" className="bg-blue-600 text-white px-10 py-2.5 rounded-lg hover:bg-blue-700 font-bold shadow-lg transition">Save Service Estimation</button>
@@ -1181,35 +1638,38 @@ const ServiceEstimation = () => {
                                 return !historySearch || subNum.includes(historySearch.toLowerCase());
                             });
                             return filtered.length === 0 ? (
-                                <p className="text-center text-gray-400 py-10 italic">{historyList.length === 0 ? "No previous versions. This is the original." : "No results match your search."}</p>
+                                <p className="text-center text-gray-400 py-10 italic">{historyList.length === 0 ? "No versions found." : "No results match your search."}</p>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm border-collapse">
                                         <thead className="bg-gray-50">
                                             <tr className="text-gray-600 font-bold uppercase text-xs border-b">
                                                 <th className="px-4 py-3 text-left">Sub-SE Number</th>
-                                                <th className="px-4 py-3">Date</th>
+                                                <th className="px-4 py-3">Doc Date</th>
+                                                <th className="px-4 py-3">Saved On</th>
                                                 <th className="px-4 py-3 text-right">Total</th>
                                                 <th className="px-4 py-3 text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {filtered.map(q => (
-                        <tr key={q.id}
-                          onDoubleClick={() => { setViewId(q.id); setTimeout(() => setShowInvoice(true), 50); setHistoryOpen(false); }}
-                          className="border-b cursor-pointer hover:bg-indigo-50/40 transition">
+                                                <tr key={q.id}
+                                                    onDoubleClick={() => { setViewId(q.id); setTimeout(() => setShowInvoice(true), 50); setHistoryOpen(false); }}
+                                                    className={`border-b cursor-pointer hover:bg-indigo-50/40 transition ${q.is_latest ? 'bg-green-50/40' : ''}`}>
                                                     <td className="px-4 py-3 font-semibold text-blue-600">
                                                         {formatSubSENumber(q.parent_id || historyRootId, q.version, q.invoice_date)}
                                                         <span className="ml-2 text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-bold">v{q.version || 1}</span>
+                                                        {q.is_latest ? <span className="ml-1 text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded font-bold">LATEST</span> : null}
                                                     </td>
                                                     <td className="px-4 py-3 text-center text-gray-600">{formatDate(q.invoice_date)}</td>
+                                                    <td className="px-4 py-3 text-center text-gray-500 text-xs">{formatSavedDate(q.created_at, q.invoice_date)}</td>
                                                     <td className="px-4 py-3 text-right font-bold text-gray-800">₹{q.grand_total?.toLocaleString()}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center justify-center gap-2">
                                                             <button onClick={e => { e.stopPropagation(); setViewId(q.id); setTimeout(() => setShowInvoice(true), 50); setHistoryOpen(false); }} title="View" className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center hover:bg-blue-100"><Download size={14} /></button>
                                                             <button onClick={e => { e.stopPropagation(); handleEdit(q.id); setHistoryOpen(false); }} title="Edit" className="w-8 h-8 bg-green-50 text-green-600 rounded-lg flex items-center justify-center hover:bg-green-100"><Edit2 size={14} /></button>
                                                             <button onClick={e => { e.stopPropagation(); setSelectedId(q.id); openMailModal(); setHistoryOpen(false); }} title="Email" className="w-8 h-8 bg-orange-50 text-orange-500 rounded-lg flex items-center justify-center hover:bg-orange-100"><Mail size={14} /></button>
-                                                            {canEditDelete && (
+                                                            {canEditDelete && !q.is_latest && (
                                                                 <button onClick={e => deleteHistoryVersion(e, q.id)} title="Delete" className="w-8 h-8 bg-red-50 text-red-500 rounded-lg flex items-center justify-center hover:bg-red-100"><Trash2 size={14} /></button>
                                                             )}
                                                         </div>
@@ -1265,10 +1725,50 @@ const ServiceEstimation = () => {
                 </div>
             )}
             {showSMTPPrompt && (
-                <SMTPConfigPrompt 
-                    email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()} 
-                    onClose={() => setShowSMTPPrompt(false)} 
+                <SMTPConfigPrompt
+                    email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()}
+                    onClose={() => setShowSMTPPrompt(false)}
                 />
+            )}
+
+            {/* ── Follow-up Panel ──────────────────────────────────────────────── */}
+            {followupOpen && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex justify-center items-start overflow-y-auto pt-10 pb-10">
+                    <div className="bg-white rounded-xl shadow-2xl w-[95%] max-w-lg p-6">
+                        <div className="flex justify-between items-center mb-4 border-b pb-3">
+                            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Clock size={18} className="text-cyan-500" /> Follow-ups — {followupLeadName}</h2>
+                            <X className="cursor-pointer text-gray-400 hover:text-red-500" onClick={() => setFollowupOpen(false)} />
+                        </div>
+                        <button
+                            onClick={sendFollowupEmail}
+                            className="w-full mb-4 bg-cyan-600 text-white py-2 rounded-lg font-bold hover:bg-cyan-700 text-sm flex items-center justify-center gap-2"
+                        >
+                            <Mail size={15} /> Send Follow-up Email
+                        </button>
+                        <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                            <p className="text-xs font-bold text-gray-500 uppercase">Set New Follow-up</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs text-gray-500 font-semibold">Date *</label><input type="date" value={newFollowupDate} onChange={e => setNewFollowupDate(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+                                <div><label className="text-xs text-gray-500 font-semibold">Time</label><input type="time" value={newFollowupTime} onChange={e => setNewFollowupTime(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+                            </div>
+                            <div><label className="text-xs text-gray-500 font-semibold">Reason / Note</label><input type="text" value={newFollowupNote} onChange={e => setNewFollowupNote(e.target.value)} placeholder="e.g. Call to confirm" className="w-full border rounded-lg px-3 py-2 text-sm outline-none mt-1" /></div>
+                            <button onClick={saveFollowup} className="w-full bg-cyan-600 text-white py-2 rounded-lg font-bold hover:bg-cyan-700 text-sm">+ Add Follow-up</button>
+                        </div>
+                        <p className="text-xs font-bold text-gray-500 uppercase mb-2">Existing Follow-ups</p>
+                        {leadFollowups.length === 0 ? <p className="text-xs text-gray-400 italic">No follow-ups yet.</p> : (
+                            <div className="space-y-2">{leadFollowups.map(f => (
+                                <div key={f.id} className={`flex items-center justify-between p-3 rounded-lg border text-sm ${f.status === "Done" ? "bg-green-50 border-green-200" : "bg-cyan-50 border-cyan-200"}`}>
+                                    <div><div className="font-semibold">{fmtFollowDate(f.followup_date)}{f.followup_time ? ` at ${f.followup_time}` : ""}</div>{f.followup_notes && <div className="text-gray-500 text-xs mt-0.5">{f.followup_notes}</div>}</div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${f.status === "Done" ? "bg-green-600 text-white" : "bg-cyan-600 text-white"}`}>{f.status}</span>
+                                        {f.status === "Pending" && <button onClick={() => { axios.put(`${API}/api/leads/followups/${f.id}`, { status: "Done" }, getAuthConfig()); setLeadFollowups(prev => prev.map(x => x.id === f.id ? { ...x, status: "Done" } : x)); }} className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold">Done</button>}
+                                        <button onClick={() => deleteFollowup(f.id)} className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
+                                    </div>
+                                </div>
+                            ))}</div>
+                        )}
+                    </div>
+                </div>
             )}
         </div>
     );

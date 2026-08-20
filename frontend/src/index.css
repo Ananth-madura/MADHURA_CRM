@@ -105,6 +105,12 @@
   --spacing-xxxl: 40px;
 }
 
+html {
+  /* Stop iOS Safari from auto-enlarging text on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: var(--font-family);
@@ -112,6 +118,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--color-surface);
   color: var(--color-ink);
+  /* Remove the grey flash Safari/iOS paints on tap */
+  -webkit-tap-highlight-color: transparent;
 }
 
 code {
@@ -508,11 +516,13 @@ code {
 }
 
 .overlay.show {
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   background: rgba(0, 0, 0, 0.3);
   opacity: 1;
   visibility: visible;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 body.modal-open {
@@ -535,6 +545,61 @@ body.modal-open {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Modal & Overlay Animations - Smooth */
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    -webkit-backdrop-filter: blur(0px);
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Smooth scroll for native time inputs */
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+  padding: 4px;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Pulse animation */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
 }
 
 /* Toast animations */
@@ -585,17 +650,29 @@ body.modal-open {
   animation: slideInLeft 0.25s ease-out;
 }
 
-/* Existing utility classes */
 .side-mainbar {
-  padding-left: 10px;
+  height: 100%;
+  overflow-y: auto;
   line-height: 35px;
-  overflow-y: hidden;
-  transition: 0.4s ease-in-out;
+  scrollbar-width: thin;
+  transition: all 0.3s ease-in-out;
 }
 
-.side-mainbar:hover {
-  overflow-y: scroll !important;
-  height: 90vh;
+.side-mainbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.side-mainbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.side-mainbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.2);
+  border-radius: 4px;
+}
+
+.side-mainbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
 }
 
 .menuitem:hover {
@@ -651,6 +728,7 @@ body.modal-open {
 /* Table styles */
 .table-container {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -775,7 +853,8 @@ tbody tr:hover {
 /* ═══════════════ PHONE (< 640px) ═══════════════ */
 @media (max-width: 639px) {
 
-  /* Tables → stacked cards */
+  /* Tables → stacked cards (Commented out to support clean overflow-x scrolling tables on mobile) */
+  /*
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
   table { border: none !important; box-shadow: none !important; }
@@ -828,6 +907,7 @@ tbody tr:hover {
   }
   table tr td > div { width: auto; }
   div.overflow-x-auto, div[class*="overflow"] { overflow: visible !important; }
+  */
   [style*="min-width"] { min-width: 0 !important; }
 
   /* Full-screen modals */
@@ -840,7 +920,11 @@ tbody tr:hover {
     border-radius: 0 !important;
     height: 100vh !important;
     max-height: 100vh !important;
+    /* dvh = visible viewport on iOS Safari (excludes the address bar) */
+    height: 100dvh !important;
+    max-height: 100dvh !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
     padding: var(--spacing-md) !important;
     top: 0 !important;
     margin-top: 0 !important;
@@ -904,21 +988,26 @@ tbody tr:hover {
 /* Sidebar always visible from md (768px) */
 @media (max-width: 767px) {
   aside.side-mainbar {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    top: 56px !important;
-    height: calc(100vh - 56px - 64px) !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    top: 0 !important;
+    height: 100% !important;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
 /* Bottom nav only on phone + small tablet; hidden from 768px+ */
 @media (max-width: 767px) {
-  body { padding-bottom: 64px; }
+  /* Reserve room for the bottom nav + the iPhone home-indicator safe area */
+  body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (min-width: 768px) {
   body { padding-bottom: 0; }
   .md\:ml-\[250px\] { margin-left: 250px; }
+  .md\:ml-\[70px\] { margin-left: 70px; }
+  .md\:max-w-\[calc\(100\%-250px\)\] { max-width: calc(100% - 250px); }
+  .md\:max-w-\[calc\(100\%-70px\)\] { max-width: calc(100% - 70px); }
 }
 
 /* Content area offset for sidebar */
@@ -937,11 +1026,13 @@ center > * { text-align: initial; }
 @media (max-width: 767px) {
   .phone-sidebar {
     height: calc(100vh - 65px - 56px) !important;
+    height: calc(100dvh - 65px - 56px) !important;
   }
 }
 @media (min-width: 768px) {
   .phone-sidebar {
     height: calc(100vh - 65px) !important;
+    height: calc(100dvh - 65px) !important;
   }
 }
 
@@ -950,3 +1041,54 @@ center > * { text-align: initial; }
 ::-webkit-scrollbar-track { background: var(--color-surface); }
 ::-webkit-scrollbar-thumb { background: var(--color-hairline-strong); border-radius: var(--radius-full); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-steel); }
+
+/* ═══════════════════════════════════════════════════════════════
+   SAFARI / iOS FORM CONTROL NORMALIZATION
+   Safari renders inputs/buttons with its own rounded corners, inner
+   shadow and gradient. Reset them so they match Chrome/Firefox.
+   ═══════════════════════════════════════════════════════════════ */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+textarea {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: var(--radius-md);
+}
+
+/* Safari adds an inner spin/clear UI and clips date text — keep it tidy */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  min-height: 44px;
+}
+
+/* iOS sizes <select> oddly and hides the native arrow when appearance:none,
+   so only neutralize the inner shadow, keep the system control look */
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Buttons: kill the default iOS gradient/shadow so custom styles win */
+button,
+input[type="submit"],
+input[type="button"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Honor the iPhone notch / Dynamic Island when the app is installed to the
+   home screen (apple-mobile-web-app-status-bar-style = black-translucent) */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}

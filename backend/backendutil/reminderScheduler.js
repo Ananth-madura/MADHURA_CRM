@@ -6,9 +6,13 @@
 const schedule = require("node-schedule");
 const db = require("../config/database");
 const { getNotificationIO } = require("../sockets/notifications");
+const { sendPushToUser } = require("./pushSender");
 
 const toDateOnly = (val) => {
   if (!val) return null;
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+    return val.slice(0, 10);
+  }
   const d = new Date(val);
   if (isNaN(d.getTime())) return null;
   const year = d.getFullYear();
@@ -17,99 +21,121 @@ const toDateOnly = (val) => {
   return `${year}-${month}-${day}`;
 };
 
-function runCheckUpcomingReminders() {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const currentTime = now.toTimeString().slice(0, 8);
+// Joined SELECT used to enrich a reminder row with its lead's customer details.
+const REMINDER_JOIN_SQL = `
+  SELECT lr.*,
+         COALESCE(t.customer_name, w.customer_name, f.customer_name) AS customer_name,
+         COALESCE(t.mobile_number, w.mobile_number, f.mobile_number) AS mobile_number,
+         COALESCE(t.staff_name, w.staff_name, f.staff_name) AS staff_name
+  FROM lead_reminders lr
+  LEFT JOIN telecalls t ON t.id = lr.lead_id AND lr.lead_type = 'telecall'
+  LEFT JOIN walkins w ON w.id = lr.lead_id AND lr.lead_type = 'walkin'
+  LEFT JOIN fields f ON f.id = lr.lead_id AND lr.lead_type = 'field'
+`;
 
-  // We check two windows:
-  // 1) reminders due in 9–11 minutes → send first warning (notification_sent = 0 → set to 10)
-  // 2) reminders due in 4–6 minutes  → send second warning (notification_sent = 10 → set to 11)
+const pad2 = (n) => String(n).padStart(2, "0");
+const localTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 
-  const tenMinLater = new Date(now.getTime() + 10 * 60000).toTimeString().slice(0, 8);
-  const nineMinLater = new Date(now.getTime() + 9 * 60000).toTimeString().slice(0, 8);
-  const sixMinLater = new Date(now.getTime() + 6 * 60000).toTimeString().slice(0, 8);
-  const fourMinLater = new Date(now.getTime() + 4 * 60000).toTimeString().slice(0, 8);
-
-  const notificationIO = getNotificationIO();
-  if (!notificationIO) return;
-
-  const baseSql = `
-    SELECT lr.*, 
-           COALESCE(t.customer_name, w.customer_name, f.customer_name) as customer_name,
-           COALESCE(t.mobile_number, w.mobile_number, f.mobile_number) as mobile_number,
-           COALESCE(t.staff_name, w.staff_name, f.staff_name) as staff_name
-    FROM lead_reminders lr
-    LEFT JOIN Telecalls t ON t.id = lr.lead_id AND lr.lead_type = 'telecall'
-    LEFT JOIN Walkins w ON w.id = lr.lead_id AND lr.lead_type = 'walkin'
-    LEFT JOIN fields f ON f.id = lr.lead_id AND lr.lead_type = 'field'
-    WHERE lr.status = 'Pending' 
-      AND lr.reminder_date = ?
-      AND lr.reminder_time IS NOT NULL
-  `;
-
-  // ── First warning: T-10 minutes ────────────────────────────────────────────
-  const sql10 = baseSql + `
-      AND lr.reminder_time BETWEEN ? AND ?
-      AND (lr.notification_sent IS NULL OR lr.notification_sent = 0)
-  `;
-  db.query(sql10, [today, nineMinLater, tenMinLater], (err, reminders10) => {
-    if (err) { console.error("[Scheduler] check-upcoming (10min) error:", err.message); }
-    else {
-      reminders10.forEach(reminder => {
-        const message = `⏰ Reminder in ~10 min: Follow up with ${reminder.customer_name || "customer"} (${reminder.mobile_number || "No mobile"})`;
-        notificationIO.emitNotification("reminder_due", {
-          id: reminder.id,
-          leadId: reminder.lead_id,
-          leadType: reminder.lead_type,
-          userId: reminder.employee_id,
-          userName: reminder.staff_name,
-          customerName: reminder.customer_name,
-          mobileNumber: reminder.mobile_number,
-          reminderTime: reminder.reminder_time,
-          reminderNotes: reminder.reminder_notes,
-          title: "⏰ Reminder in 10 Minutes",
-          message
-        }, reminder.employee_id, true);
-
-        // Mark notification_sent = 10 (means first warning sent)
-        db.query("UPDATE lead_reminders SET notification_sent = 10 WHERE id = ?", [reminder.id]);
-        console.log(`[Scheduler] 10-min warning sent for reminder ID ${reminder.id}, customer: ${reminder.customer_name}`);
-      });
+// Idempotently make sure the popup tracking column exists.
+function ensureReminderSchema() {
+  db.query("ALTER TABLE lead_reminders ADD COLUMN popup_sent TINYINT DEFAULT 0", (err) => {
+    if (err && !/duplicate column|exists/i.test(err.message)) {
+      console.error("[Scheduler] ensureReminderSchema error:", err.message);
     }
   });
+}
 
-  // ── Second warning: T-5 minutes ────────────────────────────────────────────
-  const sql5 = baseSql + `
-      AND lr.reminder_time BETWEEN ? AND ?
-      AND (lr.notification_sent IS NULL OR lr.notification_sent = 0 OR lr.notification_sent = 10)
-  `;
-  db.query(sql5, [today, fourMinLater, sixMinLater], (err, reminders5) => {
-    if (err) { console.error("[Scheduler] check-upcoming (5min) error:", err.message); }
-    else {
-      reminders5.forEach(reminder => {
-        // Don't double-send if it was just sent as a 10-min warning in this same tick for overlapping times
-        // (Only send if reminder_time is truly in 4-6 min range, not 9-11 min range)
-        const message = `🔔 Reminder in ~5 min: Follow up with ${reminder.customer_name || "customer"} (${reminder.mobile_number || "No mobile"})`;
-        notificationIO.emitNotification("reminder_due", {
-          id: reminder.id,
-          leadId: reminder.lead_id,
-          leadType: reminder.lead_type,
-          userId: reminder.employee_id,
-          userName: reminder.staff_name,
-          customerName: reminder.customer_name,
-          mobileNumber: reminder.mobile_number,
-          reminderTime: reminder.reminder_time,
-          reminderNotes: reminder.reminder_notes,
-          title: "🔔 Reminder in 5 Minutes",
-          message
-        }, reminder.employee_id, true);
+// Emit the exact-time reminder:
+//   • a blocking center-screen popup to the OWNER only (via `reminder_popup`)
+//   • a notification-page entry for admins (NO popup)
+//   • an OS-level web push to the owner (so it shows even if the tab is closed)
+function emitReminderPopup(reminder) {
+  const helpers = getNotificationIO();
+  if (!helpers) return;
 
-        // Mark notification_sent = 1 (fully notified)
-        db.query("UPDATE lead_reminders SET notification_sent = 1 WHERE id = ?", [reminder.id]);
-        console.log(`[Scheduler] 5-min warning sent for reminder ID ${reminder.id}, customer: ${reminder.customer_name}`);
+  const customer = reminder.customer_name || "customer";
+  const mobile = reminder.mobile_number || "";
+  const title = "🔔 Reminder Now";
+  const note = reminder.reminder_notes ? ` — ${reminder.reminder_notes}` : "";
+  const message = `Time to follow up with ${customer}${mobile ? ` (${mobile})` : ""}${note}`;
+
+  const payload = {
+    id: reminder.id,
+    reminderId: reminder.id,
+    leadId: reminder.lead_id,
+    leadType: reminder.lead_type,
+    userId: reminder.employee_id,
+    customerName: customer,
+    mobileNumber: mobile,
+    reminderDate: toDateOnly(reminder.reminder_date),
+    reminderTime: reminder.reminder_time,
+    reminderNotes: reminder.reminder_notes || "",
+    type: "reminder_due_now",
+    title,
+    message,
+    timestamp: new Date().toISOString(),
+  };
+
+  // (1) Owner → blocking popup + their own notifications row + OS push
+  if (reminder.employee_id) {
+    helpers.sendToUser(reminder.employee_id, "reminder_popup", payload);
+    db.query(
+      "INSERT INTO notifications (task_id, user_id, type, title, description) VALUES (?, ?, ?, ?, ?)",
+      [reminder.lead_id || 0, reminder.employee_id, "reminder_due_now", title, message]
+    );
+    try { sendPushToUser(reminder.employee_id, title, message, "/dashboard/notifications"); } catch (_) {}
+  }
+
+  // (2) Admins → notification page only (NO blocking popup)
+  const adminMessage = `🔔 Reminder due for ${reminder.staff_name || "employee"}: follow up with ${customer}${mobile ? ` (${mobile})` : ""}`;
+  db.query(
+    "INSERT INTO admin_notifications (type, message, user_id, related_id, related_type, created_by, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ["reminder_due_now", adminMessage, reminder.employee_id || null, reminder.lead_id || 0, reminder.lead_type || null, reminder.employee_id || null, "normal"],
+    (err, result) => {
+      if (err || !result) return;
+      helpers.sendToAdmin("new_notification", {
+        id: Date.now(),
+        dbId: result.insertId,
+        type: "reminder_due_now",
+        title: "🔔 Reminder Due",
+        message: adminMessage,
+        data: { ...payload, message: adminMessage },
+        timestamp: new Date().toISOString(),
+        is_read: 0,
       });
     }
+  );
+}
+
+// Fire the popup the moment a reminder's exact time arrives. A 10-minute
+// catch-up window covers brief downtime; anything older is left to the missed
+// check (5-minute grace) instead of popping a stale reminder.
+function runCheckDueReminders() {
+  if (!getNotificationIO()) return;
+
+  const now = new Date();
+  const today = now.toLocaleDateString("en-CA");
+  const currentTime = localTime(now);
+
+  const winStart = new Date(now.getTime() - 10 * 60000);
+  let earliest = localTime(winStart);
+  if (winStart.toLocaleDateString("en-CA") !== today) earliest = "00:00:00";
+
+  const sql = REMINDER_JOIN_SQL + `
+    WHERE lr.status = 'Pending'
+      AND lr.reminder_date = ?
+      AND lr.reminder_time IS NOT NULL
+      AND TIME(lr.reminder_time) <= ?
+      AND TIME(lr.reminder_time) >= ?
+      AND (lr.popup_sent IS NULL OR lr.popup_sent = 0)
+  `;
+  db.query(sql, [today, currentTime, earliest], (err, due) => {
+    if (err) { console.error("[Scheduler] check-due error:", err.message); return; }
+    (due || []).forEach((reminder) => {
+      emitReminderPopup(reminder);
+      db.query("UPDATE lead_reminders SET popup_sent = 1 WHERE id = ?", [reminder.id]);
+      console.log(`[Scheduler] Exact-time reminder popup fired (ID ${reminder.id}, ${reminder.customer_name})`);
+    });
   });
 }
 
@@ -177,6 +203,12 @@ function runCheckMissed() {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const currentTime = now.toTimeString().slice(0, 8);
+  // 5-minute grace: the exact-time popup gives the user a full 5 minutes to click
+  // OK before the reminder is counted as Missed. (Clamped so it never wraps midnight.)
+  const graceDate = new Date(now.getTime() - 5 * 60000);
+  const graceTime = graceDate.toDateString() === now.toDateString()
+    ? graceDate.toTimeString().slice(0, 8)
+    : "00:00:00";
 
   // 1. Mark overdue Pending reminders as Missed + increment missed_count
   db.query(
@@ -185,7 +217,7 @@ function runCheckMissed() {
        reminder_date < ?
        OR (reminder_date = ? AND reminder_time IS NOT NULL AND TIME(reminder_time) < ?)
      )`,
-    [today, today, currentTime],
+    [today, today, graceTime],
     (err, result) => {
       if (err) { console.error("[Scheduler] check-missed error:", err.message); return; }
       if (result.affectedRows > 0) {
@@ -202,8 +234,8 @@ function runCheckMissed() {
                COALESCE(t.followup_date, w.followup_date, f.followup_date) as followup_date,
                MAX(lr.reminder_date) as last_reminder_date
         FROM lead_reminders lr
-        LEFT JOIN Telecalls t ON t.id = lr.lead_id AND lr.lead_type = 'telecall'
-        LEFT JOIN Walkins w ON w.id = lr.lead_id AND lr.lead_type = 'walkin'
+        LEFT JOIN telecalls t ON t.id = lr.lead_id AND lr.lead_type = 'telecall'
+        LEFT JOIN walkins w ON w.id = lr.lead_id AND lr.lead_type = 'walkin'
         LEFT JOIN fields f ON f.id = lr.lead_id AND lr.lead_type = 'field'
         WHERE lr.status = 'Missed' AND (lr.notification_sent IS NULL OR lr.notification_sent < 2)
         GROUP BY lr.lead_id, lr.lead_type, t.customer_name, w.customer_name, f.customer_name, t.mobile_number, w.mobile_number, f.mobile_number, t.staff_name, w.staff_name, f.staff_name, lr.employee_id, t.followup_date, w.followup_date, f.followup_date
@@ -403,17 +435,21 @@ function startSchedulers() {
   if (schedulerStarted) return;
   schedulerStarted = true;
 
-  // Run every 15 minutes.
-  scheduledJobs.push(schedule.scheduleJob("*/15 * * * *", runCheckMissed));
+  // Make sure the popup tracking column exists before the jobs run.
+  ensureReminderSchema();
 
-  // Run every minute to check for upcoming reminders within 5 minutes.
-  scheduledJobs.push(schedule.scheduleJob("* * * * *", runCheckUpcomingReminders));
+  // Run every 2 minutes so a reminder is marked Missed promptly once its
+  // 5-minute "click OK" grace elapses (idempotent — escalation is guarded).
+  scheduledJobs.push(schedule.scheduleJob("*/2 * * * *", runCheckMissed));
+
+  // Run every minute to fire reminder popups at their exact set time.
+  scheduledJobs.push(schedule.scheduleJob("* * * * *", runCheckDueReminders));
 
   // Also run once on startup.
   rememberTimer(setTimeout(runCheckMissed, 3000));
-  rememberTimer(setTimeout(runCheckUpcomingReminders, 5000));
+  rememberTimer(setTimeout(runCheckDueReminders, 5000));
 
-  console.log("[Scheduler] Reminder escalation scheduler started (every 15 min)");
+  console.log("[Scheduler] Reminder escalation scheduler started (missed check every 2 min, exact-time popups every 1 min)");
 
   // Run daily at 6 PM.
   scheduledJobs.push(schedule.scheduleJob("0 18 * * *", runDailyTaskCheck));
@@ -440,7 +476,8 @@ function stopSchedulers() {
 
 module.exports = {
   runCheckMissed,
-  runCheckUpcomingReminders,
+  runCheckDueReminders,
+  ensureReminderSchema,
   runDailyTaskCheck,
   startSchedulers,
   stopSchedulers

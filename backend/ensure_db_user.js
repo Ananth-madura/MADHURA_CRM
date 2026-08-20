@@ -11,6 +11,7 @@ const appPass = process.env.DB_PASS || "AchmeSecure@2024";
 const rootPasswords = [
   process.env.MYSQL_ROOT_PASSWORD,
   process.env.DB_ROOT_PASS,
+  "AchmeSecure@2024",
   "admin@123",
   "",
   "root",
