@@ -83,6 +83,16 @@ export default function WhatsAppAutomations() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
+  // CRM Trigger Simulator Modal State
+  const [showSimulateModal, setShowSimulateModal] = useState(false);
+  const [simTriggerType, setSimTriggerType] = useState("new_lead");
+  const [simPhone, setSimPhone] = useState("");
+  const [simName, setSimName] = useState("Rahul Sharma");
+  const [simSendReal, setSimSendReal] = useState(false);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simResult, setSimResult] = useState(null);
+  const [showExplainer, setShowExplainer] = useState(true);
+
   // Welcome Auto-Reply Settings
   const [welcomeSettings, setWelcomeSettings] = useState({
     enabled: true,
@@ -322,6 +332,31 @@ export default function WhatsAppAutomations() {
     setTestLoading(false);
   };
 
+  const handleSimulateTrigger = async () => {
+    setSimLoading(true);
+    setSimResult(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/api/wa/automations/simulate-trigger`,
+        {
+          trigger_type: simTriggerType,
+          phone: simPhone.trim(),
+          contact_name: simName.trim(),
+          send_real_message: simSendReal && !!simPhone.trim(),
+        },
+        { headers: headers() }
+      );
+      setSimResult(data);
+      if (simSendReal) fetchData();
+    } catch (err) {
+      setSimResult({
+        success: false,
+        error: err.response?.data?.error || err.message,
+      });
+    }
+    setSimLoading(false);
+  };
+
   const handleSaveWelcomeSettings = async () => {
     setWelcomeSaving(true);
     try {
@@ -372,12 +407,23 @@ export default function WhatsAppAutomations() {
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
+            onClick={() => {
+              setSimResult(null);
+              setShowSimulateModal(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition text-xs font-bold shadow-md shadow-blue-500/20"
+          >
+            <PlayCircle size={15} />
+            <span>⚡ Test Any CRM Trigger</span>
+          </button>
+
+          <button
             onClick={handleSeedPrebuilt}
             disabled={seeding}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-900 border border-amber-300 rounded-xl hover:bg-amber-100 transition text-xs font-bold shadow-sm"
           >
             {seeding ? <Loader2 size={15} className="animate-spin text-amber-700" /> : <Sparkles size={15} className="text-amber-700" />}
-            <span>Load 10 Prebuilt Smart Rules</span>
+            <span>Load 12 Prebuilt Smart Rules</span>
           </button>
 
           <button
@@ -445,6 +491,84 @@ export default function WhatsAppAutomations() {
           </div>
         </div>
       </div>
+
+      {/* Educational Explainer Banner */}
+      {showExplainer && (
+        <div className="mb-6 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-xl border border-indigo-500/20 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+            <Cpu size={140} />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 relative z-10 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-400 flex items-center justify-center border border-amber-400/30">
+                <Sparkles size={22} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>How WhatsApp Automations Work</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-400/30">
+                    ⚡ 100% Hands-Off Background Engine
+                  </span>
+                </h2>
+                <p className="text-xs text-indigo-200 mt-0.5">
+                  Automations trigger automatically whenever staff performs actions inside the CRM database.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowExplainer(false)}
+              className="text-indigo-300 hover:text-white p-1 transition"
+              title="Dismiss banner"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* 3 Module Architecture Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 relative z-10">
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-amber-400/30 space-y-2 hover:bg-white/10 transition">
+              <div className="flex items-center justify-between text-xs font-bold text-amber-300">
+                <span>⚡ 1. CRM Automations</span>
+                <span className="text-[10px] bg-amber-400/20 px-2 py-0.5 rounded-full">Set & Forget</span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                Triggered by <strong>CRM Database Events</strong> (Invoices created, payments received, lead added, AMC expiry). Sends 1-to-1 instant updates in &lt; 2s.
+              </p>
+              <div className="text-[10px] text-amber-300/90 font-mono bg-black/30 p-2 rounded-xl border border-white/5">
+                New Invoice ➔ Auto Send PDF & Pay Link
+              </div>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-blue-400/20 space-y-2 hover:bg-white/10 transition">
+              <div className="flex items-center justify-between text-xs font-bold text-blue-300">
+                <span>📢 2. Bulk Campaigns</span>
+                <span className="text-[10px] bg-blue-400/20 px-2 py-0.5 rounded-full">1-to-Many Blast</span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                <strong>Outbound Marketing Broadcasts</strong> sent by the marketer to 600–800 selected contacts with photos, catalog PDFs, and anti-ban pacing.
+              </p>
+              <div className="text-[10px] text-blue-300/90 font-mono bg-black/30 p-2 rounded-xl border border-white/5">
+                Diwali Offer ➔ Send to 500 Walkin Leads
+              </div>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-emerald-400/20 space-y-2 hover:bg-white/10 transition">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-300">
+                <span>🔀 3. Chatbot Flows</span>
+                <span className="text-[10px] bg-emerald-400/20 px-2 py-0.5 rounded-full">Interactive Bot</span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                <strong>24/7 Conversational State Machine</strong>. When customer sends "Hi" or taps a button, the bot asks qualifying questions and books appointments.
+              </p>
+              <div className="text-[10px] text-emerald-300/90 font-mono bg-black/30 p-2 rounded-xl border border-white/5">
+                Customer types "1" ➔ Shows Price Menu
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-2">
@@ -1142,6 +1266,155 @@ export default function WhatsAppAutomations() {
                   <span>Execute Send</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: CRM Trigger Simulator & Test Runner ── */}
+      {showSimulateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowSimulateModal(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl border" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5 border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                  <PlayCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">CRM Event Trigger Simulator</h3>
+                  <p className="text-xs text-gray-500">Test how WhatsApp rules respond to CRM database events</p>
+                </div>
+              </div>
+              <button onClick={() => setShowSimulateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Select CRM Event to Simulate</label>
+                  <select
+                    value={simTriggerType}
+                    onChange={(e) => setSimTriggerType(e.target.value)}
+                    className="w-full px-3 py-2.5 border rounded-xl text-xs font-semibold bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {TRIGGER_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.emoji} {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Simulated Customer Name</label>
+                  <input
+                    type="text"
+                    value={simName}
+                    onChange={(e) => setSimName(e.target.value)}
+                    placeholder="e.g. Rahul Sharma"
+                    className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
+                  Test WhatsApp Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={simPhone}
+                  onChange={(e) => setSimPhone(e.target.value)}
+                  placeholder="e.g. 9876543210 (Leave blank for simulation only)"
+                  className="w-full px-3.5 py-2.5 border rounded-xl text-xs font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 p-3 bg-blue-50/60 rounded-xl border border-blue-200/80">
+                <input
+                  type="checkbox"
+                  id="sim_real_send"
+                  checked={simSendReal}
+                  onChange={(e) => setSimSendReal(e.target.checked)}
+                  className="w-4 h-4 accent-blue-600 rounded"
+                />
+                <label htmlFor="sim_real_send" className="text-xs font-bold text-blue-900 cursor-pointer">
+                  Send actual WhatsApp message to this number during simulation
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSimulateModal(false)}
+                  className="px-4 py-2 border rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSimulateTrigger}
+                  disabled={simLoading}
+                  className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-2 disabled:opacity-50"
+                >
+                  {simLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                  <span>Run Event Simulation</span>
+                </button>
+              </div>
+
+              {/* Simulation Results Output Panel */}
+              {simResult && (
+                <div className="mt-5 p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                        Simulation Result: {simResult.matched_rules_count || 0} Rule(s) Matched
+                      </h4>
+                    </div>
+                    {simResult.real_message_dispatched && (
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                        ✅ Live Message Dispatched
+                      </span>
+                    )}
+                  </div>
+
+                  {simResult.evaluated_rules?.length === 0 ? (
+                    <div className="py-4 text-center text-xs text-gray-400">
+                      <AlertCircle size={20} className="mx-auto mb-1 text-amber-400" />
+                      <p className="font-bold text-gray-300">No active rules configured for "{simTriggerType}"</p>
+                      <p className="text-[11px] text-gray-500 mt-1">Create an automation rule for this trigger or click "Load 12 Prebuilt Smart Rules".</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {simResult.evaluated_rules?.map((r, rIdx) => (
+                        <div key={rIdx} className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/80 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-amber-300">Rule: {r.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono">Delay: {r.delay_minutes > 0 ? `${r.delay_minutes}m` : "Instant"}</span>
+                          </div>
+
+                          <div className="bg-[#0b141a] p-3 rounded-xl text-xs font-sans text-gray-100 whitespace-pre-line border border-emerald-500/20 shadow-inner">
+                            <div className="text-[10px] font-bold uppercase text-emerald-400 mb-1">1️⃣ Step 1 Output Message:</div>
+                            {r.step1_text}
+                          </div>
+
+                          {r.step2_followup_text && (
+                            <div className="bg-[#0b141a] p-3 rounded-xl text-xs font-sans text-purple-200 whitespace-pre-line border border-purple-500/20 shadow-inner">
+                              <div className="text-[10px] font-bold uppercase text-purple-400 mb-1">
+                                2️⃣ Step 2 Follow-Up Message (after {r.sequence_delay_seconds}s):
+                              </div>
+                              {r.step2_followup_text}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

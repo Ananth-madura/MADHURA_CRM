@@ -268,10 +268,15 @@ router.post("/", verifyToken, (req, res) => {
 
           try {
             const { triggerAutomation } = require("../services/waAutomationService");
+            triggerAutomation("walkin_created", {
+              phone: mobile_number,
+              contactName: customer_name,
+              data: { customer_name, company_name, service: purpose, purpose, location_city }
+            }).catch(() => {});
             triggerAutomation("new_lead", {
               phone: mobile_number,
               contactName: customer_name,
-              data: { customer_name, company_name, purpose, location_city }
+              data: { customer_name, company_name, service: purpose, purpose, location_city }
             }).catch(e => console.error("WA Automation trigger error:", e.message));
           } catch (_) {}
 

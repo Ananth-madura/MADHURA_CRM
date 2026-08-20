@@ -111,13 +111,18 @@ async function ensureWATables() {
     `CREATE TABLE IF NOT EXISTS wa_automations (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
-      trigger_type ENUM(
-        'new_lead','invoice_created','payment_due','order_shipped','ticket_closed',
-        'birthday','appointment_reminder','payment_received','lead_followup',
-        'abandoned_cart','welcome_message','custom'
-      ) NOT NULL,
+      trigger_type VARCHAR(50) NOT NULL,
       template_id INT DEFAULT NULL,
       message_text TEXT DEFAULT NULL,
+      media_type VARCHAR(20) DEFAULT NULL,
+      media_url TEXT DEFAULT NULL,
+      sequence_delay_seconds INT DEFAULT 7,
+      followup_message_text TEXT DEFAULT NULL,
+      followup_media_type VARCHAR(20) DEFAULT NULL,
+      followup_media_url TEXT DEFAULT NULL,
+      followup_template_id INT DEFAULT NULL,
+      flow_id INT DEFAULT NULL,
+      group_id INT DEFAULT NULL,
       delay_minutes INT DEFAULT 0,
       conditions JSON DEFAULT NULL,
       is_active TINYINT(1) DEFAULT 1,
@@ -605,6 +610,18 @@ async function ensureWATables() {
 
     // wa_flows dynamic triggers
     "ALTER TABLE wa_flows MODIFY COLUMN trigger_type VARCHAR(50) DEFAULT 'keyword'",
+
+    // wa_automations dynamic triggers & sequence columns
+    "ALTER TABLE wa_automations MODIFY COLUMN trigger_type VARCHAR(50) NOT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_url TEXT DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS sequence_delay_seconds INT DEFAULT 7",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_message_text TEXT DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_type VARCHAR(20) DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_url TEXT DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_template_id INT DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS flow_id INT DEFAULT NULL",
+    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS group_id INT DEFAULT NULL",
   ];
 
   for (const sql of alterStatements) {

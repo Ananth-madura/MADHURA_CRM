@@ -748,6 +748,28 @@ router.put("/:id", verifyToken, canEditCallReport, (req, res) => {
         console.error("PUT /call-reports/:id error:", err2.message);
         return res.status(500).json({ error: err2.message });
       }
+
+      // Auto-trigger WhatsApp automation if ticket is closed/completed
+      if (c.status === "Closed" || newStep2 === 1) {
+        try {
+          const { triggerAutomation } = require("../services/waAutomationService");
+          const targetPhone = c.mobile_number || c.phone || current.mobile_number || current.phone;
+          if (targetPhone) {
+            triggerAutomation("ticket_closed", {
+              phone: targetPhone,
+              contactName: customerName,
+              data: {
+                service: c.service_type || current.service_type || "Service Call",
+                technician: c.engineer || c.staff_name || current.staff_name || "Engineer",
+                company: c.company_name || current.company_name || "Company",
+                invoice_no: `SR-${id}`,
+                date: new Date().toLocaleDateString("en-IN"),
+              }
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      }
+
       res.json({
         message: "Updated",
         step2_completed: newStep2,

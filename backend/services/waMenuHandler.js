@@ -26,33 +26,29 @@ async function sendMenu(phone, automationId, sessionKey) {
   if (!options.length) return;
 
   const waCloud = require("./whatsappCloudApi");
-  // sessionKey omitted (CRM-triggered automations) falls back to the owner session.
-  const waWeb = require("./whatsappService").get(sessionKey);
+  const waLoadBalancer = require("./waLoadBalancer");
   const cleanPhone = phone.replace(/\D/g, "");
-  const chatId = `${cleanPhone}@c.us`;
 
   try {
     if (waCloud.isConfigured() && options.length <= 3) {
       await waCloud.sendInteractiveButtons(
         cleanPhone,
         "Please choose an option:",
-        options.map((o) => ({ id: o.id, title: o.label }))
+        options.map((o) => ({ id: String(o.id), title: o.label }))
       );
     } else if (waCloud.isConfigured() && options.length <= 10) {
       await waCloud.sendInteractiveList(
         cleanPhone,
         "Please choose an option:",
         "View Options",
-        options.map((o) => ({ id: o.id, title: o.label }))
+        options.map((o) => ({ id: String(o.id), title: o.label }))
       );
     } else {
-      // Free/unofficial engine has no reliable native button support —
-      // fall back to a numbered list the customer replies to with a digit.
-      await waWeb.sendMessage(chatId, buildMenuText(options));
+      await waLoadBalancer.sendTextMessage(cleanPhone, buildMenuText(options), sessionKey);
     }
   } catch (e) {
     console.error("[WA Menu] Interactive send failed, falling back to text:", e.message);
-    await waWeb.sendMessage(chatId, buildMenuText(options)).catch(() => {});
+    await waLoadBalancer.sendTextMessage(cleanPhone, buildMenuText(options), sessionKey).catch(() => {});
   }
 
   await queryAsync(
@@ -100,14 +96,43 @@ async function handleMenuReply(phone, msg, sessionKey) {
 
   if (!matched) return false;
 
-  // Reply goes back out of the number that received the message.
-  const waWeb = require("./whatsappService").get(sessionKey);
-  await waWeb.sendMessage(`${cleanPhone}@c.us`, matched.reply_text);
+  const waLoadBalancer = require("./waLoadBalancer");
+  const result = await waLoadBalancer.sendTextMessage(cleanPhone, matched.reply_text, sessionKey);
   await queryAsync("DELETE FROM wa_pending_menus WHERE phone = ?", [cleanPhone]);
+
+  // Log automation execution
   await queryAsync(
     "INSERT INTO wa_automation_logs (automation_id, phone, contact_name, trigger_data, status) VALUES (?, ?, NULL, ?, 'sent')",
     [pending.automation_id, cleanPhone, JSON.stringify({ menuOptionSelected: matched.label })]
   ).catch(() => {});
+
+  // Log outbound message in message logs
+  await queryAsync(
+    `INSERT INTO wa_message_logs (phone, direction, message_type, message_text, status, created_at)
+     VALUES (?, 'outbound', 'text', ?, 'sent', NOW())`,
+    [cleanPhone, matched.reply_text]
+  ).catch(() => {});
+
+  // Emit Socket.IO live update for real-time Live Chat
+  try {
+    const app = require("../server");
+    const io = app.get && app.get("io");
+    if (io) {
+      const livePayload = {
+        phone: cleanPhone,
+        chatId: `${cleanPhone}@c.us`,
+        message: {
+          id: result?.result?.id || "opt_" + Date.now(),
+          from: "me",
+          body: matched.reply_text,
+          timestamp: Math.floor(Date.now() / 1000),
+          isMe: true,
+          status: "sent",
+        },
+      };
+      io.emit("wa_message_sent", livePayload);
+    }
+  } catch (_) {}
 
   return true;
 }

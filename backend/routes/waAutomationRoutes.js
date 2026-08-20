@@ -172,6 +172,24 @@ router.post("/seed", auth, async (req, res) => {
         delay_minutes: 0,
         is_active: 1,
       },
+      {
+        name: "Service Resolution & Feedback Request",
+        trigger_type: "ticket_closed",
+        message_text: "Hello {name}, your service request for *{service}* has been resolved. We would love to hear your feedback on your experience with {company}!",
+        delay_minutes: 0,
+        is_active: 1,
+        sequence_delay_seconds: 7,
+        followup_message_text: "⭐ If you loved our service, please take 30 seconds to rate us: https://g.page/r/achme/review",
+      },
+      {
+        name: "First Inbound Welcome & Onboarding Guide",
+        trigger_type: "welcome_message",
+        message_text: "Hello {name}! 👋 Welcome to {company}. Thank you for connecting with us on WhatsApp. How can we help you today?",
+        delay_minutes: 0,
+        is_active: 1,
+        sequence_delay_seconds: 7,
+        followup_message_text: "🛠️ Reply *MENU* anytime to view our services, book an appointment, or speak with an agent.",
+      },
     ];
 
     for (const rule of seedAutomations) {
@@ -200,6 +218,88 @@ router.post("/seed", auth, async (req, res) => {
 
     const [all] = await db.promise().query("SELECT * FROM wa_automations ORDER BY created_at DESC");
     res.json({ success: true, count: all.length, automations: all });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Simulate / Test ANY CRM Trigger Event ─────────────────────────────────────
+router.post("/simulate-trigger", auth, async (req, res) => {
+  try {
+    const { trigger_type, phone, contact_name, custom_data = {}, send_real_message = false } = req.body;
+    if (!trigger_type) return res.status(400).json({ error: "trigger_type required" });
+
+    const [rules] = await db.promise().query(
+      `SELECT a.*, t.name as template_name, t.body as template_body,
+              ft.name as followup_template_name, ft.body as followup_template_body
+       FROM wa_automations a
+       LEFT JOIN wa_templates t ON a.template_id = t.id
+       LEFT JOIN wa_templates ft ON a.followup_template_id = ft.id
+       WHERE a.is_active = 1 AND a.trigger_type = ?`,
+      [trigger_type]
+    );
+
+    const { formatMessagePlaceholders, lookupCrmDataByPhone, executeAutomationSend } = require("../services/waAutomationService");
+    const cleanPhone = phone ? phone.replace(/\D/g, "") : "919876543210";
+    const crmData = await lookupCrmDataByPhone(cleanPhone).catch(() => ({}));
+
+    const sampleDefaults = {
+      name: contact_name || "Rahul Sharma",
+      customer_name: contact_name || "Rahul Sharma",
+      company: "Madhura Commercial Facilities",
+      company_name: "Madhura Commercial Facilities",
+      service: "Commercial HVAC Maintenance & AMC",
+      invoice_no: "INV-2026-108",
+      quotation_no: "QT-2026-554",
+      amc_contract_no: "AMC-2026-904",
+      amount: "18,500",
+      due_date: "25 Aug 2026",
+      date: new Date().toLocaleDateString("en-IN"),
+      city: "Bangalore",
+      location_city: "Bangalore",
+      service_date: "Tomorrow (10:30 AM)",
+      start_time: "09:00 AM",
+      end_time: "06:00 PM",
+      technician: "Senior Engineer Suresh",
+      ...crmData,
+      ...custom_data,
+    };
+
+    const evaluatedRules = [];
+    for (const rule of rules) {
+      const rawText = rule.message_text || rule.template_body || "Hello {name}!";
+      const evaluatedText = formatMessagePlaceholders(rawText, sampleDefaults.name, sampleDefaults);
+      let evaluatedFollowup = null;
+      if (rule.followup_message_text || rule.followup_template_body) {
+        const rawFollow = rule.followup_message_text || rule.followup_template_body;
+        evaluatedFollowup = formatMessagePlaceholders(rawFollow, sampleDefaults.name, sampleDefaults);
+      }
+
+      evaluatedRules.push({
+        id: rule.id,
+        name: rule.name,
+        trigger_type: rule.trigger_type,
+        step1_text: evaluatedText,
+        step2_followup_text: evaluatedFollowup,
+        sequence_delay_seconds: rule.sequence_delay_seconds || 7,
+        delay_minutes: rule.delay_minutes || 0,
+        has_media: !!(rule.media_url),
+        has_flow_linked: !!(rule.flow_id),
+      });
+
+      if (send_real_message && phone) {
+        await executeAutomationSend(rule, cleanPhone, sampleDefaults.name, evaluatedText, sampleDefaults);
+      }
+    }
+
+    res.json({
+      success: true,
+      trigger_type,
+      matched_rules_count: rules.length,
+      evaluated_rules: evaluatedRules,
+      sample_data_used: sampleDefaults,
+      real_message_dispatched: Boolean(send_real_message && phone && rules.length > 0),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
