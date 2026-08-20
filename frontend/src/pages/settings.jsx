@@ -134,7 +134,8 @@ const Settings = () => {
   const sections = [
     { id: "appearance", name: "Appearance", icon: Palette },
     { id: "notifications", name: "Notifications", icon: Bell },
-    { id: "security", name: "Security", icon: Shield },
+    { id: "whatsapp", name: "WhatsApp Engine", icon: Shield },
+    { id: "security", name: "Security", icon: Lock },
     { id: "preferences", name: "Preferences", icon: Globe }
   ];
 
@@ -257,6 +258,93 @@ const Settings = () => {
                         </div>
                       </label>
                     ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeSection === "whatsapp" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">WhatsApp Engine & Integration Settings</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Manage multi-device WhatsApp Web connectivity, Meta Cloud API tokens, contact synchronization, and anti-ban broadcast safety.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Engine Status</span>
+                        <h4 className="text-base font-bold text-emerald-950 mt-1">Multi-Engine WhatsApp Manager</h4>
+                        <p className="text-xs text-emerald-800 mt-1">
+                          Configure Meta Cloud API credentials or scan QR for direct WhatsApp Web multi-device session.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/accounts")}
+                        className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
+                      >
+                        Manage Accounts & API →
+                      </button>
+                    </div>
+
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Contacts & Audiences</span>
+                        <h4 className="text-base font-bold text-blue-950 mt-1">WhatsApp Contacts Sync</h4>
+                        <p className="text-xs text-blue-800 mt-1">
+                          Sync contacts from CRM leads, import CSV lists, and manage opt-in consents.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/contacts")}
+                        className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
+                      >
+                        Open Contacts Manager →
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-gray-200 rounded-2xl space-y-3 text-xs">
+                    <h4 className="font-bold text-gray-800">Quick WhatsApp Module Shortcuts</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        💬 Live Chats & QR
+                      </button>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/campaigns")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        📢 Bulk Campaigns
+                      </button>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/automations")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        ⚡ CRM Automations
+                      </button>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/flows")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        🤖 Chatbot Flows
+                      </button>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/analytics")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        📊 Reports & Analytics
+                      </button>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/templates")}
+                        className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 text-left font-bold text-gray-700 transition"
+                      >
+                        📑 Meta Templates
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

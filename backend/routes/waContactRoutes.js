@@ -200,13 +200,26 @@ router.post("/bulk-import", auth, async (req, res) => {
     for (const c of contacts) {
       const cleanPhone = (c.phone || "").replace(/\D/g, "").slice(-10);
       if (cleanPhone.length !== 10) { skipped++; continue; }
-      values.push([c.name || "Unknown", cleanPhone, c.country_code || "91", c.source || "CRM Import", 1, req.user?.id || null]);
+      const tagsJson = c.tags
+        ? (Array.isArray(c.tags) ? JSON.stringify(c.tags) : JSON.stringify(String(c.tags).split(",").map(t => t.trim()).filter(Boolean)))
+        : null;
+      values.push([
+        c.name || "Unknown",
+        cleanPhone,
+        c.country_code || "91",
+        c.email || null,
+        tagsJson,
+        c.source || "CRM Import",
+        c.notes || null,
+        1,
+        req.user?.id || null
+      ]);
     }
 
     let inserted = 0;
     if (values.length) {
       const [result] = await db.promise().query(
-        `INSERT IGNORE INTO wa_contacts (name, phone, country_code, source, opt_in_status, created_by) VALUES ?`,
+        `INSERT IGNORE INTO wa_contacts (name, phone, country_code, email, tags, source, notes, opt_in_status, created_by) VALUES ?`,
         [values]
       );
       inserted = result.affectedRows;

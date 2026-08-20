@@ -133,7 +133,45 @@ router.get("/campaigns", auth, async (req, res) => {
              scheduled_at, started_at, completed_at, created_at,
              CASE WHEN sent_count > 0 THEN ROUND(delivered_count/sent_count*100) ELSE 0 END as delivery_rate,
              CASE WHEN sent_count > 0 THEN ROUND(read_count/sent_count*100) ELSE 0 END as read_rate
-      FROM wa_campaigns ORDER BY created_at DESC LIMIT 30
+      FROM wa_campaigns ORDER BY created_at DESC LIMIT 50
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Automations performance analytics ─────────────────────────────────────────
+router.get("/automations", auth, async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(`
+      SELECT a.id, a.name, a.trigger_type, a.delay_minutes, a.is_active, a.run_count, a.created_at,
+             a.sequence_delay_seconds, a.followup_message_text,
+             g.name as group_name, f.name as flow_name,
+             (SELECT COUNT(*) FROM wa_automation_logs l WHERE l.automation_id = a.id) as log_count,
+             (SELECT COUNT(*) FROM wa_automation_logs l WHERE l.automation_id = a.id AND l.status = 'sent') as sent_success_count
+      FROM wa_automations a
+      LEFT JOIN wa_contact_groups g ON a.group_id = g.id
+      LEFT JOIN wa_flows f ON a.flow_id = f.id
+      ORDER BY a.run_count DESC, a.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Chatbot Flows performance analytics ───────────────────────────────────────
+router.get("/flows", auth, async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(`
+      SELECT f.id, f.name, f.trigger_type, f.trigger_keywords, f.status, f.run_count, f.created_at,
+             (SELECT COUNT(*) FROM wa_flow_nodes n WHERE n.flow_id = f.id) as node_count,
+             (SELECT COUNT(*) FROM wa_flow_runs r WHERE r.flow_id = f.id) as total_sessions,
+             (SELECT COUNT(*) FROM wa_flow_runs r WHERE r.flow_id = f.id AND r.status = 'completed') as completed_sessions,
+             (SELECT COUNT(*) FROM wa_flow_runs r WHERE r.flow_id = f.id AND r.status = 'handed_off') as handoff_count
+      FROM wa_flows f
+      ORDER BY f.run_count DESC, f.created_at DESC
     `);
     res.json(rows);
   } catch (err) {
@@ -148,17 +186,33 @@ router.get("/logs", auth, async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const offset = (page - 1) * limit;
     const status = req.query.status || null;
+    const direction = req.query.direction || null;
+    const search = req.query.search ? `%${req.query.search}%` : null;
 
-    let query = "SELECT * FROM wa_message_logs";
-    let countQuery = "SELECT COUNT(*) as total FROM wa_message_logs";
+    let query = "SELECT * FROM wa_message_logs WHERE 1=1";
+    let countQuery = "SELECT COUNT(*) as total FROM wa_message_logs WHERE 1=1";
     const params = [];
     const countParams = [];
 
     if (status) {
-      query += " WHERE status = ?";
-      countQuery += " WHERE status = ?";
+      query += " AND status = ?";
+      countQuery += " AND status = ?";
       params.push(status);
       countParams.push(status);
+    }
+
+    if (direction) {
+      query += " AND direction = ?";
+      countQuery += " AND direction = ?";
+      params.push(direction);
+      countParams.push(direction);
+    }
+
+    if (search) {
+      query += " AND (phone LIKE ? OR message_text LIKE ?)";
+      countQuery += " AND (phone LIKE ? OR message_text LIKE ?)";
+      params.push(search, search);
+      countParams.push(search, search);
     }
 
     query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
