@@ -520,117 +520,126 @@ async function ensureWATables() {
     }
   }
 
-  // Safe ALTER TABLE for adding columns to existing tables (ignore if column already exists)
-  const alterStatements = [
-    // wa_automations rich media, sequence delay & flow/group linkage
-    "ALTER TABLE wa_automations MODIFY COLUMN trigger_type VARCHAR(100) NOT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_url TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS sequence_delay_seconds INT DEFAULT 7",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_message_text TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_type VARCHAR(20) DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_url TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_template_id INT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS flow_id INT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS group_id INT DEFAULT NULL",
-
-    // wa_campaigns new columns with 7-second baseline delay
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(30) DEFAULT NULL",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS daily_limit INT DEFAULT 0",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS sent_today INT DEFAULT 0",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS last_sent_date DATE DEFAULT NULL",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS start_time VARCHAR(10) DEFAULT '09:00'",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS end_time VARCHAR(10) DEFAULT '21:00'",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'Asia/Kolkata'",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS random_delay_min INT DEFAULT 7",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS random_delay_max INT DEFAULT 12",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS pause_every INT DEFAULT 25",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS pause_duration_min INT DEFAULT 120",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS pause_duration_max INT DEFAULT 300",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS retry_failed TINYINT(1) DEFAULT 1",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS max_retries INT DEFAULT 3",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS retry_delay_min INT DEFAULT 15",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS retry_delay_max INT DEFAULT 30",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS exclude_prev_recipients TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS duplicate_filter TINYINT(1) DEFAULT 1",
-    "ALTER TABLE wa_campaigns MODIFY COLUMN IF EXISTS status ENUM('draft','scheduled','running','completed','paused','failed','cancelled') DEFAULT 'draft'",
-    
-    // wa_campaign_messages new columns
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS next_retry_at DATETIME DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS reply_received TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS opt_out TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS scheduled_time DATETIME DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS media_url TEXT DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS location_lat DOUBLE DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS location_lng DOUBLE DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS location_name VARCHAR(255) DEFAULT NULL",
-    "ALTER TABLE wa_campaign_messages ADD COLUMN IF NOT EXISTS location_address VARCHAR(500) DEFAULT NULL",
-    
-    // Dedupe flag for the daily payment_due WhatsApp reminder job
-    "ALTER TABLE clientinvoices ADD COLUMN IF NOT EXISTS wa_payment_due_sent TINYINT(1) DEFAULT 0",
-    // Dedupe for the daily lead_followup WhatsApp reminder job
-    "ALTER TABLE telecalls ADD COLUMN IF NOT EXISTS wa_followup_sent_date DATE DEFAULT NULL",
-    "ALTER TABLE walkins ADD COLUMN IF NOT EXISTS wa_followup_sent_date DATE DEFAULT NULL",
-    "ALTER TABLE fields ADD COLUMN IF NOT EXISTS wa_followup_sent_date DATE DEFAULT NULL",
-    
-    // ── Per-user WhatsApp sessions ────────────────────────────────────────────
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS session_key VARCHAR(64) DEFAULT NULL",
-    "ALTER TABLE wa_campaigns ADD COLUMN IF NOT EXISTS session_key VARCHAR(64) DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD INDEX IF NOT EXISTS idx_session_phone (session_key, phone)",
-    "ALTER TABLE wa_message_logs MODIFY COLUMN message_type VARCHAR(20) DEFAULT 'text'",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS reply_to_message_id VARCHAR(255) DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS interactive_reply_id VARCHAR(100) DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS interactive_payload JSON DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS media_mime_type VARCHAR(100) DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS media_size INT DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS has_media TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS is_starred TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS assigned_agent_id INT DEFAULT NULL",
-    
-    // Per-chat AI auto-reply control + human-takeover pause + assignment
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS ai_enabled TINYINT(1) DEFAULT 1",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS ai_paused_until DATETIME DEFAULT NULL",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS ai_reply_count INT DEFAULT 0",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS ai_autoreply_disabled TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS assigned_agent_id INT DEFAULT NULL",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS assigned_agent_name VARCHAR(100) DEFAULT NULL",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS ticket_status ENUM('open','pending','resolved','spam') DEFAULT 'open'",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS last_message_text TEXT DEFAULT NULL",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS last_message_at DATETIME DEFAULT NULL",
-    "ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS unread_count INT DEFAULT 0",
-
-    // Shared Team Inbox & Meta Direct Cost Ledger
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS is_internal TINYINT(1) DEFAULT 0",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS author_name VARCHAR(100) DEFAULT NULL",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS conversation_category ENUM('MARKETING','UTILITY','AUTHENTICATION','SERVICE') DEFAULT 'SERVICE'",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS cost_inr DECIMAL(8,4) DEFAULT 0.0000",
-    "ALTER TABLE wa_message_logs ADD COLUMN IF NOT EXISTS markup_inr DECIMAL(8,4) DEFAULT 0.0000",
-
-    // wa_flows dynamic triggers
-    "ALTER TABLE wa_flows MODIFY COLUMN trigger_type VARCHAR(50) DEFAULT 'keyword'",
-
-    // wa_automations dynamic triggers & sequence columns
-    "ALTER TABLE wa_automations MODIFY COLUMN trigger_type VARCHAR(50) NOT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS media_url TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS sequence_delay_seconds INT DEFAULT 7",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_message_text TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_type VARCHAR(20) DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_media_url TEXT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS followup_template_id INT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS flow_id INT DEFAULT NULL",
-    "ALTER TABLE wa_automations ADD COLUMN IF NOT EXISTS group_id INT DEFAULT NULL",
-  ];
-
-  for (const sql of alterStatements) {
+  // Safe helper to add columns to MySQL tables
+  const addColumnIfNotExists = async (table, column, definition) => {
     try {
-      await queryAsync(sql);
+      const rows = await queryAsync(
+        "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+        [table, column]
+      );
+      if (!rows || rows.length === 0) {
+        await queryAsync(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+      }
     } catch (err) {
-      // Ignore errors for alters
+      if (!err.message.includes("Duplicate column") && !err.message.includes("already exists")) {
+        console.warn(`⚠️ Warning adding ${table}.${column}:`, err.message);
+      }
     }
-  }
+  };
+
+  const addIndexIfNotExists = async (table, indexName, columnsSql) => {
+    try {
+      const rows = await queryAsync(
+        "SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?",
+        [table, indexName]
+      );
+      if (!rows || rows.length === 0) {
+        await queryAsync(`ALTER TABLE \`${table}\` ADD INDEX \`${indexName}\` (${columnsSql})`);
+      }
+    } catch (err) {
+      if (!err.message.includes("Duplicate key") && !err.message.includes("already exists")) {
+        console.warn(`⚠️ Warning adding index ${table}.${indexName}:`, err.message);
+      }
+    }
+  };
+
+  // 1. wa_automations column additions & type changes
+  try { await queryAsync("ALTER TABLE wa_automations MODIFY COLUMN trigger_type VARCHAR(100) NOT NULL"); } catch (_) {}
+  await addColumnIfNotExists("wa_automations", "media_type", "VARCHAR(20) DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "media_url", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "sequence_delay_seconds", "INT DEFAULT 7");
+  await addColumnIfNotExists("wa_automations", "followup_message_text", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "followup_media_type", "VARCHAR(20) DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "followup_media_url", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "followup_template_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "flow_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_automations", "group_id", "INT DEFAULT NULL");
+
+  // 2. wa_campaigns column additions
+  await addColumnIfNotExists("wa_campaigns", "whatsapp_number", "VARCHAR(30) DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaigns", "daily_limit", "INT DEFAULT 0");
+  await addColumnIfNotExists("wa_campaigns", "sent_today", "INT DEFAULT 0");
+  await addColumnIfNotExists("wa_campaigns", "last_sent_date", "DATE DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaigns", "start_time", "VARCHAR(10) DEFAULT '09:00'");
+  await addColumnIfNotExists("wa_campaigns", "end_time", "VARCHAR(10) DEFAULT '21:00'");
+  await addColumnIfNotExists("wa_campaigns", "timezone", "VARCHAR(50) DEFAULT 'Asia/Kolkata'");
+  await addColumnIfNotExists("wa_campaigns", "random_delay_min", "INT DEFAULT 7");
+  await addColumnIfNotExists("wa_campaigns", "random_delay_max", "INT DEFAULT 12");
+  await addColumnIfNotExists("wa_campaigns", "pause_every", "INT DEFAULT 25");
+  await addColumnIfNotExists("wa_campaigns", "pause_duration_min", "INT DEFAULT 120");
+  await addColumnIfNotExists("wa_campaigns", "pause_duration_max", "INT DEFAULT 300");
+  await addColumnIfNotExists("wa_campaigns", "retry_failed", "TINYINT(1) DEFAULT 1");
+  await addColumnIfNotExists("wa_campaigns", "max_retries", "INT DEFAULT 3");
+  await addColumnIfNotExists("wa_campaigns", "retry_delay_min", "INT DEFAULT 15");
+  await addColumnIfNotExists("wa_campaigns", "retry_delay_max", "INT DEFAULT 30");
+  await addColumnIfNotExists("wa_campaigns", "exclude_prev_recipients", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_campaigns", "duplicate_filter", "TINYINT(1) DEFAULT 1");
+  await addColumnIfNotExists("wa_campaigns", "session_key", "VARCHAR(64) DEFAULT NULL");
+  try {
+    await queryAsync("ALTER TABLE wa_campaigns MODIFY COLUMN status ENUM('draft','scheduled','running','completed','paused','failed','cancelled') DEFAULT 'draft'");
+  } catch (_) {}
+
+  // 3. wa_campaign_messages column additions
+  await addColumnIfNotExists("wa_campaign_messages", "attempts", "INT DEFAULT 0");
+  await addColumnIfNotExists("wa_campaign_messages", "next_retry_at", "DATETIME DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "reply_received", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_campaign_messages", "opt_out", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_campaign_messages", "scheduled_time", "DATETIME DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "media_type", "VARCHAR(20) DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "media_url", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "location_lat", "DOUBLE DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "location_lng", "DOUBLE DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "location_name", "VARCHAR(255) DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "location_address", "VARCHAR(500) DEFAULT NULL");
+
+  // 4. CRM reminder dedupe flags
+  await addColumnIfNotExists("clientinvoices", "wa_payment_due_sent", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("telecalls", "wa_followup_sent_date", "DATE DEFAULT NULL");
+  await addColumnIfNotExists("walkins", "wa_followup_sent_date", "DATE DEFAULT NULL");
+  await addColumnIfNotExists("fields", "wa_followup_sent_date", "DATE DEFAULT NULL");
+
+  // 5. wa_message_logs column additions & indexes
+  await addColumnIfNotExists("wa_message_logs", "session_key", "VARCHAR(64) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "reply_to_message_id", "VARCHAR(255) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "interactive_reply_id", "VARCHAR(100) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "interactive_payload", "JSON DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "media_mime_type", "VARCHAR(100) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "media_size", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "has_media", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_message_logs", "is_starred", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_message_logs", "assigned_agent_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "is_internal", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_message_logs", "author_name", "VARCHAR(100) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "conversation_category", "ENUM('MARKETING','UTILITY','AUTHENTICATION','SERVICE') DEFAULT 'SERVICE'");
+  await addColumnIfNotExists("wa_message_logs", "cost_inr", "DECIMAL(8,4) DEFAULT 0.0000");
+  await addColumnIfNotExists("wa_message_logs", "markup_inr", "DECIMAL(8,4) DEFAULT 0.0000");
+  try { await queryAsync("ALTER TABLE wa_message_logs MODIFY COLUMN message_type VARCHAR(20) DEFAULT 'text'"); } catch (_) {}
+  await addIndexIfNotExists("wa_message_logs", "idx_session_phone", "session_key, phone");
+
+  // 6. wa_contacts column additions
+  await addColumnIfNotExists("wa_contacts", "ai_enabled", "TINYINT(1) DEFAULT 1");
+  await addColumnIfNotExists("wa_contacts", "ai_paused_until", "DATETIME DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "ai_reply_count", "INT DEFAULT 0");
+  await addColumnIfNotExists("wa_contacts", "ai_autoreply_disabled", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_contacts", "assigned_agent_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "assigned_agent_name", "VARCHAR(100) DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "ticket_status", "ENUM('open','pending','resolved','spam') DEFAULT 'open'");
+  await addColumnIfNotExists("wa_contacts", "last_message_text", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "last_message_at", "DATETIME DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "unread_count", "INT DEFAULT 0");
+
+  // 7. wa_flows trigger_type
+  try { await queryAsync("ALTER TABLE wa_flows MODIFY COLUMN trigger_type VARCHAR(50) DEFAULT 'keyword'"); } catch (_) {}
 
   // ── Seed Prebuilt Templates and Automation Rules ───────────────────────────
   try {

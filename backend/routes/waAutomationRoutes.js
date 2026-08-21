@@ -97,6 +97,9 @@ router.post("/resume-all", auth, async (req, res) => {
 // ── Seed 10 Prebuilt Production CRM Automation Rules ─────────────────────────
 router.post("/seed", auth, async (req, res) => {
   try {
+    // Ensure all automation columns exist in the database
+    await require("../services/waDatabase").ensureWATables();
+
     const seedAutomations = [
       {
         name: "Instant Welcome Notice for New Leads",
