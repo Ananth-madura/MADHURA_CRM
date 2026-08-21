@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Send, Plus, Play, Pause, Square, X, Loader2, Clock, CheckCircle, XCircle,
   MessageCircle, Eye, FileText, Users, Settings2, RotateCcw, ChevronDown, ChevronUp,
-  Shield, RefreshCw, OctagonMinus, Copy, Download, Search
+  Shield, RefreshCw, OctagonMinus, Copy, Download, Search, Sparkles
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
@@ -42,8 +42,8 @@ const DEFAULT_FORM = {
   name: "", description: "", type: "text", template_id: "", message_text: "", media_type: "image", media_url: "", group_id: "",
   scheduled_at: "", whatsapp_number: "",
   daily_limit: 800, start_time: "09:00", end_time: "20:00", timezone: "Asia/Kolkata",
-  random_delay_min: 35, random_delay_max: 55, pause_every: 25,
-  pause_duration_min: 180, pause_duration_max: 300,
+  random_delay_min: 7, random_delay_max: 17, pause_every: 25,
+  pause_duration_min: 120, pause_duration_max: 240,
   retry_failed: true, max_retries: 3, retry_delay_min: 15, retry_delay_max: 30,
   exclude_prev_recipients: false, duplicate_filter: true,
 };
@@ -687,23 +687,35 @@ export default function WACampaigns() {
                       ))}
                     </div>
 
-                    {/* Spintax Quick Pickers */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-200/60 mt-2">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase">Spintax:</span>
-                      {[
-                        { label: "+ {Hi|Hello|Dear}", val: "{Hi|Hello|Dear}" },
-                        { label: "+ {Hope all is well|Greetings}", val: "{Hope you are doing well|Greetings from our team}" },
-                        { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
-                      ].map(s => (
-                        <button
-                          key={s.label}
-                          type="button"
-                          onClick={() => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + s.val }))}
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-mono text-[10px] rounded border border-amber-200 transition"
-                        >
-                          {s.label}
-                        </button>
-                      ))}
+                    {/* Spintax Quick Pickers & Variations */}
+                    <div className="space-y-1.5 pt-2 border-t border-emerald-200/60 mt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-700 uppercase flex items-center gap-1">
+                          <Sparkles size={11} className="text-amber-500" />
+                          <span>Anti-Ban Spintax & Dynamic Word Randomizers:</span>
+                        </span>
+                        <span className="text-[9px] text-emerald-700 font-semibold">Random per recipient</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1">
+                        {[
+                          { label: "+ [hii|heloo|welcom|yes we are|how it's|how that all]", val: "[hii|heloo|welcom|yes we are|how it's|how that all]" },
+                          { label: "+ {Hi|Hello|Hey|Greetings|Welcome}", val: "{Hi|Hello|Hey|Greetings|Welcome}" },
+                          { label: "+ {Hope you're well|Good day|Trust all is well}", val: "{Hope you are doing well|Good day|Trust you are having a great week}" },
+                          { label: "+ {We are pleased to offer|Yes we are here with|Excited to share}", val: "{We are pleased to share|Yes we are here with|Excited to introduce}" },
+                          { label: "+ {Best regards|Warm regards|Thanks & Regards}", val: "{Best regards|Warm regards|Thanks & Regards}" },
+                          { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
+                        ].map(s => (
+                          <button
+                            key={s.label}
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + s.val }))}
+                            className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-mono text-[10px] rounded border border-amber-300 transition shadow-2xs font-semibold"
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -711,30 +723,98 @@ export default function WACampaigns() {
                     value={f.message_text}
                     onChange={e => setForm({ ...f, message_text: e.target.value })}
                     rows={4}
-                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none"
-                    placeholder="Hello {name}! Thank you for reaching out to {company} in {city}..."
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none font-sans"
+                    placeholder="Hello {name}! [hii|heloo|welcom|yes we are|how it's|how that all] Thank you for reaching out to {company}..."
                   />
+
+                  {/* Live Spintax Randomization Preview */}
+                  {f.message_text && (f.message_text.includes("|") || f.message_text.includes("{")) && (
+                    <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                        <span className="flex items-center gap-1"><Sparkles size={12} /> Live Anti-Ban Random Sample:</span>
+                        <span className="text-[9px] text-slate-400 font-mono">100% Unique Per Contact</span>
+                      </div>
+                      <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap">
+                        {f.message_text
+                          .replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim())
+                          .replace(/\{([^{}]+)\}/g, (_, choices) => choices.includes("|") ? choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim() : `{${choices}}`)
+                          .replace(/\{name\}/gi, "Rahul Sharma")
+                          .replace(/\{company\}/gi, "ACHME Solutions")
+                          .replace(/\{service\}/gi, "AC Maintenance AMC")
+                          .replace(/\{city\}/gi, "Mumbai")
+                          .replace(/\{amount\}/gi, "₹12,500")
+                          .replace(/\{date\}/gi, new Date().toLocaleDateString("en-IN"))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Anti-Ban 600-800 Preset Button */}
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
-                <div>
+              {/* Anti-Ban Pacing Presets Selector */}
+              <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
                     <Shield size={14} className="text-emerald-700" />
-                    <span>600–800 Daily Messages Anti-Ban Preset</span>
+                    <span>Configurable Pacing & Anti-Ban Speed</span>
                   </p>
-                  <p className="text-[11px] text-emerald-700 mt-0.5">
-                    Sets 35–55s delay, 3m pause every 25 sends, and 800 cap.
-                  </p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800">
+                    Customizable Delay
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={applySafePacingPreset}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm shrink-0"
-                >
-                  Apply Safe Mode
-                </button>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, random_delay_min: 7, random_delay_max: 17 }))}
+                    className={`p-2 rounded-xl border text-left transition ${
+                      Number(f.random_delay_min) === 7 && Number(f.random_delay_max) === 17
+                        ? "bg-white border-[#25D366] shadow-sm ring-2 ring-[#25D366]/20 font-bold"
+                        : "bg-white/60 border-emerald-200 hover:bg-white text-gray-700"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-gray-900 block">⚡ 7s–17s Gap</span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">Recommended Safe</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, random_delay_min: 15, random_delay_max: 35 }))}
+                    className={`p-2 rounded-xl border text-left transition ${
+                      Number(f.random_delay_min) === 15 && Number(f.random_delay_max) === 35
+                        ? "bg-white border-[#25D366] shadow-sm ring-2 ring-[#25D366]/20 font-bold"
+                        : "bg-white/60 border-emerald-200 hover:bg-white text-gray-700"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-gray-900 block">🛡️ 15s–35s Gap</span>
+                    <span className="text-[10px] text-gray-500 font-medium">Ultra Anti-Ban</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, random_delay_min: 5, random_delay_max: 10 }))}
+                    className={`p-2 rounded-xl border text-left transition ${
+                      Number(f.random_delay_min) === 5 && Number(f.random_delay_max) === 10
+                        ? "bg-white border-[#25D366] shadow-sm ring-2 ring-[#25D366]/20 font-bold"
+                        : "bg-white/60 border-emerald-200 hover:bg-white text-gray-700"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-gray-900 block">🚀 5s–10s Gap</span>
+                    <span className="text-[10px] text-gray-500 font-medium">Fast Broadcast</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, random_delay_min: 35, random_delay_max: 55 }))}
+                    className={`p-2 rounded-xl border text-left transition ${
+                      Number(f.random_delay_min) === 35 && Number(f.random_delay_max) === 55
+                        ? "bg-white border-[#25D366] shadow-sm ring-2 ring-[#25D366]/20 font-bold"
+                        : "bg-white/60 border-emerald-200 hover:bg-white text-gray-700"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-gray-900 block">🛌 35s–55s Gap</span>
+                    <span className="text-[10px] text-gray-500 font-medium">Large 800+ Batches</span>
+                  </button>
+                </div>
               </div>
 
               {/* Advanced Settings Toggle */}
@@ -744,7 +824,7 @@ export default function WACampaigns() {
                 className="flex items-center gap-2 text-xs font-bold uppercase text-gray-600 hover:text-gray-800 py-2 border-t border-gray-100 w-full"
               >
                 <Settings2 size={14} className="text-gray-500" />
-                <span>Advanced Anti-Ban & Pacing Controls</span>
+                <span>Custom Delay Inputs & Business Hours</span>
                 {showAdvanced ? <ChevronUp size={14} className="ml-auto" /> : <ChevronDown size={14} className="ml-auto" />}
               </button>
 
@@ -776,14 +856,14 @@ export default function WACampaigns() {
 
                   {/* Delay Between Messages */}
                   <div>
-                    <p className="font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5"><RefreshCw size={13} /> Pacing Delay Between Messages</p>
+                    <p className="font-bold text-gray-700 uppercase mb-2 flex items-center gap-1.5"><RefreshCw size={13} /> Custom Pacing Delay Range</p>
                     <div className="flex items-center gap-2">
                       <input type="number" value={f.random_delay_min} onChange={e => setForm({ ...f, random_delay_min: e.target.value })} min={1}
-                        className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366]" />
-                      <span className="text-gray-500">to</span>
+                        className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366] font-bold" />
+                      <span className="text-gray-500 font-bold">to</span>
                       <input type="number" value={f.random_delay_max} onChange={e => setForm({ ...f, random_delay_max: e.target.value })} min={1}
-                        className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366]" />
-                      <span className="text-gray-400">seconds (35-55s recommended for 600-800/day)</span>
+                        className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366] font-bold" />
+                      <span className="text-gray-500 font-semibold">seconds (e.g. 7s to 17s for natural human pace)</span>
                     </div>
                   </div>
 

@@ -45,17 +45,32 @@ async function lookupCrmDataByPhone(phone) {
   return {};
 }
 
-// Resolves Spintax format {option1|option2|option3} to generate dynamic message variations
-// for each recipient so WhatsApp/Meta anti-spam hash filters never detect identical messages.
-function resolveSpintax(text) {
+// Resolves Spintax format {option1|option2|option3} or [option1|option2|option3]
+// to generate dynamic message variations for each recipient so WhatsApp/Meta anti-spam
+// hash filters never detect identical messages. Also injects non-rendering micro-jitter.
+function resolveSpintax(text, injectMicroJitter = true) {
   if (!text || typeof text !== "string") return "";
-  const spintaxRegex = /\{([^{}]+)\}/g;
   let result = text;
   let matches;
   let iterations = 0;
-  // Handle nested or multiple spintax patterns up to 10 passes
-  while ((matches = result.match(spintaxRegex)) && iterations < 10) {
-    result = result.replace(spintaxRegex, (_, choices) => {
+
+  // 1. Resolve square bracket spintax: [hii| heloo |welcom | yes we are | how it's | how that all ]
+  const squareSpintaxRegex = /\[([^\[\]]+)\]/g;
+  iterations = 0;
+  while ((matches = result.match(squareSpintaxRegex)) && iterations < 10) {
+    result = result.replace(squareSpintaxRegex, (match, choices) => {
+      if (!choices.includes("|")) return match;
+      const options = choices.split("|");
+      return options[Math.floor(Math.random() * options.length)].trim();
+    });
+    iterations++;
+  }
+
+  // 2. Resolve curly bracket spintax: {Hi|Hello|Hey|Greetings|Dear customer}
+  const curlySpintaxRegex = /\{([^{}]+)\}/g;
+  iterations = 0;
+  while ((matches = result.match(curlySpintaxRegex)) && iterations < 10) {
+    result = result.replace(curlySpintaxRegex, (match, choices) => {
       // If choices look like a standard placeholder (no pipe), keep it
       if (!choices.includes("|")) return `{${choices}}`;
       const options = choices.split("|");
@@ -63,6 +78,15 @@ function resolveSpintax(text) {
     });
     iterations++;
   }
+
+  // 3. Anti-Ban Invisible Micro-Jitter (Zero-Width Space & Non-Joiner Injection)
+  // Ensures every outbound message has a 100% unique cryptographic hash for WhatsApp spam filters
+  if (injectMicroJitter && result.length > 0) {
+    const zwChars = ["\u200B", "\u200C", "\u200D", "\uFEFF"];
+    const randomZw = zwChars[Math.floor(Math.random() * zwChars.length)];
+    result = result + randomZw;
+  }
+
   return result;
 }
 

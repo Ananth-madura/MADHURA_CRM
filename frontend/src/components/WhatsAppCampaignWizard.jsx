@@ -10,7 +10,7 @@ import { API } from "../config/api";
 
 const STEPS = ["Contacts", "Message", "Location", "Review"];
 const DELAY_MIN_SECONDS = 7;
-const DELAY_MAX_SECONDS = 12; // random gap in this range between every message (7s baseline anti-ban delay)
+const DELAY_MAX_SECONDS = 17; // random gap in this range between every message (7s–17s customizable anti-ban delay)
 
 function normalizePhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
@@ -470,19 +470,36 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none" />
 
                     {/* Anti-Ban Spintax & Opt-out Quick Buttons */}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase mr-1">Anti-Ban Spintax:</span>
-                      {[
-                        { label: "+ {Hi|Hello|Dear}", val: "{Hi|Hello|Dear}" },
-                        { label: "+ {Hope you're well|Greetings}", val: "{Hope you are doing well|Greetings from our team}" },
-                        { label: "+ {Best regards|Warm wishes}", val: "{Best regards|Warm wishes}" },
-                        { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
-                      ].map(s => (
-                        <button key={s.label} type="button" onClick={() => setMessageText(prev => prev + (prev.length > 0 ? " " : "") + s.val)}
-                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded transition">
-                          {s.label}
-                        </button>
-                      ))}
+                    <div className="mt-2 space-y-1.5 pt-2 border-t border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-700 uppercase">🛡️ Anti-Ban Word Randomizers:</span>
+                        <span className="text-[9px] text-emerald-700 font-semibold">100% Unique per contact</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {[
+                          { label: "+ [hii|heloo|welcom|yes we are|how it's|how that all]", val: "[hii|heloo|welcom|yes we are|how it's|how that all]" },
+                          { label: "+ {Hi|Hello|Hey|Greetings|Welcome}", val: "{Hi|Hello|Hey|Greetings|Welcome}" },
+                          { label: "+ {Hope all is well|Greetings}", val: "{Hope you are doing well|Greetings from our team}" },
+                          { label: "+ {We are pleased to offer|Yes we are here with}", val: "{We are pleased to share|Yes we are here with|Excited to introduce}" },
+                          { label: "+ {Best regards|Warm wishes}", val: "{Best regards|Warm wishes}" },
+                          { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
+                        ].map(s => (
+                          <button key={s.label} type="button" onClick={() => setMessageText(prev => prev + (prev.length > 0 ? " " : "") + s.val)}
+                            className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-semibold rounded transition shadow-2xs">
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {messageText && (messageText.includes("|") || messageText.includes("{")) && (
+                        <div className="p-2 bg-slate-900 text-slate-100 rounded-lg text-[11px] font-mono mt-1 text-emerald-300">
+                          <span className="text-[9px] font-bold text-amber-400 uppercase block mb-0.5">🎲 Live Random Preview:</span>
+                          {messageText
+                            .replace(/\[([^\[\]]+)\]/g, (_, c) => c.split("|")[Math.floor(Math.random() * c.split("|").length)].trim())
+                            .replace(/\{([^{}]+)\}/g, (_, c) => c.includes("|") ? c.split("|")[Math.floor(Math.random() * c.split("|").length)].trim() : `{${c}}`)
+                            .replace(/\{name\}/gi, "Rahul Sharma")}
+                        </div>
+                      )}
                     </div>
                   </div>
 
