@@ -322,6 +322,51 @@ async function ensureWATables() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
+    // Interactive WhatsApp Reminders & Confirmations (2-way multi-gated)
+    `CREATE TABLE IF NOT EXISTS wa_interactive_reminders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      phone VARCHAR(20) NOT NULL,
+      contact_name VARCHAR(255) DEFAULT NULL,
+      reminder_type VARCHAR(50) NOT NULL,
+      reference_table VARCHAR(50) DEFAULT NULL,
+      reference_id INT DEFAULT NULL,
+      title VARCHAR(255) NOT NULL,
+      message_text TEXT NOT NULL,
+      options_payload JSON DEFAULT NULL,
+      status ENUM('pending', 'sent', 'confirmed', 'rescheduled', 'cancelled', 'paid', 'expired', 'failed') DEFAULT 'pending',
+      scheduled_for DATETIME DEFAULT NULL,
+      sent_at DATETIME DEFAULT NULL,
+      response_received_at DATETIME DEFAULT NULL,
+      response_text VARCHAR(255) DEFAULT NULL,
+      response_action VARCHAR(50) DEFAULT NULL,
+      assigned_staff_name VARCHAR(100) DEFAULT NULL,
+      notes TEXT DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_phone_status (phone, status),
+      INDEX idx_reminder_type (reminder_type),
+      INDEX idx_scheduled_for (scheduled_for)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Reminders & Confirmation Global Engine Settings (single row, id=1)
+    `CREATE TABLE IF NOT EXISTS wa_reminder_settings (
+      id INT PRIMARY KEY DEFAULT 1,
+      appointment_reminders_enabled TINYINT(1) DEFAULT 1,
+      appointment_reminder_hours_before INT DEFAULT 24,
+      payment_due_reminders_enabled TINYINT(1) DEFAULT 1,
+      payment_due_days_before INT DEFAULT 1,
+      lead_followup_reminders_enabled TINYINT(1) DEFAULT 1,
+      amc_renewal_reminders_enabled TINYINT(1) DEFAULT 1,
+      amc_renewal_days_before INT DEFAULT 7,
+      confirmation_auto_update_crm TINYINT(1) DEFAULT 1,
+      notify_staff_on_response TINYINT(1) DEFAULT 1,
+      default_confirm_prompt TEXT DEFAULT NULL,
+      default_reschedule_prompt TEXT DEFAULT NULL,
+      default_cancel_prompt TEXT DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
     // Emoji reactions on messages
     `CREATE TABLE IF NOT EXISTS wa_reactions (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -649,8 +694,31 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_ai_settings", "temperature", "DECIMAL(3,2) DEFAULT 0.70");
   await addColumnIfNotExists("wa_ai_settings", "max_tokens", "INT DEFAULT 350");
 
-  // ── Seed Prebuilt Templates and Automation Rules ───────────────────────────
+  // 9. wa_automation_options column additions
+  await addColumnIfNotExists("wa_automation_options", "action_type", "VARCHAR(50) DEFAULT 'reply_text'");
+  await addColumnIfNotExists("wa_automation_options", "action_payload", "JSON DEFAULT NULL");
+  await addColumnIfNotExists("wa_automation_options", "next_step_text", "TEXT DEFAULT NULL");
+
+  // ── Seed Prebuilt Templates, Reminders and Automation Rules ───────────────────────────
   try {
+    const reminderSettingsCount = await queryAsync("SELECT COUNT(*) as count FROM wa_reminder_settings");
+    if (reminderSettingsCount[0].count === 0) {
+      await queryAsync(
+        `INSERT INTO wa_reminder_settings (
+          id, appointment_reminders_enabled, appointment_reminder_hours_before,
+          payment_due_reminders_enabled, payment_due_days_before,
+          lead_followup_reminders_enabled, amc_renewal_reminders_enabled, amc_renewal_days_before,
+          confirmation_auto_update_crm, notify_staff_on_response,
+          default_confirm_prompt, default_reschedule_prompt, default_cancel_prompt
+        ) VALUES (
+          1, 1, 24, 1, 1, 1, 1, 7, 1, 1,
+          '🎉 Thank you {name}! Your appointment has been CONFIRMED for {date} at {time}. Our executive will be on time.',
+          'We understand! When would you like to reschedule your visit? Reply with your preferred date/time or reply CALL ME to speak with our support team.',
+          'Your appointment has been CANCELLED as requested. If you need any assistance in the future, feel free to message us anytime!'
+        )`
+      );
+      console.log("✅ Seeded default WhatsApp Reminder & Confirmation settings");
+    }
     const templatesCount = await queryAsync("SELECT COUNT(*) as count FROM wa_templates");
     if (templatesCount[0].count === 0) {
       const defaultTemplates = [

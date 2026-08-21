@@ -150,6 +150,7 @@ app.use("/api/wa/flows", require("./routes/waFlowRoutes"));
 app.use("/api/wa/ai", require("./routes/waAiRoutes"));
 app.use("/api/wa/payments", require("./routes/waPaymentsRoutes"));
 app.use("/api/wa/drip", require("./routes/waDripRoutes"));
+app.use("/api/wa/reminders", require("./routes/waReminderRoutes"));
 
 // Absolute path: express.static("uploads") resolves against process.cwd(), so
 // uploaded media 404'd whenever the server was started from anywhere but backend/.
@@ -227,6 +228,13 @@ function startServer() {
       require("./services/waLeadFollowupScheduler").startLeadFollowupScheduler();
     } catch (e) {
       console.warn("⚠️ WA lead-followup scheduler warning:", e.message);
+    }
+
+    // Master 2-Way Interactive Confirmation Schedulers (Appointments, Invoices, Quotations, AMC)
+    try {
+      require("./services/waReminderScheduler").startInteractiveReminderSchedulers();
+    } catch (e) {
+      console.warn("⚠️ WA interactive reminder schedulers warning:", e.message);
     }
 
     // Start WhatsApp Cloud API queue worker (no Redis fallback = synchronous)

@@ -422,6 +422,15 @@ class WhatsAppService {
 
             const interactiveReplyId = msg.selectedButtonId || msg.selectedRowId || msg.selectedListId || msg._data?.selectedButtonId || msg._data?.selectedRowId || null;
             const contactName = msg._data?.notifyName || msg.notifyName || null;
+
+            // 1. Check if inbound message resolves a pending 2-way interactive confirmation
+            const confirmationHandled = await require("./waConfirmationService").handleInboundConfirmation(cleanPhone, msg.body, interactiveReplyId, this.key).catch(() => false);
+            if (confirmationHandled) return;
+
+            // 2. Check if customer is requesting their bills / receipts (scoped strictly to their phone)
+            const billHandled = await require("./waCustomerBillingService").handleInboundBillKeyword(cleanPhone, msg.body, this.key).catch(() => false);
+            if (billHandled) return;
+
             const flowHandled = await require("./waFlowEngine").dispatchInbound(cleanPhone, msg.body, interactiveReplyId, this.key).catch(() => false);
             if (!flowHandled) {
               const handled = await require("./waMenuHandler").handleMenuReply(cleanPhone, { text: msg.body, buttonReplyId: interactiveReplyId }, this.key).catch(() => false);

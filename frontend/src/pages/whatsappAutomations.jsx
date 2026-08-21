@@ -9,6 +9,7 @@ import {
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
+import WhatsAppInteractiveReminders from "../components/WhatsAppInteractiveReminders";
 
 const TRIGGER_TYPES = [
   { value: "welcome_message", label: "Welcome Message", desc: "First inbound message / contact added", emoji: "👋" },
@@ -593,6 +594,16 @@ export default function WhatsAppAutomations() {
         </button>
 
         <button
+          onClick={() => setActiveTab("reminders")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            activeTab === "reminders" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-gray-600 border hover:bg-gray-50"
+          }`}
+        >
+          <Bell size={15} />
+          <span>🔔 Interactive Reminders & 2-Way Confirmations</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("logs")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
             activeTab === "logs" ? "bg-amber-600 text-white shadow-sm" : "bg-white text-gray-600 border hover:bg-gray-50"
@@ -602,6 +613,11 @@ export default function WhatsAppAutomations() {
           <span>Execution Audit Logs ({logs.length})</span>
         </button>
       </div>
+
+      {/* ── TAB 4: Interactive Reminders & 2-Way Confirmations ── */}
+      {activeTab === "reminders" && (
+        <WhatsAppInteractiveReminders />
+      )}
 
       {/* ── TAB 1: Rules List ── */}
       {activeTab === "rules" && (

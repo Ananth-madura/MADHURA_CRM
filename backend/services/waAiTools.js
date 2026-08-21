@@ -39,29 +39,26 @@ Available Tools:
 When you use a tool, you will receive the real CRM data back, and then you can answer the customer clearly and conversationally.`;
 
 async function checkInvoiceStatus(phone) {
-  const last10 = (phone || "").replace(/\D/g, "").slice(-10);
   try {
-    const rows = await queryAsync(
-      `SELECT ci.id, ci.invoice_duedate, ci.created_at,
-        (SELECT COUNT(*) FROM payments p WHERE p.invoice_id = ci.id) AS payment_count
-       FROM clientinvoices ci
-       JOIN clients c ON (c.company_name = ci.client_company OR c.name = ci.client_company)
-       WHERE c.phone LIKE ?
-       ORDER BY ci.invoice_duedate DESC LIMIT 5`,
-      [`%${last10}`]
-    );
-
-    if (!rows.length) {
-      // Fallback check telecalls/direct phone
-      return { found: false, message: "No registered invoices found for this phone number." };
+    const waBilling = require("./waCustomerBillingService");
+    const billingData = await waBilling.getCustomerBillsAndReceipts(phone);
+    if (!billingData.found) {
+      return { found: false, message: "No registered invoices or bills found for this phone number." };
     }
-
     return {
       found: true,
-      invoices: rows.map((r) => ({
-        invoice_no: `INV-${r.id}`,
-        due_date: r.invoice_duedate ? new Date(r.invoice_duedate).toLocaleDateString("en-IN") : "N/A",
-        status: r.payment_count > 0 ? "Paid ✅" : "Payment Pending / Due ⏳",
+      customer_name: billingData.customerName,
+      total_billed: `₹${billingData.totalBilled.toLocaleString("en-IN")}`,
+      total_paid: `₹${billingData.totalPaid.toLocaleString("en-IN")}`,
+      balance_due: `₹${billingData.balanceDue.toLocaleString("en-IN")}`,
+      invoices: billingData.invoices.map((inv) => ({
+        invoice_no: inv.invoice_no,
+        type: inv.type,
+        service: inv.project_name,
+        date: inv.date,
+        due_date: inv.due_date,
+        amount: `₹${inv.amount_billed.toLocaleString("en-IN")}`,
+        status: inv.status,
       })),
     };
   } catch (err) {

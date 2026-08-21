@@ -177,6 +177,16 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
       console.error("Opt-out handling error:", e.message);
     }
   } else {
+    // 1. Check if inbound message resolves a pending 2-way interactive confirmation
+    const waConfirmation = require("../services/waConfirmationService");
+    const confirmationHandled = await waConfirmation.handleInboundConfirmation(phone, messageText, interactiveId).catch(() => false);
+    if (confirmationHandled) return;
+
+    // 2. Check if customer is requesting their bills / receipts (scoped strictly to their phone)
+    const waBilling = require("../services/waCustomerBillingService");
+    const billHandled = await waBilling.handleInboundBillKeyword(phone, messageText).catch(() => false);
+    if (billHandled) return;
+
     const waFlowEngine = require("../services/waFlowEngine");
     const buttonReplyId = msg.interactive?.button_reply?.id;
     const listReplyId = msg.interactive?.list_reply?.id;
