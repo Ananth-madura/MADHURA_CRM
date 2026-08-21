@@ -1,8 +1,13 @@
+"use strict";
+
 const axios = require("axios");
 const db = require("../config/database");
 const { decrypt } = require("../backendutil/cryptoHelper");
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 function queryAsync(sql, params) {
@@ -12,17 +17,54 @@ function queryAsync(sql, params) {
 }
 
 async function getSettings() {
-  const rows = await queryAsync("SELECT * FROM wa_ai_settings WHERE id = 1");
-  const row = rows[0];
-  return {
-    enabled: !!(row && row.enabled),
-    model: (row && row.model) || process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
-    system_prompt: (row && row.system_prompt) || "",
-    apiKey: (row && row.api_key ? decrypt(row.api_key) : "") || process.env.OPENROUTER_API_KEY || "",
-  };
+  try {
+    const rows = await queryAsync("SELECT * FROM wa_ai_settings WHERE id = 1");
+    const row = rows[0] || {};
+    return {
+      enabled: !!row.enabled,
+      provider: row.provider || "openrouter",
+      model: row.model || process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+      system_prompt: row.system_prompt || "",
+      apiKey: (row.api_key ? decrypt(row.api_key) : "") || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || "",
+      auto_lead_capture: row.auto_lead_capture !== 0,
+      human_handoff_keywords: row.human_handoff_keywords || "human, agent, executive, support, speak to person, call me",
+      custom_api_url: row.custom_api_url || null,
+      temperature: parseFloat(row.temperature) || 0.7,
+      max_tokens: parseInt(row.max_tokens, 10) || 350,
+    };
+  } catch {
+    return {
+      enabled: false,
+      provider: "openrouter",
+      model: DEFAULT_MODEL,
+      system_prompt: "",
+      apiKey: process.env.OPENROUTER_API_KEY || "",
+      auto_lead_capture: true,
+      human_handoff_keywords: "human, agent, executive, support, speak to person, call me",
+      temperature: 0.7,
+      max_tokens: 350,
+    };
+  }
 }
 
-// ponytail: contact lookup checks each CRM table in turn — fine at this scale, add a single indexed view if it ever shows up in a slow query log
+function resolveProviderUrl(provider, apiKey, customUrl) {
+  if (customUrl) return customUrl.replace(/\/$/, "") + "/chat/completions";
+
+  const cleanKey = (apiKey || "").trim();
+  if (provider === "openai") return OPENAI_URL;
+  if (provider === "groq") return GROQ_URL;
+  if (provider === "gemini") return GEMINI_OPENAI_URL;
+  if (provider === "openrouter") return OPENROUTER_URL;
+
+  // Auto-detect from key prefix
+  if (cleanKey.startsWith("gsk_")) return GROQ_URL;
+  if (cleanKey.startsWith("AIza")) return GEMINI_OPENAI_URL;
+  if (cleanKey.startsWith("sk-or-")) return OPENROUTER_URL;
+  if (cleanKey.startsWith("sk-")) return OPENAI_URL;
+
+  return OPENROUTER_URL;
+}
+
 async function findContactName(phone) {
   const last10 = phone.replace(/\D/g, "").slice(-10);
   const lookups = [
@@ -35,20 +77,18 @@ async function findContactName(phone) {
   for (const [table, col, phoneCol] of lookups) {
     try {
       const rows = await queryAsync(`SELECT ${col} as name FROM ${table} WHERE ${phoneCol} LIKE ? LIMIT 1`, [`%${last10}`]);
-      if (rows[0] && rows[0].name) return rows[0].name;
-    } catch (_) {
-      // table/column may not exist in this deployment — skip
-    }
+      if (rows[0] && rows[0].name && rows[0].name !== "WhatsApp Lead") return rows[0].name;
+    } catch (_) {}
   }
   return null;
 }
 
-async function getRecentHistory(phone, limit = 6) {
+async function getRecentHistory(phone, limit = 8) {
   const last10 = phone.replace(/\D/g, "").slice(-10);
   const rows = await queryAsync(
     `SELECT direction, message_text FROM wa_message_logs
      WHERE phone LIKE ? AND message_text IS NOT NULL AND message_text != ''
-     ORDER BY created_at DESC LIMIT ?`,
+     ORDER BY id DESC LIMIT ?`,
     [`%${last10}`, limit]
   );
   return rows.reverse().map((r) => ({
@@ -57,9 +97,6 @@ async function getRecentHistory(phone, limit = 6) {
   }));
 }
 
-// The model is instructed to answer with ONLY a JSON object when it wants to
-// offer tappable choices. Some models still wrap it in a ```json fence —
-// strip that before parsing. Returns null for a normal plain-text reply.
 function parseStructuredReply(raw) {
   if (!raw) return null;
   let text = raw.trim();
@@ -92,9 +129,6 @@ function parseStructuredReply(raw) {
   return { message: obj.message };
 }
 
-// Detects the model asking to run a tool: {"action": "tool_name"}. Distinct
-// from parseStructuredReply's {message, reply_buttons/list} shape — an action
-// request has no "message" and is never sent to the customer as-is.
 function parseActionRequest(raw) {
   if (!raw) return null;
   let text = raw.trim();
@@ -103,15 +137,11 @@ function parseActionRequest(raw) {
   if (!text.startsWith("{")) return null;
   try {
     const obj = JSON.parse(text);
-    if (obj && typeof obj.action === "string" && !obj.message) return { action: obj.action };
-  } catch {
-    // not JSON — a normal plain-text reply
-  }
+    if (obj && typeof obj.action === "string" && !obj.message) {
+      return { action: obj.action, params: obj.params || {} };
+    }
+  } catch (_) {}
   return null;
-}
-
-function buildNumberedText(message, options) {
-  return `${message}\n\n` + options.map((o, i) => `${i + 1}. ${o.title}`).join("\n");
 }
 
 async function logOutbound(phone, messageType, text) {
@@ -126,7 +156,10 @@ async function logOutbound(phone, messageType, text) {
 
 async function generateReply(phone, incomingText, contactNameOverride) {
   const settings = await getSettings();
-  if (!settings.apiKey) return null;
+  if (!settings.apiKey) {
+    console.warn("⚠️ [WA AI Reply] Missing AI API Key. Please configure API Key in WhatsApp Settings.");
+    return null;
+  }
 
   const contactName = contactNameOverride || (await findContactName(phone).catch(() => null));
   const history = await getRecentHistory(phone).catch(() => []);
@@ -134,18 +167,20 @@ async function generateReply(phone, incomingText, contactNameOverride) {
 
   let systemPrompt =
     settings.system_prompt ||
-    `You are a friendly, helpful WhatsApp assistant for a business. Chat naturally and openly with the customer, answer their questions directly and conversationally (1-4 sentences), like a real team member would. Avoid quoting exact prices or making firm commitments you're not certain about — say a team member will confirm those instead.${
-      contactName ? ` The customer's name is ${contactName}.` : ""
+    `You are the official intelligent WhatsApp assistant for our company.
+You are professional, polite, concise, and helpful. Answer customer queries conversationally (2-4 sentences max).
+Help them with product/service inquiries, pricing quotes, AMC maintenance, invoice questions, and support.${
+      contactName ? ` The customer's registered name is ${contactName}.` : ""
     }`;
 
   if (knowledge) {
-    systemPrompt += `\n\nUse the following reference material to answer questions accurately. Only use it when relevant — don't mention that you were given documents:\n\n${knowledge}`;
+    systemPrompt += `\n\n=== COMPANY KNOWLEDGE BASE ===\nUse this official information to answer accurately:\n${knowledge}`;
   }
 
-  systemPrompt += `\n\nWhenever you want the user to choose from a small set of predefined options instead of typing a free-form reply, respond with ONLY a JSON object (no other text, no markdown code fences) in one of these two shapes:
-Up to 3 choices — reply buttons: {"message": "...", "reply_buttons": [{"id": "...", "title": "..."}, {"id": "...", "title": "..."}]}
-More than 3 choices — a list: {"message": "...", "list": {"title": "...", "items": ["...", "...", "..."]}}
-Otherwise, just reply normally with plain text. The user's tap is sent back to you automatically as their next message — never ask them to type or reply with a number.
+  systemPrompt += `\n\n=== INTERACTIVE BUTTONS ===
+When you want the user to pick from predefined options, reply with ONLY a JSON object:
+- Up to 3 buttons: {"message": "...", "reply_buttons": [{"id": "1", "title": "Option 1"}, {"id": "2", "title": "Option 2"}]}
+- More than 3 items: {"message": "...", "list": {"title": "View Services", "items": ["Service A", "Service B", "Service C"]}}
 
 ${require("./waAiTools").TOOLS_DESCRIPTION}`;
 
@@ -155,61 +190,84 @@ ${require("./waAiTools").TOOLS_DESCRIPTION}`;
     { role: "user", content: incomingText },
   ];
 
-  const OPEN_WEIGHT_MODELS = [
-    settings.model || DEFAULT_MODEL,
+  const apiUrl = resolveProviderUrl(settings.provider, settings.apiKey, settings.custom_api_url);
+  const primaryModel = settings.model || DEFAULT_MODEL;
+
+  const candidateModels = [
+    primaryModel,
     "meta-llama/llama-3.3-70b-instruct:free",
     "deepseek/deepseek-r1:free",
     "qwen/qwen-2.5-72b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "mistralai/mistral-7b-instruct:free",
+    "gpt-4o-mini",
   ];
 
-  const callModelWithFallback = async () => {
-    // Try primary model first, then fallback across open-weight models if rate-limited
-    const tried = new Set();
-    for (const m of OPEN_WEIGHT_MODELS) {
-      if (!m || tried.has(m)) continue;
-      tried.add(m);
-      try {
-        const { data } = await axios.post(
-          OPENROUTER_URL,
-          { model: m, messages, max_tokens: 300 },
-          {
-            headers: {
-              Authorization: `Bearer ${settings.apiKey}`,
-              "Content-Type": "application/json",
-            },
-            timeout: 15000,
-          }
-        );
-        const text = data?.choices?.[0]?.message?.content?.trim();
-        if (text) return text;
-      } catch (err) {
-        console.warn(`⚠️ [WA AI Reply] Open-weight model '${m}' failed/timed out: ${err.message}. Trying next model...`);
-      }
+  const callModel = async (modelToUse) => {
+    const isGemini = apiUrl.includes("generativelanguage.googleapis.com");
+    const headers = {
+      Authorization: `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    if (apiUrl.includes("openrouter.ai")) {
+      headers["HTTP-Referer"] = "https://achmecrm.com";
+      headers["X-Title"] = "MADHURA WhatsApp CRM";
     }
-    return null;
+
+    const payload = {
+      model: modelToUse,
+      messages,
+      temperature: settings.temperature || 0.7,
+      max_tokens: settings.max_tokens || 350,
+    };
+
+    const { data } = await axios.post(apiUrl, payload, { headers, timeout: 20000 });
+    return data?.choices?.[0]?.message?.content?.trim();
   };
 
   try {
-    for (let round = 0; round < 2; round++) {
-      const raw = await callModelWithFallback();
-      if (!raw) return null;
+    for (let round = 0; round < 3; round++) {
+      let raw = null;
+      let lastErr = null;
+
+      // Try primary model first
+      try {
+        raw = await callModel(primaryModel);
+      } catch (err) {
+        lastErr = err;
+        console.warn(`⚠️ [WA AI Reply] Primary model '${primaryModel}' call failed (${err.message}). Trying fallback models...`);
+        // If OpenRouter, try fallbacks
+        if (apiUrl.includes("openrouter.ai")) {
+          for (const fallback of candidateModels) {
+            if (fallback === primaryModel) continue;
+            try {
+              raw = await callModel(fallback);
+              if (raw) break;
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (!raw) {
+        console.error("❌ [WA AI Reply] All AI model calls failed:", lastErr?.response?.data || lastErr?.message);
+        return null;
+      }
 
       const action = parseActionRequest(raw);
       if (!action) return raw;
 
-      const toolResult = await require("./waAiTools").runTool(action.action, phone);
+      console.log(`⚡ [WA AI Reply] Executing tool: ${action.action} for ${phone}`);
+      const toolResult = await require("./waAiTools").runTool(action.action, phone, action.params);
+      
       messages.push({ role: "assistant", content: raw });
       messages.push({
         role: "user",
-        content: `[Tool result for ${action.action}]: ${JSON.stringify(toolResult)}\nNow reply to the customer using this real data — plain text, or buttons/list JSON if that fits better. Don't mention "tool" or "JSON" to them.`,
+        content: `[System Tool Result for ${action.action}]: ${JSON.stringify(toolResult)}\nNow respond to the customer naturally using this verified CRM data. Do not mention "tool" or output code fences.`,
       });
     }
-    await require("./waAiTools").runTool("request_human_support", phone).catch(() => {});
-    return "Let me have a team member confirm that for you.";
+
+    await require("./waAiTools").runTool("request_human_support", phone, { reason: "Conversation max tool loops reached" }).catch(() => {});
+    return "Thank you for reaching out! Our specialist will connect with you shortly.";
   } catch (err) {
-    console.error("[WA AI Reply] generation failed:", err.response?.data || err.message);
+    console.error("[WA AI Reply] Generation failed:", err.response?.data || err.message);
     return null;
   }
 }
@@ -223,34 +281,63 @@ async function maybeAutoReply(phone, incomingText, contactName, sessionKey) {
     const settings = await getSettings();
     if (!settings.enabled) return;
 
+    // Check opt-outs
     const optedOut = await queryAsync("SELECT id FROM wa_opt_outs WHERE phone LIKE ? LIMIT 1", [`%${last10}`]);
     if (optedOut.length) return;
 
-    // One query covers all three per-contact gates: blocked, the per-chat AI
-    // switch, and the human-takeover pause set when an operator replies by hand.
+    // Check per-contact AI status & human pause
     const contact = (await queryAsync(
       "SELECT is_blocked, ai_enabled, ai_paused_until FROM wa_contacts WHERE phone LIKE ? LIMIT 1",
       [`%${last10}`]
     ))[0];
+
     if (contact) {
       if (contact.is_blocked) return;
       if (contact.ai_enabled === 0) return;
       if (contact.ai_paused_until && new Date(contact.ai_paused_until) > new Date()) {
-        console.log(`🤖 [WA AI Reply] Skipped ${cleanPhone} — human is handling this chat`);
+        console.log(`🤖 [WA AI Reply] Skipped ${cleanPhone} — Human agent is actively handling this conversation`);
         return;
       }
     }
 
-    // ── Generate reply from AI model ──
+    // ── Check for Human Handoff Keywords in incoming message ──
+    const handoffKeywords = (settings.human_handoff_keywords || "")
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter(Boolean);
+
+    const normText = incomingText.trim().toLowerCase();
+    const wantsHuman = handoffKeywords.some((kw) => normText.includes(kw));
+
+    if (wantsHuman) {
+      console.log(`🙋 [WA AI Reply] Human handoff keyword matched for ${cleanPhone}: "${incomingText}"`);
+      await require("./waAiTools").runTool("request_human_support", cleanPhone, { reason: `Keyword match: "${incomingText}"` });
+      
+      const handoffReply = "I have notified our support executive to take over this chat. A team member will reply to you here shortly! 🙏";
+      const waLoadBalancer = require("./waLoadBalancer");
+      const mdToWa = require("./mdToWa");
+      await waLoadBalancer.sendTextMessage(cleanPhone, mdToWa.toWhatsApp(handoffReply), sessionKey);
+      await logOutbound(cleanPhone, "text", handoffReply);
+      return;
+    }
+
+    // ── Automatic Lead Capture on Inbound Inquiry ──
+    if (settings.auto_lead_capture) {
+      // If contact is not yet registered or has inquiry text, capture lead in background
+      require("./waLeadCapture").captureLeadFromWhatsApp({
+        phone: cleanPhone,
+        name: contactName,
+        notes: incomingText,
+        sourceDetail: "WhatsApp AI Inbound",
+      }).catch(() => {});
+    }
+
+    // ── Generate AI reply ──
     const reply = await generateReply(cleanPhone, incomingText, contactName);
     if (!reply) return;
 
-    // ── Check for [[HANDOFF]] sentinel in AI reply ─────────────────────────
     if (reply.includes("[[HANDOFF]]")) {
-      console.log(`🙋 [WA AI Reply] [[HANDOFF]] detected for ${cleanPhone}. Pausing AI and handing off to human agent.`);
       const cleanedReply = reply.replace(/\[\[HANDOFF\]\]/g, "").trim() || "I have notified our team to connect with you directly. An agent will reply shortly!";
-      
-      // Pause AI for 180 minutes on this contact
       await queryAsync(
         "UPDATE wa_contacts SET ai_paused_until = DATE_ADD(NOW(), INTERVAL 180 MINUTE), ai_autoreply_disabled = 1 WHERE phone LIKE ?",
         [`%${last10}`]
@@ -269,17 +356,15 @@ async function maybeAutoReply(phone, incomingText, contactName, sessionKey) {
     const textToSend = structured ? structured.message : reply;
     const formattedText = mdToWa.toWhatsApp(textToSend);
 
-    // Increment AI reply counter for this contact
     await queryAsync(
-      "UPDATE wa_contacts SET ai_reply_count = COALESCE(ai_reply_count, 0) + 1 WHERE phone LIKE ?",
-      [`%${last10}`]
+      "UPDATE wa_contacts SET ai_reply_count = COALESCE(ai_reply_count, 0) + 1, last_message_text = ?, last_message_at = NOW() WHERE phone LIKE ?",
+      [formattedText, `%${last10}`]
     ).catch(() => {});
 
-    // Replies leave from the number that received the message.
     await waLoadBalancer.sendTextMessage(cleanPhone, formattedText, sessionKey);
     await logOutbound(cleanPhone, "text", formattedText);
 
-    console.log(`🤖 [WA AI Reply] Auto-replied to ${cleanPhone} via Load Balancer`);
+    console.log(`🤖 [WA AI Reply] Successfully auto-replied to ${cleanPhone}`);
   } catch (err) {
     console.error("[WA AI Reply] maybeAutoReply error:", err.message);
   }

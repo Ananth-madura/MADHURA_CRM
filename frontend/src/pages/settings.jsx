@@ -271,7 +271,23 @@ const Settings = () => {
                     Manage multi-device WhatsApp Web connectivity, Meta Cloud API tokens, contact synchronization, and anti-ban broadcast safety.
                   </p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">AI Intelligence</span>
+                        <h4 className="text-base font-bold text-purple-950 mt-1">AI Assistant & Lead Capture</h4>
+                        <p className="text-xs text-purple-800 mt-1">
+                          Configure OpenAI, Gemini, Llama models, system personas, and automatic CRM lead capture.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => navigate("/dashboard/whatsapp/accounts")}
+                        className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
+                      >
+                        Configure AI Bot →
+                      </button>
+                    </div>
+
                     <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col justify-between">
                       <div>
                         <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Engine Status</span>

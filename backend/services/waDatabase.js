@@ -641,6 +641,14 @@ async function ensureWATables() {
   // 7. wa_flows trigger_type
   try { await queryAsync("ALTER TABLE wa_flows MODIFY COLUMN trigger_type VARCHAR(50) DEFAULT 'keyword'"); } catch (_) {}
 
+  // 8. wa_ai_settings column additions
+  await addColumnIfNotExists("wa_ai_settings", "provider", "VARCHAR(50) DEFAULT 'openrouter'");
+  await addColumnIfNotExists("wa_ai_settings", "custom_api_url", "VARCHAR(255) DEFAULT NULL");
+  await addColumnIfNotExists("wa_ai_settings", "auto_lead_capture", "TINYINT(1) DEFAULT 1");
+  await addColumnIfNotExists("wa_ai_settings", "human_handoff_keywords", "VARCHAR(255) DEFAULT 'human, agent, executive, support, speak to person, call me'");
+  await addColumnIfNotExists("wa_ai_settings", "temperature", "DECIMAL(3,2) DEFAULT 0.70");
+  await addColumnIfNotExists("wa_ai_settings", "max_tokens", "INT DEFAULT 350");
+
   // ── Seed Prebuilt Templates and Automation Rules ───────────────────────────
   try {
     const templatesCount = await queryAsync("SELECT COUNT(*) as count FROM wa_templates");
