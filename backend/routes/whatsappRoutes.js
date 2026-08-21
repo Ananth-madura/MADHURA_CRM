@@ -170,6 +170,42 @@ router.get("/chat/:chatId/messages", async (req, res) => {
   }
 });
 
+// Mark chat / messages as read (send seen)
+router.post("/chat/:chatId/read", async (req, res) => {
+  try {
+    const rawChatId = req.params.chatId;
+    const clean10 = rawChatId.replace(/\D/g, "").slice(-10);
+    const digitsOnly = rawChatId.replace(/\D/g, "");
+
+    // 1. Mark on active session (WhatsApp Web / Baileys)
+    await s(req).sendSeen(rawChatId).catch(() => {});
+
+    // 2. Mark in database tables
+    await db.promise().query(
+      "UPDATE wa_contacts SET unread_count = 0 WHERE phone LIKE ? OR phone LIKE ?",
+      [`%${clean10}`, `%${digitsOnly}`]
+    ).catch(() => {});
+
+    await db.promise().query(
+      "UPDATE wa_message_logs SET is_read = 1 WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'",
+      [`%${clean10}`, `%${digitsOnly}`]
+    ).catch(() => {});
+
+    // 3. Emit real-time socket event
+    try {
+      const { getIO } = require("../sockets/chatSocket");
+      const io = getIO();
+      if (io) {
+        io.emit("wa_chat_read", { chatId: rawChatId, phone: clean10 });
+      }
+    } catch (_) {}
+
+    res.json({ success: true, chatId: rawChatId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/contact-balance", async (req, res) => {
   try {
     const { phone } = req.query;

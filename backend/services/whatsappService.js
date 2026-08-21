@@ -1068,6 +1068,69 @@ class WhatsAppService {
     return sliced;
   }
 
+  async sendSeen(chatId) {
+    if (!chatId) return { success: false };
+    try {
+      const cleanPhone = chatId.replace(/\D/g, "").slice(-10);
+      const digitsOnly = chatId.replace(/\D/g, "");
+
+      // 1. WhatsApp Web mark as seen
+      if (this.ready && this.client) {
+        const formattedChatId = formatChatJid(chatId);
+        await this.enqueue(async () => {
+          try {
+            if (this.client.sendSeen) {
+              await this.withTimeout(this.client.sendSeen(formattedChatId), 2000, "sendSeen").catch(() => {});
+            }
+            const chat = await this.client.getChatById(formattedChatId).catch(() => null);
+            if (chat && chat.sendSeen) {
+              await this.withTimeout(chat.sendSeen(), 2000, "chat.sendSeen").catch(() => {});
+            }
+          } catch (_) {}
+        }).catch(() => {});
+      }
+
+      // 2. Clear unread in database
+      const db = require("../config/database");
+      await db.promise().query(
+        "UPDATE wa_contacts SET unread_count = 0 WHERE phone LIKE ? OR phone LIKE ?",
+        [`%${cleanPhone}`, `%${digitsOnly}`]
+      ).catch(() => {});
+
+      await db.promise().query(
+        "UPDATE wa_message_logs SET is_read = 1 WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'",
+        [`%${cleanPhone}`, `%${digitsOnly}`]
+      ).catch(() => {});
+
+      // 3. Emit real-time read event to UI
+      this.emitWaEvent("wa_chat_read", chatId, digitsOnly, { unreadCount: 0 });
+      return { success: true, chatId };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  async sendReaction(chatId, messageId, emoji) {
+    if (!chatId || !messageId) return { success: false };
+    try {
+      if (this.ready && this.client) {
+        const formattedChatId = formatChatJid(chatId);
+        const chat = await this.client.getChatById(formattedChatId).catch(() => null);
+        if (chat) {
+          const msgs = await chat.fetchMessages({ limit: 20 }).catch(() => []);
+          const target = msgs.find((m) => m.id?.id === messageId || m.id?._serialized === messageId);
+          if (target && target.react) {
+            await target.react(emoji);
+            return { success: true };
+          }
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   async getContactBalance(phone) {
     if (!phone) return { phone: "", clientName: "N/A", companyName: "N/A", source: "Unknown", totalInvoiced: 0, totalPaid: 0, pendingBalance: 0 };
     const cleanPhone = phone.replace(/\D/g, "").slice(-10);

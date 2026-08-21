@@ -251,6 +251,24 @@ class WhatsAppCloudApi {
     return data;
   }
 
+  async markMessageAsRead(messageId) {
+    if (!this.isConfigured() || !messageId) return { success: false };
+    try {
+      const { data } = await axios.post(
+        `${BASE_URL}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: "whatsapp",
+          status: "read",
+          message_id: messageId,
+        },
+        { headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json" } }
+      );
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   verifyWebhook(mode, token, challenge) {
     if (mode === "subscribe" && token === this.verifyToken) return challenge;
     return null;

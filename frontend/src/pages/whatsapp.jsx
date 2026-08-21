@@ -552,6 +552,14 @@ export default function WhatsAppPage() {
     setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, unreadCount: 0 } : c)));
     setShowMobileChat(true);
     setMsgLimit(10);
+
+    // Mark as read on WhatsApp server & DB
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      axios.post(`${API}/api/whatsapp/chat/${encodeURIComponent(chat.id)}/read`, {}, { headers }).catch(() => {});
+    } catch (_) {}
+
     await fetchMessages(chat.id, 10);
   };
 
@@ -1335,6 +1343,20 @@ export default function WhatsAppPage() {
     socket.on("wa_contacts_synced", handleWaSynced);
     socket.on("wa_chats_synced", handleWaSynced);
 
+    const handleChatReadEvent = (data) => {
+      const { chatId, phone } = data || {};
+      const clean10 = (phone || chatId || "").replace(/\D/g, "").slice(-10);
+      if (clean10) {
+        setChats((prev) =>
+          prev.map((c) => {
+            const c10 = (c.id || c.phone || "").replace(/\D/g, "").slice(-10);
+            return c10 === clean10 ? { ...c, unreadCount: 0 } : c;
+          })
+        );
+      }
+    };
+    socket.on("wa_chat_read", handleChatReadEvent);
+
     // Check if user was navigated here with a phone parameter from Contacts / Groups / Templates
     const urlParams = new URLSearchParams(window.location.search);
     const phoneParam = urlParams.get("phone");
@@ -1357,6 +1379,7 @@ export default function WhatsAppPage() {
       socket.off("wa_ready", handleWaReady);
       socket.off("wa_contacts_synced", handleWaSynced);
       socket.off("wa_chats_synced", handleWaSynced);
+      socket.off("wa_chat_read", handleChatReadEvent);
     };
   }, [fetchChats, fetchMessages, fetchStatus, fetchAccountDetails]);
 

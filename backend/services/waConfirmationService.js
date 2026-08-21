@@ -334,7 +334,36 @@ async function handleInboundConfirmation(phone, messageText, interactiveReplyId 
   return true;
 }
 
+async function getConfirmationSummary() {
+  const [summaryRows] = await queryAsync(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed,
+      SUM(CASE WHEN status = 'rescheduled' THEN 1 ELSE 0 END) AS rescheduled,
+      SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+      SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid,
+      SUM(CASE WHEN status = 'pending' OR status = 'sent' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+    FROM wa_interactive_reminders
+  `);
+  const s = summaryRows[0] || {};
+  const total = Number(s.total) || 0;
+  const responded = (Number(s.confirmed) || 0) + (Number(s.rescheduled) || 0) + (Number(s.cancelled) || 0) + (Number(s.paid) || 0);
+  const responseRate = total > 0 ? Math.round((responded / total) * 100) : 0;
+  return {
+    total,
+    confirmed: Number(s.confirmed) || 0,
+    rescheduled: Number(s.rescheduled) || 0,
+    cancelled: Number(s.cancelled) || 0,
+    paid: Number(s.paid) || 0,
+    pending: Number(s.pending) || 0,
+    failed: Number(s.failed) || 0,
+    responseRate,
+  };
+}
+
 module.exports = {
   sendInteractiveReminder,
   handleInboundConfirmation,
+  getConfirmationSummary,
 };
