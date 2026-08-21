@@ -199,6 +199,13 @@ function startServer() {
       console.warn("⚠️ WhatsApp tables setup warning:", e.message);
     }
 
+    // Load active Meta WhatsApp Cloud API credentials on boot
+    try {
+      await require("./services/waConfigHelper").configureForUser(null);
+    } catch (e) {
+      console.warn("⚠️ Meta WhatsApp Cloud API config init warning:", e.message);
+    }
+
     // Restore saved WhatsApp sessions. Nothing used to call init() at boot, so
     // after every restart `ready` was false and every outbound send threw until
     // a human opened the QR page. Launches nothing when no session is saved.

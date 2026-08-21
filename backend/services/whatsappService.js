@@ -421,11 +421,12 @@ class WhatsAppService {
             }
 
             const interactiveReplyId = msg.selectedButtonId || msg.selectedRowId || msg.selectedListId || msg._data?.selectedButtonId || msg._data?.selectedRowId || null;
+            const contactName = msg._data?.notifyName || msg.notifyName || null;
             const flowHandled = await require("./waFlowEngine").dispatchInbound(cleanPhone, msg.body, interactiveReplyId, this.key).catch(() => false);
             if (!flowHandled) {
               const handled = await require("./waMenuHandler").handleMenuReply(cleanPhone, { text: msg.body, buttonReplyId: interactiveReplyId }, this.key).catch(() => false);
               if (!handled) {
-                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(cleanPhone, null, this.key).catch(() => false);
+                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(cleanPhone, contactName, this.key).catch(() => false);
                 if (!welcomeSent) {
                   await require("./waAiReply").maybeAutoReply(cleanPhone, msg.body, null, this.key).catch(() => {});
                 }
@@ -507,14 +508,20 @@ class WhatsAppService {
     if (sentResult) {
       msgId = sentResult?.id?.id || sentResult?.id?._serialized || msgId;
     } else if (waCloud.isConfigured()) {
-      console.log("⚡ Auto-failing over to Meta Cloud API for +", cleanPhone);
-      const sent = await waCloud.sendText(cleanPhone, message).catch(() => null);
-      msgId = sent?.messages?.[0]?.id || msgId;
+      console.log("⚡ Sending via Meta Cloud API for +", cleanPhone);
+      try {
+        const sent = await waCloud.sendText(cleanPhone, message);
+        msgId = sent?.messages?.[0]?.id || msgId;
+      } catch (cloudErr) {
+        const errMsg = cloudErr.response?.data?.error?.message || cloudErr.message;
+        console.error("Meta Cloud API sendText error:", errMsg);
+        throw new Error(`Meta Cloud API error: ${errMsg}`);
+      }
     } else {
       if (!this.ready || !this.client) {
-        throw new Error("WhatsApp device is not connected. Please scan QR Code or link your WhatsApp account.");
+        throw new Error("WhatsApp is not connected. Please configure Meta Cloud API or scan QR Code.");
       }
-      throw new Error("Failed to deliver message via WhatsApp Web. Please check device internet connection.");
+      throw new Error("Failed to deliver message via WhatsApp. Please check device internet connection.");
     }
 
     const newMsg = {
@@ -629,9 +636,14 @@ class WhatsAppService {
     else if (cloudConfigured) activeEngine = "Meta Cloud API";
     else if (webConnected) activeEngine = "WhatsApp Web Session";
 
+    const activePhone = (webConnected ? this.phone : null) || waCloud.displayPhoneNumber || (cloudConfigured ? waCloud.phoneNumberId : null);
+
     return {
       connected: cloudConfigured || webConnected,
+      isCloud: cloudConfigured,
+      isWeb: webConnected,
       activeEngine,
+      phone: activePhone,
       web: {
         connected: webConnected,
         phone: this.phone || null,
@@ -642,20 +654,24 @@ class WhatsAppService {
     };
   }
 
-  async sendTestMessage(targetPhone, text = "Hello! This is a test message from ACHME CRM WhatsApp Engine.") {
+  async sendTestMessage(targetPhone, text = "Hello! This is a test message from ACHME CRM WhatsApp Engine.", enginePreference = null) {
     const waCloud = require("./whatsappCloudApi");
     const formattedPhone = targetPhone.replace(/\D/g, "");
     if (!formattedPhone) throw new Error("Valid phone number required");
 
-    if (waCloud.isConfigured()) {
+    if (enginePreference === "web" || (this.ready && enginePreference !== "cloud_api" && enginePreference !== "meta")) {
+      const chatId = `${formattedPhone}@c.us`;
+      const res = await this.sendMessage(chatId, text);
+      return { success: true, engineUsed: `WhatsApp Web (+${this.phone || "Own Number"})`, response: res };
+    } else if (waCloud.isConfigured()) {
       const res = await waCloud.sendText(formattedPhone, text);
       return { success: true, engineUsed: "Meta Cloud API", response: res };
     } else if (this.ready) {
       const chatId = `${formattedPhone}@c.us`;
       const res = await this.sendMessage(chatId, text);
-      return { success: true, engineUsed: "WhatsApp Web Session", response: res };
+      return { success: true, engineUsed: `WhatsApp Web (+${this.phone || "Own Number"})`, response: res };
     } else {
-      throw new Error("No active WhatsApp engine available. Please scan QR Code or configure Cloud API.");
+      throw new Error("No active WhatsApp engine available. Please scan QR Code or configure Meta Cloud API.");
     }
   }
 
@@ -856,6 +872,32 @@ class WhatsAppService {
             timestamp: logTime,
             lastMessage: { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound" },
             hasMessages: true,
+          });
+          phoneToChatId.set(cleanPhone, chatId);
+        }
+      });
+
+      // 2b. Also include recent active contacts from wa_contacts when using Meta Cloud API or offline web
+      const [recentContacts] = await db.promise().query(
+        `SELECT name, phone, last_message_text, last_message_at, unread_count
+         FROM wa_contacts
+         WHERE is_blocked = 0
+         ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC LIMIT 100`
+      ).catch(() => [[]]);
+
+      recentContacts.forEach((c) => {
+        const cleanPhone = (c.phone || "").replace(/\D/g, "").slice(-10);
+        if (!cleanPhone || cleanPhone.length < 10) return;
+        const chatId = `91${cleanPhone}@c.us`;
+        const logTime = c.last_message_at ? Math.floor(new Date(c.last_message_at).getTime() / 1000) : Math.floor(Date.now() / 1000);
+        if (!chatMap.has(chatId)) {
+          chatMap.set(chatId, {
+            id: chatId,
+            name: c.name || `+91 ${cleanPhone}`,
+            unreadCount: c.unread_count || 0,
+            timestamp: logTime,
+            lastMessage: c.last_message_text ? { body: c.last_message_text, timestamp: logTime, fromMe: false } : null,
+            hasMessages: Boolean(c.last_message_text),
           });
           phoneToChatId.set(cleanPhone, chatId);
         }
@@ -1253,8 +1295,19 @@ class WhatsAppService {
         if (filename && !media.filename) {
           media.filename = filename;
         }
+
+        let sendOpts = {};
+        const isDoc = mediaType === "document" || ["pdf", "xls", "xlsx", "csv", "doc", "docx", "ppt", "pptx", "excel"].includes(mediaType) || (filename && !["image", "video", "audio"].includes(mediaType));
+        if (mediaType === "audio" || mediaType === "voice" || mediaType === "ptt") {
+          sendOpts = { sendAudioAsVoice: false };
+        } else if (isDoc) {
+          sendOpts = { sendMediaAsDocument: true, caption: caption || undefined };
+        } else {
+          sendOpts = { caption: caption || undefined };
+        }
+
         const sent = await this.enqueue(() => this.withTimeout(
-          this.client.sendMessage(targetJid, media, { caption: caption || undefined, sendMediaAsDocument: mediaType === "document" || Boolean(filename) }),
+          this.client.sendMessage(targetJid, media, sendOpts),
           30000,
           "WhatsApp Web send media"
         ));
@@ -1262,7 +1315,7 @@ class WhatsAppService {
       } catch (e) {
         console.error("WhatsApp Web sendMediaMessage error:", e.message);
         if (waCloud.isConfigured()) {
-          const sent = await waCloud.sendMedia(cleanPhone, mediaType, mediaUrl, caption);
+          const sent = await waCloud.sendMedia(cleanPhone, mediaType, mediaUrl, caption, filename);
           msgId = sent?.messages?.[0]?.id || msgId;
         } else if (e.message && (e.message.includes("No LID") || e.message.includes("LID"))) {
           throw new Error(`Phone number +${cleanPhone} is not registered on WhatsApp or requires Meta Cloud API.`);
@@ -1271,7 +1324,7 @@ class WhatsAppService {
         }
       }
     } else if (waCloud.isConfigured()) {
-      const sent = await waCloud.sendMedia(cleanPhone, mediaType, mediaUrl, caption);
+      const sent = await waCloud.sendMedia(cleanPhone, mediaType, mediaUrl, caption, filename);
       msgId = sent?.messages?.[0]?.id || msgId;
     } else {
       throw new Error("WhatsApp not connected. Please scan QR Code or configure Meta Cloud API.");
@@ -1295,10 +1348,12 @@ class WhatsAppService {
       from: "me",
       to: cleanPhone,
       body: logText,
+      caption: caption || "",
       timestamp: Math.floor(Date.now() / 1000),
       isMe: true,
       hasMedia: true,
       type: mediaType || "document",
+      mediaUrl: mediaUrl,
       filename: filename || logText,
     };
     if (!this.messagesCache[chatId]) this.messagesCache[chatId] = [];

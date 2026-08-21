@@ -805,8 +805,8 @@ export default function WhatsAppAutomations() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Business Working Hours Only</label>
-                <div className="flex items-center gap-3 mt-1">
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Business Working Hours Filter</label>
+                <div className="flex items-center gap-2 mt-1">
                   <input
                     type="checkbox"
                     id="wh_only"
@@ -814,9 +814,38 @@ export default function WhatsAppAutomations() {
                     onChange={(e) => setWelcomeSettings((s) => ({ ...s, working_hours_only: e.target.checked }))}
                     className="w-4 h-4 accent-amber-600 rounded"
                   />
-                  <label htmlFor="wh_only" className="text-xs text-gray-700 font-medium">Send only between {welcomeSettings.start_time || "09:00"} and {welcomeSettings.end_time || "21:00"}</label>
+                  <label htmlFor="wh_only" className="text-xs text-gray-700 font-medium">Restricted to working hours</label>
                 </div>
+                {welcomeSettings.working_hours_only && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="time"
+                      value={welcomeSettings.start_time || "09:00"}
+                      onChange={(e) => setWelcomeSettings((s) => ({ ...s, start_time: e.target.value }))}
+                      className="px-2.5 py-1 border rounded-lg text-xs bg-white font-mono"
+                    />
+                    <span className="text-xs text-gray-400">to</span>
+                    <input
+                      type="time"
+                      value={welcomeSettings.end_time || "21:00"}
+                      onChange={(e) => setWelcomeSettings((s) => ({ ...s, end_time: e.target.value }))}
+                      className="px-2.5 py-1 border rounded-lg text-xs bg-white font-mono"
+                    />
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Live Message Preview */}
+            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
+              <span className="text-[11px] font-bold uppercase text-emerald-800 tracking-wider">Live Customer Preview</span>
+              <p className="text-xs text-emerald-950 mt-1 whitespace-pre-line leading-relaxed font-sans bg-white p-3 rounded-xl border border-emerald-100 shadow-sm">
+                {(welcomeSettings.welcome_text || "Hello {name}! Welcome to ACHME.")
+                  .replace(/\{name\}/g, "Rahul Sharma")
+                  .replace(/\{company\}/g, "Madhura Facilities")
+                  .replace(/\{service\}/g, "HVAC & Electrical AMC")
+                  .replace(/\{city\}/g, "Bangalore")}
+              </p>
             </div>
 
             <div className="pt-4 border-t flex justify-end">
@@ -1039,21 +1068,23 @@ export default function WhatsAppAutomations() {
 
                 {form.msg_kind === "media" && (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
                         <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Type</label>
                         <select
                           value={form.media_type}
                           onChange={(e) => setForm((f) => ({ ...f, media_type: e.target.value }))}
-                          className="w-full p-2 border rounded-xl text-xs bg-white"
+                          className="w-full p-2 border rounded-xl text-xs bg-white font-medium"
                         >
-                          <option value="image">📷 Image</option>
-                          <option value="document">📄 PDF Document</option>
-                          <option value="video">🎥 Video</option>
+                          <option value="image">📷 Image (PNG, JPG, WEBP)</option>
+                          <option value="video">🎥 Video (MP4, MOV, 3GP)</option>
+                          <option value="audio">🎵 Audio / Voice (MP3, WAV, OGG)</option>
+                          <option value="document">📄 PDF / Word Document</option>
+                          <option value="excel">📊 Excel / Spreadsheet (XLSX, CSV)</option>
                         </select>
                       </div>
-                      <div className="col-span-2">
-                        <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Public URL</label>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Public URL or Upload</label>
                         <input
                           type="text"
                           value={form.media_url || ""}

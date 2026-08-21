@@ -1,0 +1,10 @@
+=== CURRENT STATE OF quotation_items.description === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Field	Type	Null	Key	Default	Extra
+description	text	NO		NULL	
+ 
+=== TEST INSERT: 44 items with long descriptions === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1452 (23000) at line 1: Cannot add or update a child row: a foreign key constraint fails (`achme`.`quotation_items`, CONSTRAINT `quotation_items_ibfk_1` FOREIGN KEY (`quotation_id`) REFERENCES `quotations` (`id`))
+ 
+DONE 

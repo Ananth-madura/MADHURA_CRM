@@ -1,0 +1,39 @@
+=== quotation_items columns === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Field	Type	Collation	Null	Key	Default	Extra	Privileges	Comment
+id	int	NULL	NO	PRI	NULL	auto_increment	select,insert,update,references	
+quotation_id	int	NULL	NO	MUL	NULL		select,insert,update,references	
+product_number	int	NULL	NO		NULL		select,insert,update,references	
+description	text	utf8mb4_unicode_ci	NO		NULL		select,insert,update,references	
+price	decimal(10,2)	NULL	NO		NULL		select,insert,update,references	
+brand_model	varchar(150)	utf8mb4_unicode_ci	YES		NULL		select,insert,update,references	
+hsn_sac	varchar(20)	utf8mb4_unicode_ci	YES		NULL		select,insert,update,references	
+quantity	decimal(10,2)	NULL	NO		NULL		select,insert,update,references	
+tax	decimal(10,2)	NULL	YES		0.00		select,insert,update,references	
+discount	decimal(10,2)	NULL	YES		0.00		select,insert,update,references	
+subtotal	decimal(10,2)	NULL	NO		NULL		select,insert,update,references	
+created_at	timestamp	NULL	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED	select,insert,update,references	
+uom	varchar(20)	utf8mb4_unicode_ci	YES		Nos		select,insert,update,references	
+ 
+=== notifications table - description column === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Field	Type	Null	Key	Default	Extra
+description	varchar(255)	YES		NULL	
+ 
+=== ALL varchar/text columns in quotation_items === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+COLUMN_NAME	COLUMN_TYPE	CHARACTER_MAXIMUM_LENGTH
+id	int	NULL
+quotation_id	int	NULL
+product_number	int	NULL
+description	text	65535
+price	decimal(10,2)	NULL
+brand_model	varchar(150)	150
+hsn_sac	varchar(20)	20
+quantity	decimal(10,2)	NULL
+tax	decimal(10,2)	NULL
+discount	decimal(10,2)	NULL
+subtotal	decimal(10,2)	NULL
+created_at	timestamp	NULL
+uom	varchar(20)	20
+DONE 

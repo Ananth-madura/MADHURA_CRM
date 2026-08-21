@@ -31,12 +31,16 @@ import {
   ListOrdered,
   SendHorizontal,
   CheckCircle2,
+  Database,
+  Key,
+  Globe,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
 import socket from "../socket/socket";
 import RichMessageContent from "../components/RichMessageContent";
+import WAConfigPrompt from "../components/WAConfigPrompt";
 
 function formatChatTime(timestamp) {
   if (!timestamp) return "";
@@ -77,12 +81,13 @@ function previewText(message) {
   return "";
 }
 
-function MediaBubble({ chatId, messageId, filename = "", isMe = false, onPreview = null }) {
-  const [media, setMedia] = useState(null);
-  const [loading, setLoading] = useState(false);
+function MediaBubble({ chatId, messageId, filename = "", mediaUrl = null, mimetype = null, isMe = false, onPreview = null }) {
+  const [media, setMedia] = useState(mediaUrl ? { url: mediaUrl, filename, mimetype } : null);
+  const [loading, setLoading] = useState(!mediaUrl);
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
+    if (mediaUrl) return;
     if (!chatId || !messageId) return;
     setLoading(true);
     setError(false);
@@ -100,52 +105,75 @@ function MediaBubble({ chatId, messageId, filename = "", isMe = false, onPreview
       setError(true);
     }
     setLoading(false);
-  }, [chatId, messageId]);
+  }, [chatId, messageId, mediaUrl]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (mediaUrl) {
+      setMedia({ url: mediaUrl, filename, mimetype });
+      setLoading(false);
+    } else {
+      load();
+    }
+  }, [load, mediaUrl, filename, mimetype]);
 
   const rawFilename = filename || media?.filename || `Document_${messageId}`;
   const fileExt = (rawFilename.match(/\.([a-zA-Z0-9]+)$/) || [])[1]?.toLowerCase() ||
-    (media?.mimetype ? media.mimetype.split("/")[1]?.split(";")[0]?.toLowerCase() : "FILE");
+    (media?.mimetype ? media.mimetype.split("/")[1]?.split(";")[0]?.toLowerCase() : "file");
 
   const getBadgeStyle = (ext) => {
     switch (ext) {
-      case "pdf": return "bg-red-500/20 text-red-400 border-red-500/30";
+      case "pdf": return "bg-red-500/20 text-red-400 border-red-500/40";
       case "doc":
-      case "docx": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      case "docx": return "bg-blue-500/20 text-blue-400 border-blue-500/40";
       case "xls":
       case "xlsx":
-      case "csv": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+      case "csv": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
+      case "ppt":
+      case "pptx": return "bg-orange-500/20 text-orange-400 border-orange-500/40";
       case "md":
       case "txt":
-      case "json": return "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
+      case "json": return "bg-indigo-500/20 text-indigo-300 border-indigo-500/40";
       case "zip":
       case "rar":
-      case "7z": return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+      case "7z": return "bg-amber-500/20 text-amber-400 border-amber-500/40";
       case "png":
       case "jpg":
       case "jpeg":
-      case "webp": return "bg-purple-500/20 text-purple-300 border-purple-500/30";
-      default: return "bg-[#00a884]/20 text-[#00a884] border-[#00a884]/30";
+      case "webp": return "bg-purple-500/20 text-purple-300 border-purple-500/40";
+      default: return "bg-[#00a884]/20 text-[#00a884] border-[#00a884]/40";
     }
   };
 
   const src = media?.url
-    ? (media.url.startsWith("http") ? media.url : `${API}${media.url}`)
+    ? (media.url.startsWith("http") || media.url.startsWith("blob:") ? media.url : `${API}${media.url}`)
     : (media?.data ? `data:${media.mimetype || "application/octet-stream"};base64,${media.data}` : null);
 
   if (media && src) {
-    if (media.mimetype?.startsWith("audio/") || media.mimetype?.includes("ogg") || ["mp3", "ogg", "wav", "m4a"].includes(fileExt)) {
+    if (media.mimetype?.startsWith("audio/") || media.mimetype?.includes("ogg") || ["mp3", "ogg", "wav", "m4a", "aac"].includes(fileExt)) {
       return (
-        <div className="py-1">
-          <audio src={src} controls className="max-w-[260px] rounded-lg" />
+        <div className="py-1 space-y-1">
+          <audio src={src} controls className="max-w-[270px] h-9 rounded-lg" />
+          <div className="flex items-center justify-between text-[11px] font-bold text-[#00a884] px-1">
+            <span className="text-slate-300 text-[10px] font-mono truncate max-w-[160px]">{rawFilename}</span>
+            <a href={src} download={rawFilename} target="_blank" rel="noreferrer" className="hover:underline">
+              Download ⬇️
+            </a>
+          </div>
         </div>
       );
     }
-    if (media.mimetype?.startsWith("video/") || ["mp4", "mov", "webm"].includes(fileExt)) {
-      return <video src={src} controls className="max-w-[280px] rounded-xl shadow-md border border-white/10" />;
+    if (media.mimetype?.startsWith("video/") || ["mp4", "mov", "webm", "3gp", "mkv"].includes(fileExt)) {
+      return (
+        <div className="space-y-1.5">
+          <video src={src} controls className="max-w-[290px] max-h-[340px] rounded-xl shadow-md border border-white/10" />
+          <div className="flex items-center justify-between text-[11px] font-bold text-[#00a884] px-1">
+            <span className="text-slate-300 text-[10px] font-mono truncate max-w-[180px]">{rawFilename}</span>
+            <a href={src} download={rawFilename} target="_blank" rel="noreferrer" className="hover:underline">
+              Download ⬇️
+            </a>
+          </div>
+        </div>
+      );
     }
     if (media.mimetype?.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(fileExt)) {
       const handleView = () => (onPreview ? onPreview(src, rawFilename) : window.open(src, "_blank"));
@@ -159,10 +187,10 @@ function MediaBubble({ chatId, messageId, filename = "", isMe = false, onPreview
           />
           <div className="flex items-center justify-between text-xs font-bold text-[#00a884] pt-1 px-1">
             <button onClick={handleView} className="hover:underline flex items-center gap-1">
-              Open
+              🔍 Preview
             </button>
             <a href={src} download={rawFilename} target="_blank" rel="noreferrer" className="hover:underline flex items-center gap-1">
-              Save as...
+              Download ⬇️
             </a>
           </div>
         </div>
@@ -170,35 +198,35 @@ function MediaBubble({ chatId, messageId, filename = "", isMe = false, onPreview
     }
   }
 
-  // Document attachment card (PDF, Markdown .md, Word doc, Excel, Zip, etc.)
+  // Document attachment card (PDF, Excel .xlsx/.csv, Word doc, PowerPoint, Zip, etc.)
   return (
-    <div className={`rounded-xl p-3 border space-y-2.5 min-w-[230px] max-w-[320px] ${isMe ? "bg-[#025142] border-emerald-800/40 text-white" : "bg-[#111b21] border-slate-700/50 text-white"}`}>
+    <div className={`rounded-xl p-3 border space-y-2.5 min-w-[240px] max-w-[330px] ${isMe ? "bg-[#025142] border-emerald-800/40 text-white" : "bg-[#111b21] border-slate-700/50 text-white"}`}>
       <div className="flex items-center gap-3">
         <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs uppercase shrink-0 border ${getBadgeStyle(fileExt)}`}>
           {fileExt.slice(0, 4)}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-white truncate" title={rawFilename}>{rawFilename}</p>
-          <p className="text-[10px] text-slate-300 font-mono mt-0.5 uppercase">{fileExt} Document</p>
+          <p className="text-[10px] text-slate-300 font-mono mt-0.5 uppercase">{fileExt} Attachment</p>
         </div>
       </div>
       <div className="flex items-center justify-between border-t border-white/10 pt-2 text-xs font-bold text-[#00a884]">
         {src ? (
           <>
             <button onClick={() => window.open(src, "_blank")} className="hover:underline flex items-center gap-1">
-              Open
+              Open ↗
             </button>
             <a href={src} download={rawFilename} target="_blank" rel="noreferrer" className="hover:underline flex items-center gap-1">
-              Download
+              Download ⬇️
             </a>
           </>
         ) : (
           <>
             <button onClick={load} disabled={loading} className="hover:underline flex items-center gap-1">
-              {loading ? "Loading..." : "Open"}
+              {loading ? "Loading..." : "Open ↗"}
             </button>
             <button onClick={load} disabled={loading} className="hover:underline flex items-center gap-1">
-              Download
+              {loading ? "Loading..." : "Download ⬇️"}
             </button>
           </>
         )}
@@ -293,6 +321,7 @@ export default function WhatsAppPage() {
   const [dripLoading, setDripLoading] = useState(false);
   const [selectedDripId, setSelectedDripId] = useState("");
   const [enrollingDrip, setEnrollingDrip] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
 
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -325,13 +354,24 @@ export default function WhatsAppPage() {
           res = await axios.get(`${API}/api/whatsapp/status`, { headers });
         }
       }
-      // unified-status returns {connected, activeEngine, web:{connected,phone,...}, cloud:{...}}
-      // flatten it to match the shape the rest of the UI expects
       const raw = res.data;
-      const webConnected = raw.web ? !!raw.web.connected : !!raw.connected;
-      const flat = raw.web
-        ? { connected: webConnected, phone: raw.web.phone, initializing: raw.web.initializing, hasQr: raw.web.hasQr, activeEngine: raw.activeEngine }
-        : raw;
+      const isCloud = Boolean(raw.cloud?.configured || raw.isCloud);
+      const isWeb = Boolean(raw.web?.connected || raw.isWeb);
+      const isConnected = Boolean(raw.connected || isCloud || isWeb);
+      const activePhone = raw.phone || raw.web?.phone || raw.cloud?.display_phone_number || raw.cloud?.phoneNumberId || null;
+
+      const flat = {
+        connected: isConnected,
+        isCloud,
+        isWeb,
+        phone: activePhone,
+        activeEngine: raw.activeEngine || (isCloud && isWeb ? "Dual (Cloud API + Web)" : isCloud ? "Meta Cloud API" : isWeb ? "WhatsApp Web" : "Disconnected"),
+        initializing: raw.web?.initializing || false,
+        hasQr: raw.web?.hasQr || false,
+        cloud: raw.cloud || null,
+        web: raw.web || null,
+      };
+
       setStatus(flat);
       if (flat.connected) {
         setQrCode(null);
@@ -786,6 +826,11 @@ export default function WhatsAppPage() {
     setError(null);
 
     const tempId = "temp_" + Date.now();
+    let localBlobUrl = "";
+    try {
+      localBlobUrl = URL.createObjectURL(file);
+    } catch (_) {}
+
     const optimisticMsg = {
       id: tempId,
       from: "me",
@@ -793,6 +838,7 @@ export default function WhatsAppPage() {
       timestamp: Math.floor(Date.now() / 1000),
       isMe: true,
       hasMedia: true,
+      mediaUrl: localBlobUrl,
       type: customMediaType || "document",
       filename: file.name,
       status: "sending",
@@ -805,16 +851,25 @@ export default function WhatsAppPage() {
       const headers = { Authorization: `Bearer ${token}` };
       const formData = new FormData();
       formData.append("file", file);
-      const { data: uploaded } = await axios.post(`${API}/api/wa/campaigns/upload-media`, formData, { headers });
-      const mediaType = uploaded.media_type || (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "document");
+      
+      let uploaded = null;
+      try {
+        const resUp = await axios.post(`${API}/api/whatsapp/upload-media`, formData, { headers });
+        uploaded = resUp.data;
+      } catch (_) {
+        const resFallback = await axios.post(`${API}/api/wa/campaigns/upload-media`, formData, { headers });
+        uploaded = resFallback.data;
+      }
+
+      const mediaType = uploaded.media_type || customMediaType || "document";
       const res = await axios.post(`${API}/api/whatsapp/send-media`, {
         chatId: selectedChat.id,
         mediaUrl: uploaded.url,
         mediaType,
-        filename: file.name,
+        filename: uploaded.filename || file.name,
       }, { headers });
       const realId = res.data?.id || tempId;
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: realId, status: "sent" } : m)));
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: realId, mediaUrl: uploaded.url, status: "sent" } : m)));
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to send attachment");
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m)));
@@ -1347,41 +1402,89 @@ export default function WhatsAppPage() {
     return (
       <div className="w-full flex-1 flex flex-col">
         <WhatsAppNav />
-        <div className="flex items-center justify-between mb-6">
+        {showConfigModal && (
+          <WAConfigPrompt
+            onClose={() => {
+              setShowConfigModal(false);
+              fetchStatus();
+            }}
+          />
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
           <div className="flex items-center gap-3">
-            <MessageCircle className="text-[#25D366]" size={28} />
-            <h1 className="text-xl font-bold text-gray-800">WhatsApp Connection Center</h1>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#25D366] to-emerald-700 text-white flex items-center justify-center shadow-md">
+              <MessageCircle size={22} />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">WhatsApp Connection Center</h1>
+              <p className="text-xs text-gray-500">Connect via Official Meta Cloud API (No QR needed) or Scan QR Code</p>
+            </div>
           </div>
-          <button
-            onClick={() => fetchQr(true)}
-            disabled={qrLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white rounded-lg hover:bg-[#1ebe5d] transition text-sm font-semibold shadow-sm disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={qrLoading ? "animate-spin" : ""} />
-            {qrLoading ? "Generating..." : "Fresh QR / Reset"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowConfigModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+            >
+              <Key size={14} />
+              <span>Configure Meta API</span>
+            </button>
+            <button
+              onClick={() => fetchQr(true)}
+              disabled={qrLoading}
+              className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-gray-700 rounded-xl text-xs font-bold transition shadow-sm disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={qrLoading ? "animate-spin" : ""} />
+              <span>{qrLoading ? "Generating..." : "Fresh QR / Reset"}</span>
+            </button>
+          </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold">
             {error}
           </div>
         )}
 
+        {/* Quick Meta API Callout Banner */}
+        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Key size={20} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-blue-900">Using Official Meta WhatsApp Cloud API?</p>
+              <p className="text-[11px] text-blue-700">You don't need to scan a QR code! Connect your Phone Number ID and Access Token to open immediately.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowConfigModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shrink-0 shadow-md shadow-blue-500/20"
+          >
+            Enter Meta API Keys ⚡
+          </button>
+        </div>
+
         {/* Connection Options Sub-Tabs */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm max-w-2xl mx-auto">
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-center gap-2 mb-6 border-b border-gray-100 pb-4">
             <button
               onClick={() => { setConnectMode("qr"); if (!qrCode) fetchQr(); }}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${connectMode === "qr" ? "bg-[#25D366] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition ${connectMode === "qr" ? "bg-[#25D366] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
             >
-              📱 QR Code Scan
+              📱 Scan QR Code
             </button>
             <button
               onClick={() => setConnectMode("pairing")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${connectMode === "pairing" ? "bg-[#25D366] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition ${connectMode === "pairing" ? "bg-[#25D366] text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
             >
               🔢 Phone Pairing Code
+            </button>
+            <button
+              onClick={() => setShowConfigModal(true)}
+              className="px-4 py-2 rounded-xl text-xs font-bold transition bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+            >
+              ☁️ Meta Cloud API
             </button>
           </div>
 
@@ -1390,33 +1493,34 @@ export default function WhatsAppPage() {
             <div className="flex flex-col items-center justify-center text-center py-4">
               {qrLoading ? (
                 <div className="py-10 text-center">
-                  <Loader2 size={48} className="animate-spin text-[#25D366] mx-auto mb-4" />
-                  <p className="text-gray-700 font-medium">Generating WhatsApp QR Code...</p>
+                  <Loader2 size={44} className="animate-spin text-[#25D366] mx-auto mb-4" />
+                  <p className="text-gray-800 font-bold text-sm">Generating WhatsApp QR Code...</p>
                   <p className="text-gray-400 text-xs mt-1">Please wait a few seconds</p>
                 </div>
               ) : qrCode ? (
                 <div>
                   <div className="bg-white p-4 rounded-2xl shadow-xl border border-gray-100 inline-block mb-4">
-                    <QRCodeSVG value={qrCode} size={250} level="M" />
+                    <QRCodeSVG value={qrCode} size={240} level="M" />
                   </div>
-                  <h3 className="text-lg font-bold text-gray-800 mb-1">Scan with WhatsApp</h3>
+                  <h3 className="text-base font-bold text-gray-800 mb-1">Scan with your WhatsApp App</h3>
                   <p className="text-gray-500 text-xs max-w-md mx-auto mb-4">
                     Open WhatsApp on your phone → Settings / Menu → <strong>Linked Devices</strong> → <strong>Link a Device</strong> and scan this code.
                   </p>
                   <button
                     onClick={() => fetchQr(true)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition"
+                    className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 transition"
                   >
                     Refresh QR Code
                   </button>
                 </div>
               ) : (
                 <div className="py-6 text-center">
-                  <Smartphone size={56} className="text-gray-300 mx-auto mb-3" />
-                  <h3 className="text-base font-semibold text-gray-800 mb-2">Ready to Link WhatsApp</h3>
+                  <Smartphone size={52} className="text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-base font-bold text-gray-800 mb-1">Ready to Link WhatsApp Phone</h3>
+                  <p className="text-gray-500 text-xs max-w-sm mx-auto mb-4">Click below to generate a QR code to scan with your phone.</p>
                   <button
                     onClick={() => fetchQr()}
-                    className="px-6 py-2.5 bg-[#25D366] text-white rounded-lg hover:bg-[#1ebe5d] transition font-bold text-sm shadow-md"
+                    className="px-6 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe5d] transition font-bold text-xs shadow-md"
                   >
                     Display QR Code Now
                   </button>
@@ -1434,7 +1538,7 @@ export default function WhatsAppPage() {
               </p>
 
               {pairingError && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg text-center">
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl text-center font-semibold">
                   {pairingError}
                 </div>
               )}
@@ -1452,20 +1556,20 @@ export default function WhatsAppPage() {
               ) : (
                 <form onSubmit={handleRequestPairingCode} className="space-y-4 max-w-md mx-auto">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Mobile Number (with Country Code)</label>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Mobile Number (with Country Code)</label>
                     <input
                       type="text"
                       placeholder="e.g. 919876543210"
                       value={pairingPhone}
                       onChange={(e) => setPairingPhone(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#25D366]"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366]"
                       required
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={pairingLoading || !pairingPhone}
-                    className="w-full py-3 bg-[#25D366] text-white rounded-lg font-bold text-sm hover:bg-[#1ebe5d] transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                    className="w-full py-3 bg-[#25D366] text-white rounded-xl font-bold text-xs hover:bg-[#1ebe5d] transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
                   >
                     {pairingLoading ? (
                       <>
@@ -1884,11 +1988,18 @@ export default function WhatsAppPage() {
                     )}
                   </button>
 
-                  {/* 0% Direct Meta Category Badge */}
-                  <span className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1 bg-[#202c33] text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>0% Fee • Direct Meta</span>
-                  </span>
+                  {/* Engine Badge */}
+                  {status.isCloud ? (
+                    <span className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-950/80 text-blue-300 border border-blue-500/40 rounded-lg text-[10px] font-bold shadow-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                      <span>☁️ Meta Official API • {status.phone ? `+${status.phone}` : "Active"}</span>
+                    </span>
+                  ) : (
+                    <span className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1 bg-[#202c33] text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>📱 Web Linked • {status.phone ? `+${status.phone}` : "Active"}</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2063,7 +2174,15 @@ export default function WhatsAppPage() {
                 <input
                   id="wa-doc-upload-input"
                   type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,*/*"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.zip,.rar,.7z,.md,.json"
+                  className="hidden"
+                  onChange={(e) => handleAttachMedia(e, "document")}
+                  disabled={mediaSending}
+                />
+                <input
+                  id="wa-excel-upload-input"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
                   className="hidden"
                   onChange={(e) => handleAttachMedia(e, "document")}
                   disabled={mediaSending}
@@ -2096,7 +2215,7 @@ export default function WhatsAppPage() {
                     </div>
 
                     <div className="p-1.5 space-y-1">
-                      {/* Document / Any File */}
+                      {/* Document / PDF */}
                       <button
                         onClick={() => {
                           setShowAttachMenu(false);
@@ -2104,12 +2223,29 @@ export default function WhatsAppPage() {
                         }}
                         className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-[#202c33] rounded-xl transition text-xs font-medium text-slate-200 group"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-105 transition">
+                        <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center group-hover:scale-105 transition">
                           <FileText size={16} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-slate-100 group-hover:text-[#00a884]">Document / File</p>
-                          <p className="text-[10px] text-slate-400 truncate">.md, .pdf, .doc, .xls, .zip, etc.</p>
+                          <p className="font-bold text-slate-100 group-hover:text-red-400">PDF & Document</p>
+                          <p className="text-[10px] text-slate-400 truncate">.pdf, .doc, .docx, .txt, .zip</p>
+                        </div>
+                      </button>
+
+                      {/* Excel / Spreadsheet */}
+                      <button
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          document.getElementById("wa-excel-upload-input")?.click();
+                        }}
+                        className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-[#202c33] rounded-xl transition text-xs font-medium text-slate-200 group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition">
+                          <Database size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-100 group-hover:text-emerald-400">Excel / Spreadsheet</p>
+                          <p className="text-[10px] text-slate-400 truncate">.xlsx, .xls, .csv spreadsheets</p>
                         </div>
                       </button>
 
@@ -2125,7 +2261,7 @@ export default function WhatsAppPage() {
                           <Image size={16} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-slate-100 group-hover:text-[#00a884]">Photos & Videos</p>
+                          <p className="font-bold text-slate-100 group-hover:text-purple-400">Photos & Videos</p>
                           <p className="text-[10px] text-slate-400 truncate">Images (.png, .jpg), Videos (.mp4)</p>
                         </div>
                       </button>

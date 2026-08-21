@@ -677,8 +677,22 @@ export default function WhatsAppFlows() {
                       <div className="mt-4 pt-3 border-t border-gray-100 space-y-2 text-xs text-gray-600">
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">Trigger:</span>
-                          <span className="font-semibold text-gray-700 uppercase bg-gray-100 px-2 py-0.5 rounded text-[10px]">
-                            {flow.trigger_type}
+                          <span className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
+                            flow.trigger_type === "all_inbound"
+                              ? "bg-emerald-100 text-emerald-800 font-bold"
+                              : flow.trigger_type === "first_inbound" || flow.trigger_type === "welcome"
+                              ? "bg-blue-100 text-blue-800 font-bold"
+                              : flow.trigger_type === "ai_intent"
+                              ? "bg-purple-100 text-purple-800 font-bold"
+                              : "bg-gray-100 text-gray-700 font-semibold uppercase"
+                          }`}>
+                            {flow.trigger_type === "all_inbound"
+                              ? "🌐 24/7 Universal / No Keyword"
+                              : flow.trigger_type === "first_inbound" || flow.trigger_type === "welcome"
+                              ? "👋 First-Inbound Welcome"
+                              : flow.trigger_type === "ai_intent"
+                              ? "🧠 AI Intent"
+                              : "🔑 " + (flow.trigger_type || "keyword")}
                           </span>
                         </div>
 
@@ -900,16 +914,41 @@ export default function WhatsAppFlows() {
                       placeholder="e.g. hi, hello, menu, start, help, price, book, amc"
                       className="w-full px-3.5 py-2 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-mono"
                     />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      💡 If incoming messages don't match these keywords, active First-Inbound / Welcome bots and Welcome Automations will automatically greet the customer.
+                    </p>
+                  </div>
+                )}
+
+                {formTriggerType === "first_inbound" && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <span>👋 First Inbound / Welcome Bot Enabled</span>
+                    </p>
+                    <p className="text-[11px] text-blue-700 mt-0.5">
+                      Automatically welcomes any user who messages your WhatsApp number for the first time (or begins a new conversation session), even if they type arbitrary questions without keywords.
+                    </p>
                   </div>
                 )}
 
                 {formTriggerType === "all_inbound" && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
                     <p className="font-bold flex items-center gap-1.5">
-                      <span>🌐 Universal 24/7 Trigger Enabled</span>
+                      <span>🌐 Universal 24/7 Receptionist / Default Fallback Enabled</span>
                     </p>
                     <p className="text-[11px] text-emerald-700 mt-0.5">
-                      This flow will automatically listen and reply within seconds to ANY customer who messages your WhatsApp number, acting as an instant 24/7 automated receptionist.
+                      This flow will automatically listen and reply within seconds to ANY incoming message that doesn't match a specific keyword, providing an instant 24/7 guided interactive menu.
+                    </p>
+                  </div>
+                )}
+
+                {formTriggerType === "ai_intent" && (
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <span>🧠 AI Smart Intent Routing Enabled</span>
+                    </p>
+                    <p className="text-[11px] text-purple-700 mt-0.5">
+                      Uses advanced AI LLM to analyze the customer's intent (e.g., booking vs. billing vs. breakdown) and branches to the exact workflow step automatically.
                     </p>
                   </div>
                 )}
@@ -1090,24 +1129,56 @@ export default function WhatsAppFlows() {
                             </div>
 
                             <div>
-                              <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                                 <label className="text-[11px] text-gray-600 font-bold uppercase">Interactive Buttons / Branches</label>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const currentBtns = node.config.buttons || [];
-                                    const newOptNum = currentBtns.length + 1;
-                                    updateNodeConfig(idx, {
-                                      buttons: [
-                                        ...currentBtns,
-                                        { reply_id: `opt_${newOptNum}`, title: `${newOptNum}. Option ${newOptNum}`, next_node_key: "" }
-                                      ]
-                                    });
-                                  }}
-                                  className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded"
-                                >
-                                  + Add Button Option
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentBtns = node.config.buttons || [];
+                                      const newOptNum = currentBtns.length + 1;
+                                      updateNodeConfig(idx, {
+                                        buttons: [
+                                          ...currentBtns,
+                                          { reply_id: `opt_${newOptNum}`, title: `${newOptNum}. Option ${newOptNum}`, next_node_key: "" }
+                                        ]
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded hover:bg-emerald-200"
+                                  >
+                                    + Add Option
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentBtns = node.config.buttons || [];
+                                      updateNodeConfig(idx, {
+                                        buttons: [
+                                          ...currentBtns,
+                                          { reply_id: "opt_back", title: "0. 🔙 Back to Menu", next_node_key: "start" }
+                                        ]
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
+                                  >
+                                    + 🔙 Back
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentBtns = node.config.buttons || [];
+                                      updateNodeConfig(idx, {
+                                        buttons: [
+                                          ...currentBtns,
+                                          { reply_id: "opt_agent", title: "👤 Live Agent", next_node_key: "agent_handoff" }
+                                        ]
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded hover:bg-rose-100 border border-rose-200"
+                                  >
+                                    + 👤 Agent
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="space-y-2">
@@ -1193,24 +1264,41 @@ export default function WhatsAppFlows() {
                             </div>
 
                             <div>
-                              <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                                 <label className="text-[11px] text-gray-600 font-bold uppercase">List Rows (Up to 10)</label>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const currentRows = node.config.rows || [];
-                                    const newNum = currentRows.length + 1;
-                                    updateNodeConfig(idx, {
-                                      rows: [
-                                        ...currentRows,
-                                        { id: `row_${newNum}`, title: `Service ${newNum}`, description: "Description", next_node_key: "" }
-                                      ]
-                                    });
-                                  }}
-                                  className="px-2 py-0.5 bg-teal-100 text-teal-800 text-[10px] font-bold rounded"
-                                >
-                                  + Add Row
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentRows = node.config.rows || [];
+                                      const newNum = currentRows.length + 1;
+                                      updateNodeConfig(idx, {
+                                        rows: [
+                                          ...currentRows,
+                                          { id: `row_${newNum}`, title: `Service ${newNum}`, description: "Description", next_node_key: "" }
+                                        ]
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-teal-100 text-teal-800 text-[10px] font-bold rounded hover:bg-teal-200"
+                                  >
+                                    + Add Row
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentRows = node.config.rows || [];
+                                      updateNodeConfig(idx, {
+                                        rows: [
+                                          ...currentRows,
+                                          { id: "row_back", title: "0. 🔙 Back to Menu", description: "Return to previous menu", next_node_key: "start" }
+                                        ]
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
+                                  >
+                                    + 🔙 Back
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="space-y-2">
@@ -1508,28 +1596,58 @@ export default function WhatsAppFlows() {
                         )}
 
                         {node.node_type === "send_media" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Type</label>
-                              <select
-                                value={node.config.media_type || "image"}
-                                onChange={(e) => updateNodeConfig(idx, { media_type: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
-                              >
-                                <option value="image">📷 Image</option>
-                                <option value="document">📄 PDF Document</option>
-                                <option value="video">🎥 Video</option>
-                              </select>
+                          <div className="space-y-3 p-3 bg-cyan-50/50 rounded-xl border border-cyan-100">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Type</label>
+                                <select
+                                  value={node.config.media_type || "image"}
+                                  onChange={(e) => updateNodeConfig(idx, { media_type: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
+                                >
+                                  <option value="image">📷 Image (PNG, JPG, WEBP)</option>
+                                  <option value="video">🎥 Video (MP4, MOV, 3GP)</option>
+                                  <option value="audio">🎵 Audio / Voice (MP3, WAV, OGG)</option>
+                                  <option value="document">📄 PDF / Word Document</option>
+                                  <option value="excel">📊 Excel / Spreadsheet (XLSX, CSV)</option>
+                                </select>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Public URL</label>
+                                <input
+                                  type="text"
+                                  value={node.config.media_url || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { media_url: e.target.value })}
+                                  placeholder="https://achme.in/brochure.pdf"
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                />
+                              </div>
                             </div>
-                            <div className="sm:col-span-2">
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Public URL</label>
-                              <input
-                                type="text"
-                                value={node.config.media_url || ""}
-                                onChange={(e) => updateNodeConfig(idx, { media_url: e.target.value })}
-                                placeholder="https://example.com/brochure.pdf"
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Caption / Message Text</label>
+                                <input
+                                  type="text"
+                                  value={node.config.caption || node.config.text || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { caption: e.target.value, text: e.target.value })}
+                                  placeholder="Here is your document for {company}"
+                                  className="w-full p-2 border rounded-lg text-xs bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                                <select
+                                  value={node.config.next_node_key || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                >
+                                  <option value="">-- Next Step --</option>
+                                  {availableNodeKeys.map((k) => (
+                                    <option key={k} value={k}>{k}</option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
                           </div>
                         )}

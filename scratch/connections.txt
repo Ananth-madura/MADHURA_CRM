@@ -1,0 +1,9 @@
+=== WHO IS CONNECTED TO THIS MySQL === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+user	host	db	command	time	state
+achme_user	localhost:58226	achme	Query	1	executing
+ 
+=== REMOTE GRANTS === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1141 (42000) at line 1: There is no such grant defined for user 'achme_user' on host '%'
+DONE 

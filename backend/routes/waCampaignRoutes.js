@@ -457,13 +457,35 @@ router.post("/create-direct", auth, async (req, res) => {
   }
 });
 
-// ── Upload campaign media (image/video) — returns a public URL Meta can fetch ─
+// ── Upload campaign media (image/video/audio/document/excel/pdf) ───────────────
 router.post("/upload-media", auth, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  const mime = req.file.mimetype || "";
-  const media_type = mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : "document";
+  const mime = (req.file.mimetype || "").toLowerCase();
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  let media_type = "document";
+
+  if (mime.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext)) {
+    media_type = "image";
+  } else if (mime.startsWith("video/") || [".mp4", ".3gp", ".mov", ".mkv"].includes(ext)) {
+    media_type = "video";
+  } else if (mime.startsWith("audio/") || [".mp3", ".ogg", ".wav", ".m4a", ".aac"].includes(ext)) {
+    media_type = "audio";
+  } else if ([".xlsx", ".xls", ".csv"].includes(ext) || mime.includes("spreadsheet") || mime.includes("excel")) {
+    media_type = "document";
+  } else if ([".docx", ".doc"].includes(ext) || mime.includes("word")) {
+    media_type = "document";
+  } else if (ext === ".pdf" || mime.includes("pdf")) {
+    media_type = "document";
+  }
+
   const url = `${req.protocol}://${req.get("host")}/uploads/wa-media/${req.file.filename}`;
-  res.json({ url, media_type });
+  res.json({
+    url,
+    media_type,
+    filename: req.file.originalname,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
+  });
 });
 
 // ── Wizard broadcast: contacts + message (text/template/media) + optional location ─

@@ -39,6 +39,7 @@ export default function WhatsAppAccounts() {
   // Live Test Message Send
   const [testPhone, setTestPhone] = useState("");
   const [testMsgText, setTestMsgText] = useState("Hello from MADHURA CRM WhatsApp System! 🚀");
+  const [testEngine, setTestEngine] = useState("auto"); // "auto" | "web" | "cloud_api"
   const [sendingTestMsg, setSendingTestMsg] = useState(false);
   const [testSendResult, setTestSendResult] = useState(null);
 
@@ -158,6 +159,7 @@ export default function WhatsAppAccounts() {
         {
           phone: testPhone.trim(),
           message: testMsgText.trim(),
+          engine: testEngine !== "auto" ? testEngine : undefined,
         },
         { headers: headers() }
       );
@@ -398,6 +400,23 @@ export default function WhatsAppAccounts() {
               )}
 
               <form onSubmit={handleSendTestMessage} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-gray-700 uppercase mb-1">Sending Channel / Engine</label>
+                  <select
+                    value={testEngine}
+                    onChange={(e) => setTestEngine(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-semibold text-gray-800"
+                  >
+                    <option value="auto">⚡ Smart Auto-Detect (Active Connection)</option>
+                    <option value="web" disabled={!webConnected}>
+                      📱 My Scanned Number (WhatsApp Web) {webConnected ? `(+${status?.web?.phone || "Connected"})` : "— [Offline]"}
+                    </option>
+                    <option value="cloud_api" disabled={!cloudConfigured}>
+                      ☁️ Meta Cloud API {cloudConfigured ? "— [Configured]" : "— [Not Setup]"}
+                    </option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="block font-bold text-gray-700 uppercase mb-1">Recipient Mobile Number</label>
                   <div className="flex items-center gap-1.5">

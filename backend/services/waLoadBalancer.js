@@ -21,47 +21,67 @@ class WALoadBalancer {
   }
 
   // sessionKey pins the Web engine to a specific linked number — an inbound
-  // reply must go back out of the number that received it, not whichever
-  // session happens to be the CRM default. Omitted => owner session.
-  async getActiveEngines(sessionKey) {
+  // reply or agent send must go back out of the number that owns it.
+  async getActiveEngines(sessionKey, preferredEngine = null) {
     const engines = [];
     const waCloud = require("./whatsappCloudApi");
     const waWeb = require("./whatsappService").get(sessionKey);
+    const hasWeb = waWeb && waWeb.ready;
+    const hasCloud = waCloud.isConfigured();
 
-    // 1. Meta Cloud API Engine
-    if (waCloud.isConfigured()) {
-      engines.push({
-        id: "cloud_api_primary",
-        name: "Meta Cloud API",
-        type: "cloud_api",
-        sendText: async (phone, text) => waCloud.sendText(phone, text),
-        sendTemplate: async (phone, tmplName, lang, components) => waCloud.sendTemplate(phone, tmplName, lang, components),
-        sendMedia: async (phone, mediaType, mediaUrl, caption) => waCloud.sendMedia(phone, mediaType, mediaUrl, caption),
-      });
-    }
+    const webEngine = hasWeb
+      ? {
+          id: "web_session_primary",
+          name: `WhatsApp Web (+${waWeb.phone || "Active"})`,
+          type: "web_session",
+          phone: waWeb.phone || null,
+          sendText: async (phone, text) => {
+            let clean = phone.replace(/\D/g, "");
+            if (clean.length === 10) clean = "91" + clean;
+            return waWeb.sendMessage(`${clean}@c.us`, text);
+          },
+          sendTemplate: async (phone, tmplName, lang, components) => {
+            let clean = phone.replace(/\D/g, "");
+            if (clean.length === 10) clean = "91" + clean;
+            return waWeb.sendTemplateMessage(clean, tmplName, components);
+          },
+          sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => {
+            let clean = phone.replace(/\D/g, "");
+            if (clean.length === 10) clean = "91" + clean;
+            return waWeb.sendMediaMessage(`${clean}@c.us`, mediaUrl, mediaType, caption, filename);
+          },
+        }
+      : null;
 
-    // 2. WhatsApp Web Active Session Engine
-    if (waWeb.ready) {
-      engines.push({
-        id: "web_session_primary",
-        name: `WhatsApp Web (+${waWeb.phone || "Active"})`,
-        type: "web_session",
-        sendText: async (phone, text) => {
-          let clean = phone.replace(/\D/g, "");
-          if (clean.length === 10) clean = "91" + clean;
-          return waWeb.sendMessage(`${clean}@c.us`, text);
-        },
-        sendTemplate: async (phone, tmplName, lang, components) => {
-          let clean = phone.replace(/\D/g, "");
-          if (clean.length === 10) clean = "91" + clean;
-          return waWeb.sendTemplateMessage(clean, tmplName, components);
-        },
-        sendMedia: async (phone, mediaType, mediaUrl, caption) => {
-          let clean = phone.replace(/\D/g, "");
-          if (clean.length === 10) clean = "91" + clean;
-          return waWeb.sendMediaMessage(`${clean}@c.us`, mediaUrl, mediaType, caption);
-        },
-      });
+    const cloudEngine = hasCloud
+      ? {
+          id: "cloud_api_primary",
+          name: "Meta Cloud API",
+          type: "cloud_api",
+          sendText: async (phone, text) => waCloud.sendText(phone, text),
+          sendTemplate: async (phone, tmplName, lang, components) => waCloud.sendTemplate(phone, tmplName, lang, components),
+          sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => waCloud.sendMedia(phone, mediaType, mediaUrl, caption, filename),
+        }
+      : null;
+
+    // Route prioritization:
+    // 1. If preferredEngine is specified, honour that first.
+    // 2. If user scanned QR code to link their own number (sessionKey/hasWeb), send using their scanned phone number!
+    // 3. Else if Meta Cloud API is configured, send using Meta Cloud API!
+    if (preferredEngine === "web_session" || preferredEngine === "web") {
+      if (webEngine) engines.push(webEngine);
+      if (cloudEngine) engines.push(cloudEngine);
+    } else if (preferredEngine === "cloud_api" || preferredEngine === "meta") {
+      if (cloudEngine) engines.push(cloudEngine);
+      if (webEngine) engines.push(webEngine);
+    } else if (hasWeb) {
+      // User's own QR scanned number takes priority
+      engines.push(webEngine);
+      if (cloudEngine) engines.push(cloudEngine);
+    } else if (hasCloud) {
+      // Meta Cloud API configured
+      engines.push(cloudEngine);
+      if (webEngine) engines.push(webEngine);
     }
 
     // 3. Additional DB configured active accounts from wa_accounts
@@ -86,15 +106,13 @@ class WALoadBalancer {
     return engines;
   }
 
-  async sendTextMessage(phone, text, sessionKey) {
-    const engines = await this.getActiveEngines(sessionKey);
+  async sendTextMessage(phone, text, sessionKey, preferredEngine = null) {
+    const engines = await this.getActiveEngines(sessionKey, preferredEngine);
     if (!engines.length) {
-      throw new Error("No active WhatsApp engines available in Load Balancer pool");
+      throw new Error("No active WhatsApp engines available. Please scan QR Code or configure Meta Cloud API.");
     }
 
-    // Select engine via round-robin index
-    this.rrIndex = (this.rrIndex + 1) % engines.length;
-    const primaryEngine = engines[this.rrIndex];
+    const primaryEngine = engines[0];
 
     try {
       const result = await primaryEngine.sendText(phone, text);
@@ -121,14 +139,13 @@ class WALoadBalancer {
     }
   }
 
-  async sendTemplateMessage(phone, templateName, language = "en", components = [], sessionKey) {
-    const engines = await this.getActiveEngines(sessionKey);
+  async sendTemplateMessage(phone, templateName, language = "en", components = [], sessionKey, preferredEngine = null) {
+    const engines = await this.getActiveEngines(sessionKey, preferredEngine);
     if (!engines.length) {
-      throw new Error("No active WhatsApp engines available in Load Balancer pool");
+      throw new Error("No active WhatsApp engines available. Please scan QR Code or configure Meta Cloud API.");
     }
 
-    this.rrIndex = (this.rrIndex + 1) % engines.length;
-    const primaryEngine = engines[this.rrIndex];
+    const primaryEngine = engines[0];
 
     try {
       const result = await primaryEngine.sendTemplate(phone, templateName, language, components);
@@ -151,17 +168,16 @@ class WALoadBalancer {
     }
   }
 
-  async sendMediaMessage(phone, mediaType, mediaUrl, caption = "", sessionKey) {
-    const engines = await this.getActiveEngines(sessionKey);
+  async sendMediaMessage(phone, mediaType, mediaUrl, caption = "", filename = "", sessionKey, preferredEngine = null) {
+    const engines = await this.getActiveEngines(sessionKey, preferredEngine);
     if (!engines.length) {
-      throw new Error("No active WhatsApp engines available in Load Balancer pool");
+      throw new Error("No active WhatsApp engines available. Please scan QR Code or configure Meta Cloud API.");
     }
 
-    this.rrIndex = (this.rrIndex + 1) % engines.length;
-    const primaryEngine = engines[this.rrIndex];
+    const primaryEngine = engines[0];
 
     try {
-      const result = await primaryEngine.sendMedia(phone, mediaType, mediaUrl, caption);
+      const result = await primaryEngine.sendMedia(phone, mediaType, mediaUrl, caption, filename);
       this.recordSuccess(primaryEngine.type);
       return { success: true, engineUsed: primaryEngine.name, result };
     } catch (primaryErr) {
@@ -169,7 +185,7 @@ class WALoadBalancer {
       for (const fallbackEngine of engines) {
         if (fallbackEngine.id === primaryEngine.id) continue;
         try {
-          const result = await fallbackEngine.sendMedia(phone, mediaType, mediaUrl, caption);
+          const result = await fallbackEngine.sendMedia(phone, mediaType, mediaUrl, caption, filename);
           this.recordSuccess(fallbackEngine.type);
           return { success: true, engineUsed: fallbackEngine.name, result, failover: true };
         } catch (_) {}

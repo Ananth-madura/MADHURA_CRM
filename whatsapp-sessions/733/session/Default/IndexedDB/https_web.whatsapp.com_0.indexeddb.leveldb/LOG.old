@@ -1,0 +1,19 @@
+2026/08/20-11:14:59.093 2df4 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/20-11:14:59.097 2df4 Recovering log #201
+2026/08/20-11:14:59.102 2df4 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000201.log 
+2026/08/20-11:14:59.104 2df4 Delete type=2 #197
+2026/08/20-11:14:59.104 2df4 Delete type=2 #200
+2026/08/20-11:15:01.825 4ecc Level-0 table #207: started
+2026/08/20-11:15:01.830 4ecc Level-0 table #207: 32582 bytes OK
+2026/08/20-11:15:01.835 4ecc Delete type=0 #201
+2026/08/20-11:15:01.835 2df4 Manual compaction at level-0 from '\x00K\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00L\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/08/20-11:15:01.849 2df4 Level-0 table #209: started
+2026/08/20-11:15:01.855 2df4 Level-0 table #209: 4816 bytes OK
+2026/08/20-11:15:01.858 2df4 Delete type=0 #206
+2026/08/20-11:15:01.858 2df4 Manual compaction at level-0 from '\x00J\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00K\x00\x00\x00' @ 0 : 0; will stop at '\x00J\x0a\x02\x03\x00\x00\x00\x00\x00\x00\x00@' @ 134177 : 0
+2026/08/20-11:15:01.859 2df4 Compacting 1@0 + 1@1 files
+2026/08/20-11:15:01.865 2df4 Generated table #210@0: 456 keys, 4156 bytes
+2026/08/20-11:15:01.865 2df4 Compacted 1@0 + 1@1 files => 4156 bytes
+2026/08/20-11:15:01.871 2df4 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/08/20-11:15:01.873 2df4 Delete type=2 #209
+2026/08/20-11:15:01.875 2df4 Manual compaction at level-0 from '\x00J\x0a\x02\x03\x00\x00\x00\x00\x00\x00\x00@' @ 134177 : 0 .. '\x00K\x00\x00\x00' @ 0 : 0; will stop at (end)

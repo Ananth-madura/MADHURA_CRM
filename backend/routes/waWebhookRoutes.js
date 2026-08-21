@@ -49,7 +49,7 @@ router.post("/", async (req, res) => {
               const value = change.value;
               if (value.messages) {
                 for (const msg of value.messages) {
-                  await handleIncomingMessage(msg, value.metadata);
+                  await handleIncomingMessage(msg, value.metadata, value.contacts);
                 }
               }
               if (value.statuses) {
@@ -70,10 +70,11 @@ router.post("/", async (req, res) => {
   }
 });
 
-async function handleIncomingMessage(msg, metadata) {
+async function handleIncomingMessage(msg, metadata, contacts = []) {
   const phone = msg.from;
   const msgId = msg.id;
   const timestamp = msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000) : new Date();
+  const contactProfileName = contacts?.[0]?.profile?.name || null;
 
   let messageText = "";
   let messageType = "text";
@@ -124,6 +125,17 @@ async function handleIncomingMessage(msg, metadata) {
       });
     }
   } catch (_) {}
+
+  // Update contact last message in CRM
+  await db.promise().query(
+    `INSERT INTO wa_contacts (name, phone, country_code, source, opt_in_status, last_message_text, last_message_at, unread_count)
+     VALUES (?, ?, '91', 'WhatsApp Cloud API', 1, ?, NOW(), 1)
+     ON DUPLICATE KEY UPDATE
+       name = COALESCE(VALUES(name), name),
+       last_message_text = VALUES(last_message_text),
+       last_message_at = NOW()`,
+    [contactProfileName || `+${phone}`, phone.slice(-10), messageText]
+  ).catch(() => {});
 
   // Mark as replied in any active campaign messages for this phone
   await db.promise().query(
@@ -181,7 +193,7 @@ async function handleIncomingMessage(msg, metadata) {
       };
       const menuHandled = await waMenuHandler.handleMenuReply(phone, menuMsg).catch(() => false);
       if (!menuHandled && messageText) {
-        const welcomeSent = await require("../services/waAutomationService").maybeSendWelcomeReply(phone).catch(() => false);
+        const welcomeSent = await require("../services/waAutomationService").maybeSendWelcomeReply(phone, contactProfileName).catch(() => false);
         if (!welcomeSent) return waAiReply.maybeAutoReply(phone, messageText);
       }
     }).catch(() => {});

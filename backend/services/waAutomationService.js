@@ -269,45 +269,129 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
   const settings = await getWelcomeSettings();
   if (!settings.enabled) return false;
 
-  // Check cooldown: Has an outbound message or welcome message been sent to this phone within cooldown_hours?
+  // 1. Check working hours if enabled
+  if (settings.working_hours_only && settings.start_time && settings.end_time) {
+    try {
+      const now = new Date();
+      // Format server time in HH:MM
+      const currentHours = now.getHours().toString().padStart(2, "0");
+      const currentMinutes = now.getMinutes().toString().padStart(2, "0");
+      const currentTime = `${currentHours}:${currentMinutes}`;
+      if (currentTime < settings.start_time || currentTime > settings.end_time) {
+        console.log(`⏰ [WA Welcome] Outside working hours (${currentTime} not in ${settings.start_time}-${settings.end_time}) for ${cleanPhone}`);
+        // Optionally send after-hours note if configured, or continue with standard welcome
+      }
+    } catch (_) {}
+  }
+
+  // 2. Check cooldown: Has an outbound welcome message or reply been sent to this phone within cooldown_hours?
   const cooldownHours = settings.cooldown_hours || 24;
   try {
-    const [recentOutbound] = await db.promise().query(
+    const [recentWelcomeLogs] = await db.promise().query(
       `SELECT id FROM wa_message_logs
        WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'outbound'
+         AND (message_type = 'welcome' OR message_text LIKE '%Welcome%' OR message_text LIKE '%Thank you for reaching out%')
          AND created_at >= NOW() - INTERVAL ? HOUR
        LIMIT 1`,
       [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
     );
 
-    if (recentOutbound.length > 0) {
+    const [recentAutoLogs] = await db.promise().query(
+      `SELECT id FROM wa_automation_logs
+       WHERE (phone LIKE ? OR phone LIKE ?)
+         AND created_at >= NOW() - INTERVAL ? HOUR
+       LIMIT 1`,
+      [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
+    );
+
+    if (recentWelcomeLogs.length > 0 || recentAutoLogs.length > 0) {
       // Cooldown in effect — skip duplicate welcome reply
+      console.log(`⏳ [WA Welcome] Cooldown in effect for ${cleanPhone} (${cooldownHours}h)`);
       return false;
     }
   } catch (e) {
     console.error("[WA Welcome] Cooldown check error:", e.message);
   }
 
-  // Format welcome message text
+  // 3. Resolve CRM Contact Info
   const crmData = await lookupCrmDataByPhone(cleanPhone).catch(() => ({}));
   const resolvedName = contactName || crmData.name || "there";
+
+  // 4. Check if a rich rule exists in wa_automations for 'welcome_message'
+  try {
+    const [rules] = await db.promise().query(
+      `SELECT a.*, t.name as template_name, t.body as template_body,
+              ft.name as followup_template_name, ft.body as followup_template_body
+       FROM wa_automations a
+       LEFT JOIN wa_templates t ON a.template_id = t.id
+       LEFT JOIN wa_templates ft ON a.followup_template_id = ft.id
+       WHERE a.is_active = 1 AND a.trigger_type = 'welcome_message'
+       LIMIT 1`
+    );
+
+    if (rules.length > 0) {
+      const rule = rules[0];
+      const rawText = rule.message_text || rule.template_body || settings.welcome_text || "Hello {name}! Welcome to ACHME.";
+      const messageText = formatMessagePlaceholders(rawText, resolvedName, crmData);
+      await executeAutomationSend(rule, cleanPhone, resolvedName, messageText, crmData);
+      console.log(`👋 [WA Welcome] Executed rich Welcome Automation rule '${rule.name}' for ${cleanPhone}`);
+      return true;
+    }
+  } catch (ruleErr) {
+    console.warn("[WA Welcome] Error querying wa_automations for welcome_message:", ruleErr.message);
+  }
+
+  // 5. Default fallback to wa_welcome_settings
   const messageText = formatMessagePlaceholders(
-    settings.welcome_text || "Hello {name}! Welcome to ACHME.",
+    settings.welcome_text || "Hello {name}! Welcome to ACHME. Thank you for reaching out to us. How can we help you today?",
     resolvedName,
     crmData
   );
 
   const waLoadBalancer = require("./waLoadBalancer");
   try {
-    const res = await waLoadBalancer.sendTextMessage(cleanPhone, messageText, sessionKey);
-    console.log(`👋 [WA Welcome] Sent Welcome Auto-Reply to ${cleanPhone} via ${res.engineUsed}`);
+    let res;
+    if (settings.welcome_type === "template" && settings.template_id) {
+      const [tmplRows] = await db.promise().query("SELECT * FROM wa_templates WHERE id = ? LIMIT 1", [settings.template_id]);
+      if (tmplRows.length > 0) {
+        const bodyComp = buildTemplateBodyComponent(tmplRows[0].body, resolvedName, crmData);
+        res = await waLoadBalancer.sendTemplateMessage(cleanPhone, tmplRows[0].name, tmplRows[0].language || "en", bodyComp ? [bodyComp] : [], sessionKey);
+      } else {
+        res = await waLoadBalancer.sendTextMessage(cleanPhone, messageText, sessionKey);
+      }
+    } else {
+      res = await waLoadBalancer.sendTextMessage(cleanPhone, messageText, sessionKey);
+    }
 
-    // Log outbound welcome message
+    console.log(`👋 [WA Welcome] Sent Welcome Auto-Reply to ${cleanPhone} via ${res?.engineUsed || "WA"}`);
+
+    // Log outbound welcome message in DB
     await db.promise().query(
       `INSERT INTO wa_message_logs (session_key, phone, direction, message_type, message_text, status, created_at)
-       VALUES (?, ?, 'outbound', 'text', ?, 'sent', NOW())`,
+       VALUES (?, ?, 'outbound', 'welcome', ?, 'delivered', NOW())`,
       [sessionKey || require("./whatsappService").defaultKey, cleanPhone, messageText]
     ).catch(() => {});
+
+    // Broadcast live message update to CRM Live Chat
+    try {
+      const app = require("../server");
+      const io = app.get && app.get("io");
+      if (io) {
+        const livePayload = {
+          phone: cleanPhone,
+          chatId: `${cleanPhone}@c.us`,
+          message: {
+            id: "welcome_" + Date.now(),
+            from: "me",
+            body: messageText,
+            timestamp: Math.floor(Date.now() / 1000),
+            isMe: true,
+            type: "text",
+          },
+        };
+        io.emit("wa_message_sent", livePayload);
+      }
+    } catch (_) {}
 
     return true;
   } catch (err) {
@@ -329,7 +413,7 @@ async function executeAutomationSend(rule, cleanPhone, contactName, messageText,
       const bodyComponent = buildTemplateBodyComponent(rule.template_body, contactName, data);
       sentResult = await waLoadBalancer.sendTemplateMessage(cleanPhone, rule.template_name, "en", bodyComponent ? [bodyComponent] : []);
     } else if (rule.media_type && rule.media_url) {
-      sentResult = await waLoadBalancer.sendMediaMessage(cleanPhone, rule.media_type, rule.media_url, messageText || "");
+      sentResult = await waLoadBalancer.sendMediaMessage(cleanPhone, rule.media_type, rule.media_url, messageText || "", rule.media_filename || "");
     } else {
       sentResult = await waLoadBalancer.sendTextMessage(cleanPhone, messageText);
     }
@@ -439,7 +523,7 @@ async function executeAutomationSend(rule, cleanPhone, contactName, messageText,
             const bodyComponent = buildTemplateBodyComponent(rule.followup_template_body, contactName, data);
             step2Result = await waLoadBalancer.sendTemplateMessage(cleanPhone, rule.followup_template_name, "en", bodyComponent ? [bodyComponent] : []);
           } else if (rule.followup_media_type && rule.followup_media_url) {
-            step2Result = await waLoadBalancer.sendMediaMessage(cleanPhone, rule.followup_media_type, rule.followup_media_url, followupText || "");
+            step2Result = await waLoadBalancer.sendMediaMessage(cleanPhone, rule.followup_media_type, rule.followup_media_url, followupText || "", rule.followup_media_filename || "");
           } else if (followupText) {
             step2Result = await waLoadBalancer.sendTextMessage(cleanPhone, followupText);
           }

@@ -284,9 +284,9 @@ router.post("/seed", auth, async (req, res) => {
     const seedFlows = [
       {
         name: "Interactive Main Business & Services Menu",
-        description: "Comprehensive 24/7 WhatsApp receptionist: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer.",
-        trigger_type: "keyword",
-        trigger_config: { keywords: ["hi", "hello", "menu", "start", "help", "hey", "namaste", "info"] },
+        description: "24/7 Universal WhatsApp receptionist: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer for all inbound chats.",
+        trigger_type: "all_inbound",
+        trigger_config: { keywords: ["hi", "hello", "menu", "start", "help", "hey", "namaste", "info", "welcome"] },
         entry_node_key: "start",
         nodes: [
           { node_key: "start", node_type: "start", config: { next_node_key: "main_menu" } },

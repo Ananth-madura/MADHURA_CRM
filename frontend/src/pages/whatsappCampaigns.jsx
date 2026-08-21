@@ -611,15 +611,17 @@ export default function WACampaigns() {
                       <select
                         value={f.media_type}
                         onChange={e => setForm({ ...f, media_type: e.target.value })}
-                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white"
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-medium"
                       >
-                        <option value="image">📷 Image</option>
-                        <option value="video">🎥 Video</option>
-                        <option value="document">📄 Document (PDF)</option>
+                        <option value="image">📷 Image (PNG, JPG, WEBP)</option>
+                        <option value="video">🎥 Video (MP4, MOV, 3GP)</option>
+                        <option value="audio">🎵 Audio / Voice (MP3, WAV, OGG)</option>
+                        <option value="document">📄 PDF / Word Document</option>
+                        <option value="excel">📊 Excel / Spreadsheet (XLSX, CSV)</option>
                       </select>
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Media URL</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Media URL or Hosted Link</label>
                       <input
                         type="text"
                         value={f.media_url}

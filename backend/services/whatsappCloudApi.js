@@ -11,6 +11,8 @@ class WhatsAppCloudApi {
     this.appSecret = process.env.WA_APP_SECRET || "";
     this.verifyToken = process.env.WA_VERIFY_TOKEN || "crm_verify_123";
     this.businessAccountId = process.env.WA_BUSINESS_ACCOUNT_ID || "";
+    this.displayPhoneNumber = process.env.WA_DISPLAY_PHONE_NUMBER || "";
+    this.verifiedName = process.env.WA_VERIFIED_NAME || "";
   }
 
   isConfigured() {
@@ -20,8 +22,10 @@ class WhatsAppCloudApi {
   getConfig() {
     return {
       configured: this.isConfigured(),
-      phoneNumberId: this.phoneNumberId ? `${this.phoneNumberId.slice(0, 4)}...` : null,
+      phoneNumberId: this.phoneNumberId || null,
       wabaId: this.wabaId || null,
+      display_phone_number: this.displayPhoneNumber || null,
+      verified_name: this.verifiedName || null,
     };
   }
 
@@ -122,16 +126,38 @@ class WhatsAppCloudApi {
     return data;
   }
 
-  async sendMedia(to, mediaType, mediaIdOrLink, caption = "") {
+  async sendMedia(to, rawMediaType, mediaIdOrLink, caption = "", filename = "") {
     if (!this.isConfigured()) throw new Error("WhatsApp Cloud API not configured");
+
+    let cleanType = (rawMediaType || "document").toLowerCase();
+    if (["pdf", "doc", "docx", "xls", "xlsx", "csv", "excel", "txt", "ppt", "pptx"].includes(cleanType)) {
+      cleanType = "document";
+    }
+
+    const mediaObj = mediaIdOrLink.startsWith("http")
+      ? { link: mediaIdOrLink }
+      : { id: mediaIdOrLink };
+
+    if (cleanType === "document") {
+      if (filename) mediaObj.filename = filename;
+      else {
+        try {
+          const urlParts = new URL(mediaIdOrLink).pathname.split("/");
+          const lastPart = urlParts[urlParts.length - 1];
+          if (lastPart && lastPart.includes(".")) mediaObj.filename = decodeURIComponent(lastPart);
+        } catch (_) {}
+      }
+      if (caption) mediaObj.caption = caption;
+    } else if (cleanType === "image" || cleanType === "video") {
+      if (caption) mediaObj.caption = caption;
+    } // Audio does not accept caption in Meta Cloud API
+
     const body = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to,
-      type: mediaType,
-      [mediaType]: mediaIdOrLink.startsWith("http")
-        ? { link: mediaIdOrLink, caption }
-        : { id: mediaIdOrLink, caption },
+      type: cleanType,
+      [cleanType]: mediaObj,
     };
     const { data } = await axios.post(
       `${BASE_URL}/${this.phoneNumberId}/messages`,

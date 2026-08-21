@@ -1,0 +1,35 @@
+=== ALL VARCHAR columns across all item tables === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+TABLE_NAME	COLUMN_NAME	COLUMN_TYPE	CHARACTER_MAXIMUM_LENGTH
+estimate_invoice_items	brand_model	varchar(150)	150
+estimate_invoice_items	hsn_sac	varchar(20)	20
+estimate_invoice_items	uom	varchar(20)	20
+estimate_items	brand_model	varchar(150)	150
+estimate_items	hsn_sac	varchar(20)	20
+estimate_items	uom	varchar(20)	20
+performainvoice_items	brand_model	varchar(150)	150
+performainvoice_items	hsn_sac	varchar(20)	20
+performainvoice_items	uom	varchar(50)	50
+quotation_items	brand_model	varchar(150)	150
+quotation_items	hsn_sac	varchar(20)	20
+quotation_items	uom	varchar(20)	20
+service_estimation_items	brand_model	varchar(150)	150
+service_estimation_items	hsn_sac	varchar(20)	20
+service_estimation_items	uom	varchar(20)	20
+service_items	brand_model	varchar(150)	150
+service_items	hsn_sac	varchar(20)	20
+service_items	uom	varchar(20)	20
+ 
+=== pi_from_addresses.address column === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Field	Type	Null	Key	Default	Extra
+id	int	NO	PRI	NULL	auto_increment
+label	varchar(100)	NO		NULL	
+address	text	NO		NULL	
+created_at	timestamp	YES		CURRENT_TIMESTAMP	DEFAULT_GENERATED
+ 
+=== quotation_items.description CURRENT TYPE === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+COLUMN_NAME	COLUMN_TYPE	CHARACTER_MAXIMUM_LENGTH
+description	text	65535
+DONE 

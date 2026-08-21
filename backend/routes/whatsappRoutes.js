@@ -1,7 +1,20 @@
 const express = require("express");
 const router = express.Router();
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const db = require("../config/database");
 const mgr = require("../services/whatsappService");
+
+const mediaDir = path.join(__dirname, "..", "uploads", "wa-media");
+fs.mkdirSync(mediaDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, mediaDir),
+    filename: (req, file, cb) => cb(null, Date.now() + "_" + Math.round(Math.random() * 1e9) + path.extname(file.originalname)),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+});
 
 // Every route here resolves the caller's own WhatsApp session, or falls back to the active connected session
 const s = (req) => {
@@ -13,17 +26,73 @@ const s = (req) => {
   return target || mgr.default();
 };
 
+const { configureForUser } = require("../services/waConfigHelper");
+const waCloud = require("../services/whatsappCloudApi");
+
 router.get("/status", async (req, res) => {
-  res.json(await s(req).getStatus());
+  if (req.user?.id) {
+    await configureForUser(req.user.id).catch(() => {});
+  }
+  const sessionStatus = await s(req).getStatus();
+  const cloudConfigured = waCloud.isConfigured();
+  res.json({
+    ...sessionStatus,
+    connected: sessionStatus.connected || cloudConfigured,
+    isCloud: cloudConfigured,
+    isWeb: sessionStatus.connected,
+    phone: sessionStatus.phone || waCloud.displayPhoneNumber || waCloud.phoneNumberId || null,
+    activeEngine: cloudConfigured && sessionStatus.connected
+      ? "Dual (Cloud API + Web)"
+      : cloudConfigured
+      ? "Meta Cloud API"
+      : sessionStatus.connected
+      ? "WhatsApp Web Session"
+      : "Disconnected",
+  });
 });
 
 router.get("/unified-status", async (req, res) => {
+  if (req.user?.id) {
+    await configureForUser(req.user.id).catch(() => {});
+  }
   res.json(await s(req).getUnifiedStatus());
 });
 
 router.get("/account", async (req, res) => {
   try {
+    if (req.user?.id) {
+      await configureForUser(req.user.id).catch(() => {});
+    }
     const details = await s(req).getAccountDetails();
+    if (!details.connected && waCloud.isConfigured()) {
+      let phoneInfo = null;
+      try {
+        phoneInfo = await waCloud.getPhoneNumberInfo();
+        if (phoneInfo?.display_phone_number) waCloud.displayPhoneNumber = phoneInfo.display_phone_number;
+        if (phoneInfo?.verified_name) waCloud.verifiedName = phoneInfo.verified_name;
+      } catch (_) {}
+
+      let contactsCount = 0;
+      try {
+        const [[{ total }]] = await db.promise().query(
+          "SELECT COUNT(*) as total FROM wa_contacts WHERE is_blocked = 0"
+        );
+        contactsCount = total || 0;
+      } catch (_) {}
+
+      return res.json({
+        connected: true,
+        isCloud: true,
+        isWeb: false,
+        phone: waCloud.displayPhoneNumber || phoneInfo?.display_phone_number || waCloud.phoneNumberId,
+        pushname: waCloud.verifiedName || phoneInfo?.verified_name || "Meta WhatsApp Business",
+        profilePicUrl: null,
+        platform: "Meta Cloud API (Official v22.0)",
+        qualityRating: phoneInfo?.quality_rating || "GREEN",
+        contactsCount,
+        chatsCount: 0,
+      });
+    }
     res.json(details);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -50,9 +119,9 @@ router.post("/sync-chats", async (req, res) => {
 
 router.post("/test-send", async (req, res) => {
   try {
-    const { phone, message } = req.body;
+    const { phone, message, engine } = req.body;
     if (!phone) return res.status(400).json({ error: "phone is required" });
-    const result = await s(req).sendTestMessage(phone, message);
+    const result = await s(req).sendTestMessage(phone, message, engine);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -327,6 +396,36 @@ router.get("/chat/:chatId/media/:messageId", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.post("/upload-media", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  const mime = (req.file.mimetype || "").toLowerCase();
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  let media_type = "document";
+
+  if (mime.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext)) {
+    media_type = "image";
+  } else if (mime.startsWith("video/") || [".mp4", ".3gp", ".mov", ".mkv"].includes(ext)) {
+    media_type = "video";
+  } else if (mime.startsWith("audio/") || [".mp3", ".ogg", ".wav", ".m4a", ".aac"].includes(ext)) {
+    media_type = "audio";
+  } else if ([".xlsx", ".xls", ".csv"].includes(ext) || mime.includes("spreadsheet") || mime.includes("excel")) {
+    media_type = "document";
+  } else if ([".docx", ".doc"].includes(ext) || mime.includes("word")) {
+    media_type = "document";
+  } else if (ext === ".pdf" || mime.includes("pdf")) {
+    media_type = "document";
+  }
+
+  const url = `${req.protocol}://${req.get("host")}/uploads/wa-media/${req.file.filename}`;
+  res.json({
+    url,
+    media_type,
+    filename: req.file.originalname,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
+  });
 });
 
 router.post("/send-media", async (req, res) => {

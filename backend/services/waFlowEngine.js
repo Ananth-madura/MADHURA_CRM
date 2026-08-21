@@ -152,7 +152,7 @@ class WaFlowEngine {
 
       // Priority 1: Keyword Match Flows
       for (const flow of activeFlows) {
-        if (flow.trigger_type === "keyword") {
+        if (flow.trigger_type === "keyword" || !flow.trigger_type) {
           let triggerConfig = {};
           try {
             triggerConfig = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
@@ -165,14 +165,14 @@ class WaFlowEngine {
             // Exact match
             if (lowerText === kw) return true;
             // Starts with keyword followed by space, punctuation, or exclamation
-            if (lowerText.startsWith(kw + " ") || lowerText.startsWith(kw + ",") || lowerText.startsWith(kw + "!") || lowerText.startsWith(kw + ".")) return true;
+            if (lowerText.startsWith(kw + " ") || lowerText.startsWith(kw + ",") || lowerText.startsWith(kw + "!") || lowerText.startsWith(kw + ".") || lowerText.startsWith(kw + "?")) return true;
             // Word boundary match
             try {
               const reg = new RegExp(`\\b${this.escapeRegex(kw)}\\b`, "i");
               if (reg.test(rawTrimmed)) return true;
             } catch (_) {}
-            // Substring containment for multi-word or long keywords
-            if (kw.length >= 4 && lowerText.includes(kw)) return true;
+            // Substring containment for multi-word or long keywords (>= 3 chars)
+            if (kw.length >= 3 && (lowerText.includes(kw) || kw.includes(lowerText))) return true;
             return false;
           });
 
@@ -183,23 +183,39 @@ class WaFlowEngine {
         }
       }
 
-      // Priority 2: First Inbound Welcome Bot
+      // Priority 2: First Inbound / Welcome Bot (triggers when customer has no prior inbound history or new conversation)
       for (const flow of activeFlows) {
-        if (flow.trigger_type === "first_inbound") {
-          const [[{ count }]] = await db.promise().query(
-            "SELECT COUNT(*) as count FROM wa_message_logs WHERE phone LIKE ? AND direction = 'inbound'",
-            [`%${cleanPhone.slice(-10)}`]
-          );
-          if (count <= 1) {
-            console.log(`🤖 Triggering First-Inbound Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-            return await this.startFlowRun(flow, cleanPhone, sessionKey);
+        const isWelcomeTrigger = ["first_inbound", "welcome", "welcome_bot", "first_message"].includes(flow.trigger_type);
+        if (isWelcomeTrigger) {
+          try {
+            const [[{ count }]] = await db.promise().query(
+              "SELECT COUNT(*) as count FROM wa_message_logs WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'",
+              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
+            );
+            // Also check if there has been no inbound message in the last 24 hours (new session)
+            const [recentInbounds] = await db.promise().query(
+              `SELECT id FROM wa_message_logs
+               WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'
+                 AND created_at < NOW() - INTERVAL 1 MINUTE
+                 AND created_at >= NOW() - INTERVAL 24 HOUR
+               LIMIT 1`,
+              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
+            );
+
+            if (count <= 1 || recentInbounds.length === 0) {
+              console.log(`👋 Triggering First-Inbound/Welcome Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
+              return await this.startFlowRun(flow, cleanPhone, sessionKey);
+            }
+          } catch (e) {
+            console.warn("First-inbound check error:", e.message);
           }
         }
       }
 
-      // Priority 3: Universal 24/7 Bot (Triggers for ALL Inbound Messages as Default Fallback)
+      // Priority 3: Universal 24/7 Bot (Triggers for ALL Inbound Messages as Default / No-Keyword Fallback)
       for (const flow of activeFlows) {
-        if (flow.trigger_type === "all_inbound" || flow.trigger_type === "universal" || flow.trigger_type === "default") {
+        const isUniversalTrigger = ["all_inbound", "universal", "default", "fallback", "no_keyword", "catch_all"].includes(flow.trigger_type);
+        if (isUniversalTrigger) {
           console.log(`🌐 Triggering Universal 24/7 WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
           return await this.startFlowRun(flow, cleanPhone, sessionKey);
         }
@@ -362,21 +378,60 @@ class WaFlowEngine {
     } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list") {
       const rawText = (messageText || "").trim();
       const tappedId = interactiveReplyId || rawText;
+      const lowerRaw = rawText.toLowerCase();
       const buttons = config.buttons || config.rows || [];
       
-      let matchedBtn = null;
+      if (!Array.isArray(vars._nav_history)) vars._nav_history = [];
 
-      // 1. Check if user typed a number like "1", "2", "3", "1.", "#1", "opt 1", "option 1"
-      const numMatch = rawText.match(/^(?:option\s*|opt\s*|#\s*)?(\d+)[.)]?$/i);
-      if (numMatch) {
-        const numIdx = parseInt(numMatch[1], 10) - 1;
-        if (numIdx >= 0 && numIdx < buttons.length) {
-          matchedBtn = buttons[numIdx];
+      // 1. Navigation Command: Back / Previous Menu
+      const isBackCmd = ["0", "back", "previous", "prev", "go back", "return", "undo", "exit", "b", "p", "⬅️", "🔙", "↩️"].includes(lowerRaw);
+      if (isBackCmd) {
+        if (config.back_node_key) {
+          nextNodeKey = config.back_node_key;
+        } else if (vars._nav_history.length > 0) {
+          nextNodeKey = vars._nav_history.pop();
+        } else {
+          nextNodeKey = "start";
+        }
+        console.log(`↩️ [WA Flow] Customer navigating BACK to node: ${nextNodeKey}`);
+      }
+
+      // 2. Navigation Command: Next / More Options
+      const isNextCmd = !isBackCmd && ["next", "more", "next page", "page 2", "continue", "forward", "n", "➡️"].includes(lowerRaw);
+      if (isNextCmd && (config.next_page_key || config.next_node_key)) {
+        nextNodeKey = config.next_page_key || config.next_node_key;
+        if (!vars._nav_history.includes(run.current_node_key)) {
+          vars._nav_history.push(run.current_node_key);
         }
       }
 
-      // 2. Check by direct reply_id or exact ID / title match
-      if (!matchedBtn && tappedId) {
+      let matchedBtn = null;
+
+      // 3. Option Number Match: "1", "2", "3", "1.", "#1", "opt 1", "option 1", "choice 1"
+      if (!nextNodeKey) {
+        const numMatch = rawText.match(/^(?:option\s*|opt\s*|choice\s*|select\s*|#\s*)?(\d+)[.)]?$/i);
+        if (numMatch) {
+          const numVal = parseInt(numMatch[1], 10);
+          if (numVal === 0) {
+            // "0" is universal Back
+            if (config.back_node_key) {
+              nextNodeKey = config.back_node_key;
+            } else if (vars._nav_history.length > 0) {
+              nextNodeKey = vars._nav_history.pop();
+            } else {
+              nextNodeKey = "start";
+            }
+          } else {
+            const numIdx = numVal - 1;
+            if (numIdx >= 0 && numIdx < buttons.length) {
+              matchedBtn = buttons[numIdx];
+            }
+          }
+        }
+      }
+
+      // 4. Interactive Reply ID / Exact ID / Exact Title Match
+      if (!nextNodeKey && !matchedBtn && tappedId) {
         matchedBtn = buttons.find(b => 
           (b.reply_id && String(b.reply_id).toLowerCase() === String(tappedId).toLowerCase()) ||
           (b.id && String(b.id).toLowerCase() === String(tappedId).toLowerCase()) ||
@@ -384,41 +439,49 @@ class WaFlowEngine {
         );
       }
 
-      // 3. Check if user's message contains the button title (clean without numbers & emojis)
-      if (!matchedBtn && rawText.length >= 2) {
+      // 5. Clean Title / Fuzzy Substring Match (ignoring leading numbers & emojis)
+      if (!nextNodeKey && !matchedBtn && rawText.length >= 2) {
         const cleanInput = rawText.replace(/^[^\w\s]+/, "").toLowerCase().trim();
         matchedBtn = buttons.find(b => {
           if (!b.title) return false;
           const cleanTitle = b.title.replace(/^\d+[\s.)-]+\s*/, "").replace(/^[^\w\s]+/, "").toLowerCase().trim();
-          return (cleanTitle && (cleanInput.includes(cleanTitle) || cleanTitle.includes(cleanInput)));
+          return (
+            cleanTitle === cleanInput ||
+            cleanInput.includes(cleanTitle) ||
+            cleanTitle.includes(cleanInput)
+          );
         });
       }
 
-      // 4. Keyword triggers inside buttons
-      if (!matchedBtn) {
+      // 6. Configured Button Keywords / Synonyms
+      if (!nextNodeKey && !matchedBtn) {
         matchedBtn = buttons.find(b => {
           if (!b.keywords) return false;
           const kws = Array.isArray(b.keywords) ? b.keywords : String(b.keywords).split(",");
-          return kws.some(k => k.trim() && rawText.toLowerCase().includes(k.trim().toLowerCase()));
+          return kws.some(k => k.trim() && lowerRaw.includes(k.trim().toLowerCase()));
         });
       }
       
       if (matchedBtn && (matchedBtn.next_node_key || matchedBtn.next_node)) {
+        // Record current node in navigation history stack for back button support
+        if (!vars._nav_history.includes(run.current_node_key)) {
+          vars._nav_history.push(run.current_node_key);
+        }
         nextNodeKey = matchedBtn.next_node_key || matchedBtn.next_node;
         vars.selected_option = matchedBtn.title;
         vars.selected_option_id = matchedBtn.reply_id || matchedBtn.id;
-      } else {
+      } else if (!nextNodeKey) {
         // If unrecognized reply, check if reprompting helps or proceed to fallback
         const repromptCount = (run.reprompt_count || 0) + 1;
         if (repromptCount < 2 && config.fallback_node_key) {
           nextNodeKey = config.fallback_node_key;
         } else if (repromptCount < 2 && buttons.length > 0) {
           await db.promise().query("UPDATE wa_flow_runs SET reprompt_count = ? WHERE id = ?", [repromptCount, runId]);
-          let promptMsg = "Please choose from the options above (reply with option number):\n";
+          let promptMsg = "Please choose one of the options below (reply with option number):\n\n";
           buttons.forEach((b, idx) => {
             promptMsg += `*${idx + 1}.* ${b.title}\n`;
           });
-          promptMsg += "\n_Or reply MENU to restart._";
+          promptMsg += "\n_Reply 0 or BACK for previous menu, or MENU for main menu._";
           await this.sendFlowMessage(cleanPhone, promptMsg, sessionKey);
           return true;
         } else {
@@ -488,7 +551,8 @@ class WaFlowEngine {
         case "send_media": {
           const renderedCaption = this.interpolate(config.caption || config.text || "", vars);
           const renderedUrl = this.interpolate(config.media_url || "", vars);
-          await this.sendFlowMedia(cleanPhone, config.media_type || "image", renderedUrl, renderedCaption, sessionKey);
+          const renderedFilename = config.filename ? this.interpolate(config.filename, vars) : "";
+          await this.sendFlowMedia(cleanPhone, config.media_type || "image", renderedUrl, renderedCaption, renderedFilename, sessionKey);
           nodeKey = config.next_node_key;
           break;
         }
@@ -1006,39 +1070,95 @@ class WaFlowEngine {
     } else {
       // Advance current waiting node with user input
       const currentNode = nodeMap[currentNodeKey];
+      let nextNodeKey = null;
+
       if (currentNode) {
         if (currentNode.node_type === "collect_input") {
           const varKey = currentNode.config?.var_key || "input";
           vars[varKey] = rawTrimmed;
           vars.last_input = rawTrimmed;
-          currentNodeKey = currentNode.config?.next_node_key;
+          nextNodeKey = currentNode.config?.next_node_key;
         } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list") {
           const buttons = currentNode.config?.buttons || currentNode.config?.rows || [];
+          if (!Array.isArray(vars._nav_history)) vars._nav_history = [];
+
+          // Navigation command: Back / Previous
+          const isBackCmd = ["0", "back", "previous", "prev", "go back", "return", "undo", "exit", "b", "p", "⬅️", "🔙", "↩️"].includes(lowerText);
+          if (isBackCmd) {
+            if (currentNode.config?.back_node_key) {
+              nextNodeKey = currentNode.config.back_node_key;
+            } else if (vars._nav_history.length > 0) {
+              nextNodeKey = vars._nav_history.pop();
+            } else {
+              nextNodeKey = flow.entry_node_key || "start";
+            }
+          }
+
+          // Navigation command: Next / More
+          const isNextCmd = !isBackCmd && ["next", "more", "next page", "page 2", "continue", "forward", "n", "➡️"].includes(lowerText);
+          if (isNextCmd && (currentNode.config?.next_page_key || currentNode.config?.next_node_key)) {
+            nextNodeKey = currentNode.config.next_page_key || currentNode.config.next_node_key;
+            if (!vars._nav_history.includes(currentNode.node_key)) {
+              vars._nav_history.push(currentNode.node_key);
+            }
+          }
+
           let matched = null;
 
-          const numMatch = rawTrimmed.match(/^(?:option\s*|opt\s*|#\s*)?(\d+)[.)]?$/i);
-          if (numMatch) {
-            const idx = parseInt(numMatch[1], 10) - 1;
-            if (idx >= 0 && idx < buttons.length) matched = buttons[idx];
+          if (!nextNodeKey) {
+            const numMatch = rawTrimmed.match(/^(?:option\s*|opt\s*|choice\s*|select\s*|#\s*)?(\d+)[.)]?$/i);
+            if (numMatch) {
+              const numVal = parseInt(numMatch[1], 10);
+              if (numVal === 0) {
+                if (currentNode.config?.back_node_key) {
+                  nextNodeKey = currentNode.config.back_node_key;
+                } else if (vars._nav_history.length > 0) {
+                  nextNodeKey = vars._nav_history.pop();
+                } else {
+                  nextNodeKey = flow.entry_node_key || "start";
+                }
+              } else {
+                const idx = numVal - 1;
+                if (idx >= 0 && idx < buttons.length) matched = buttons[idx];
+              }
+            }
           }
-          if (!matched) {
+
+          if (!nextNodeKey && !matched) {
             matched = buttons.find(b => 
-              (b.reply_id && b.reply_id.toLowerCase() === lowerText) ||
-              (b.id && b.id.toLowerCase() === lowerText) ||
-              (b.title && b.title.toLowerCase() === lowerText) ||
-              (b.title && (lowerText.includes(b.title.toLowerCase()) || b.title.toLowerCase().includes(lowerText)))
+              (b.reply_id && String(b.reply_id).toLowerCase() === lowerText) ||
+              (b.id && String(b.id).toLowerCase() === lowerText) ||
+              (b.title && String(b.title).toLowerCase() === lowerText)
             );
           }
 
+          if (!nextNodeKey && !matched && rawTrimmed.length >= 2) {
+            const cleanInput = rawTrimmed.replace(/^[^\w\s]+/, "").toLowerCase().trim();
+            matched = buttons.find(b => {
+              if (!b.title) return false;
+              const cleanTitle = b.title.replace(/^\d+[\s.)-]+\s*/, "").replace(/^[^\w\s]+/, "").toLowerCase().trim();
+              return (
+                cleanTitle === cleanInput ||
+                cleanInput.includes(cleanTitle) ||
+                cleanTitle.includes(cleanInput)
+              );
+            });
+          }
+
           if (matched) {
+            if (!vars._nav_history.includes(currentNode.node_key)) {
+              vars._nav_history.push(currentNode.node_key);
+            }
             vars.selected_option = matched.title;
             vars.selected_option_id = matched.reply_id || matched.id;
-            currentNodeKey = matched.next_node_key || matched.next_node;
-          } else {
-            currentNodeKey = currentNode.config?.fallback_node_key || currentNode.config?.next_node_key || (buttons[0] && (buttons[0].next_node_key || buttons[0].next_node));
+            nextNodeKey = matched.next_node_key || matched.next_node;
+          } else if (!nextNodeKey) {
+            nextNodeKey = currentNode.config?.fallback_node_key || currentNode.config?.next_node_key || (buttons[0] && (buttons[0].next_node_key || buttons[0].next_node));
           }
         }
       }
+
+      currentNodeKey = nextNodeKey;
     }
 
     // 2. Chain execute nodes until suspension
@@ -1266,14 +1386,14 @@ class WaFlowEngine {
     });
   }
 
-  async sendFlowMedia(phone, mediaType, mediaUrl, caption, sessionKey = null) {
+  async sendFlowMedia(phone, mediaType, mediaUrl, caption, filename = "", sessionKey = null) {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
     const formattedCaption = caption ? mdToWa.toWhatsApp(caption) : "";
 
-    await this.recordAndEmitBotMessage(phone, formattedCaption || `[Media Attachment: ${mediaType}]`, "media");
+    await this.recordAndEmitBotMessage(phone, formattedCaption || filename || `[Media Attachment: ${mediaType}]`, "media");
 
-    return await waLoadBalancer.sendMediaMessage(phone, mediaType || "image", mediaUrl, formattedCaption, sessionKey).catch((e) => {
+    return await waLoadBalancer.sendMediaMessage(phone, mediaType || "image", mediaUrl, formattedCaption, filename, sessionKey).catch((e) => {
       console.warn("sendFlowMedia error:", e.message);
       return null;
     });

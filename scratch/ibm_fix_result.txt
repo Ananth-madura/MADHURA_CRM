@@ -1,0 +1,6 @@
+=== Connecting to IBM-SERVER MySQL === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2003 (HY000): Can't connect to MySQL server on '192.168.0.145:3306' (10060)
+ 
+=== BEFORE FIX - quotation_items.description === 
+mysql: [Warning] Using a password on the command line interface can be insecure.

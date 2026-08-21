@@ -5,53 +5,115 @@ const wa = require("../services/whatsappCloudApi");
 const { getQueueStats } = require("../services/waCampaignEngine");
 const { configureForUser, resetToEnvConfig } = require("../services/waConfigHelper");
 const { verifyToken } = require("../middleware/authMiddleware");
-const { encrypt } = require("../backendutil/cryptoHelper");
+const { encrypt, decrypt } = require("../backendutil/cryptoHelper");
 
-router.get("/status", (req, res) => {
+router.get("/status", async (req, res) => {
+  if (req.user?.id) {
+    await configureForUser(req.user.id);
+  }
   res.json(wa.getConfig());
 });
 
-router.get("/user-config", verifyToken, (req, res) => {
+router.get("/user-config", verifyToken, async (req, res) => {
   const userId = req.user.id;
-  db.query(
-    "SELECT id, phone_number_id, waba_id, app_secret, verify_token, business_account_id, is_enabled FROM user_wa_configs WHERE user_id = ?",
-    [userId],
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: "Failed to check WA config" });
-      if (!rows.length) return res.json({ hasConfig: false });
-      res.json({ hasConfig: true, config: rows[0] });
-    }
-  );
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT id, phone_number_id, waba_id, verify_token, business_account_id, is_enabled FROM user_wa_configs WHERE user_id = ?",
+      [userId]
+    );
+    if (!rows.length) return res.json({ hasConfig: false });
+    res.json({
+      hasConfig: true,
+      config: {
+        ...rows[0],
+        display_phone_number: wa.displayPhoneNumber || null,
+        verified_name: wa.verifiedName || null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to check WA config: " + err.message });
+  }
 });
 
 router.post("/save-config", verifyToken, async (req, res) => {
   const userId = req.user.id;
   const { phone_number_id, access_token, waba_id, app_secret, verify_token, business_account_id, is_enabled } = req.body;
 
-  if (!phone_number_id || !access_token) {
-    return res.status(400).json({ message: "Phone Number ID and Access Token are required" });
+  if (!phone_number_id) {
+    return res.status(400).json({ message: "Phone Number ID is required" });
   }
 
-  const encrypted_token = encrypt(access_token);
-  const encrypted_secret = app_secret ? encrypt(app_secret) : null;
-
   try {
-    const [existing] = await db.promise().query("SELECT id FROM user_wa_configs WHERE user_id = ?", [userId]);
+    const [existing] = await db.promise().query(
+      "SELECT id, access_token, app_secret FROM user_wa_configs WHERE user_id = ?",
+      [userId]
+    );
+
+    let encrypted_token;
+    if (access_token && access_token !== "••••••••••••••••") {
+      encrypted_token = encrypt(access_token.trim());
+    } else if (existing.length && existing[0].access_token) {
+      encrypted_token = existing[0].access_token;
+    } else {
+      return res.status(400).json({ message: "Access Token is required" });
+    }
+
+    let encrypted_secret = null;
+    if (app_secret && app_secret !== "••••••••••••••••") {
+      encrypted_secret = encrypt(app_secret.trim());
+    } else if (existing.length && existing[0].app_secret) {
+      encrypted_secret = existing[0].app_secret;
+    }
 
     if (existing.length) {
       await db.promise().query(
         `UPDATE user_wa_configs SET phone_number_id=?, access_token=?, waba_id=?, app_secret=?, verify_token=?, business_account_id=?, is_enabled=? WHERE user_id=?`,
-        [phone_number_id, encrypted_token, waba_id || null, encrypted_secret, verify_token || "crm_verify_123", business_account_id || null, is_enabled !== false, userId]
+        [phone_number_id.trim(), encrypted_token, waba_id?.trim() || null, encrypted_secret, verify_token?.trim() || "crm_verify_123", business_account_id?.trim() || null, is_enabled !== false, userId]
       );
     } else {
       await db.promise().query(
         `INSERT INTO user_wa_configs (user_id, phone_number_id, access_token, waba_id, app_secret, verify_token, business_account_id, is_enabled) VALUES (?,?,?,?,?,?,?,?)`,
-        [userId, phone_number_id, encrypted_token, waba_id || null, encrypted_secret, verify_token || "crm_verify_123", business_account_id || null, is_enabled !== false]
+        [userId, phone_number_id.trim(), encrypted_token, waba_id?.trim() || null, encrypted_secret, verify_token?.trim() || "crm_verify_123", business_account_id?.trim() || null, is_enabled !== false]
       );
     }
 
     await configureForUser(userId);
-    res.json({ success: true, message: "WhatsApp configuration saved successfully!" });
+
+    // Fetch and save phone details into wa_accounts for Multi-Account manager
+    try {
+      const phoneInfo = await wa.getPhoneNumberInfo();
+      if (phoneInfo) {
+        wa.displayPhoneNumber = phoneInfo.display_phone_number || wa.displayPhoneNumber;
+        wa.verifiedName = phoneInfo.verified_name || wa.verifiedName;
+        await db.promise().query(
+          `INSERT INTO wa_accounts (account_name, phone_number, phone_number_id, access_token, waba_id, connection_type, is_active, is_default)
+           VALUES (?, ?, ?, ?, ?, 'cloud_api', 1, 1)
+           ON DUPLICATE KEY UPDATE
+             account_name = VALUES(account_name),
+             phone_number = VALUES(phone_number),
+             access_token = VALUES(access_token),
+             waba_id = VALUES(waba_id),
+             is_active = 1,
+             updated_at = NOW()`,
+          [
+            phoneInfo.verified_name || `Meta Cloud (${phoneInfo.display_phone_number || phone_number_id})`,
+            phoneInfo.display_phone_number?.replace(/\D/g, "") || phone_number_id,
+            phone_number_id.trim(),
+            encrypted_token,
+            waba_id?.trim() || null,
+          ]
+        );
+      }
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: "WhatsApp configuration saved successfully!",
+      phoneInfo: {
+        display_phone_number: wa.displayPhoneNumber,
+        verified_name: wa.verifiedName,
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: "Failed to save config: " + err.message });
   }
@@ -59,22 +121,35 @@ router.post("/save-config", verifyToken, async (req, res) => {
 
 router.post("/test-connection", verifyToken, async (req, res) => {
   const userId = req.user.id;
-  const { phone_number_id, access_token, waba_id } = req.body;
+  let { phone_number_id, access_token, waba_id } = req.body;
 
-  if (!phone_number_id || !access_token) {
-    return res.status(400).json({ message: "Phone Number ID and Access Token are required" });
+  if (!phone_number_id) {
+    return res.status(400).json({ message: "Phone Number ID is required" });
+  }
+
+  if (!access_token || access_token === "••••••••••••••••") {
+    const [existing] = await db.promise().query(
+      "SELECT access_token FROM user_wa_configs WHERE user_id = ?",
+      [userId]
+    );
+    if (existing.length && existing[0].access_token) {
+      access_token = decrypt(existing[0].access_token);
+    } else {
+      return res.status(400).json({ message: "Access Token is required" });
+    }
   }
 
   try {
-    wa.phoneNumberId = phone_number_id;
-    wa.accessToken = access_token;
-    wa.wabaId = waba_id || "";
+    wa.phoneNumberId = phone_number_id.trim();
+    wa.accessToken = access_token.trim();
+    wa.wabaId = waba_id?.trim() || "";
 
     const phoneInfo = await wa.getPhoneNumberInfo();
-    resetToEnvConfig();
+    wa.displayPhoneNumber = phoneInfo?.display_phone_number || "";
+    wa.verifiedName = phoneInfo?.verified_name || "";
     res.json({ success: true, message: "Connection verified!", phoneInfo });
   } catch (err) {
-    resetToEnvConfig();
+    await configureForUser(userId).catch(() => resetToEnvConfig());
     const errMsg = err.response?.data?.error?.message || err.message;
     res.status(400).json({ success: false, message: `Connection failed: ${errMsg}` });
   }

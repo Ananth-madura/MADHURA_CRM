@@ -203,10 +203,20 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
 
         {/* Action & Config Buttons */}
         <div className="flex items-center gap-2 ml-auto pr-1">
-          {statusPhone && (
-            <span className="hidden xl:flex text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg items-center gap-1.5 shadow-sm">
+          {status?.cloud?.configured || status?.isCloud ? (
+            <span className="hidden sm:flex text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg items-center gap-1.5 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+              <span>☁️ Meta API: {status?.phone ? `+${status.phone}` : "Active"}</span>
+            </span>
+          ) : status?.web?.connected || status?.isWeb || statusPhone ? (
+            <span className="hidden sm:flex text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg items-center gap-1.5 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
-              +{statusPhone}
+              <span>📱 +{status?.phone || statusPhone}</span>
+            </span>
+          ) : (
+            <span className="hidden sm:flex text-xs font-bold text-gray-500 bg-gray-50 border border-gray-200 px-2.5 py-1.5 rounded-lg items-center gap-1.5 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+              <span>Offline</span>
             </span>
           )}
 

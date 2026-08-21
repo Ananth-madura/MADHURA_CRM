@@ -1,0 +1,5 @@
+=== DB Server Info === 
+mysql: [Warning] Using a password on the command line interface can be insecure.
+host	port	user
+Alex	3306	achme_user@localhost
+Done 
