@@ -130,13 +130,38 @@ router.post("/test-send", async (req, res) => {
 
 router.get("/qr", async (req, res) => {
   try {
+    const session = s(req);
     if (req.query.force === "true" || req.query.refresh === "true") {
-      await s(req).logout().catch(() => {});
+      await session.logout().catch(() => {});
+      await session.init(true).catch(() => {});
     }
-    const qr = await s(req).getQr();
-    res.json({ qr });
+
+    // Fast-path: return cached QR instantly if already in memory (<1ms)
+    if (session.qrCode) {
+      return res.json({ qr: session.qrCode, initializing: false, connected: false });
+    }
+    if (session.ready) {
+      return res.json({ qr: null, initializing: false, connected: true });
+    }
+
+    // Wait at most 12s so proxies (Nginx / Cloudflare / Vite) never hit 504 Gateway Timeout
+    const qr = await session.getQr(12000);
+    res.json({
+      qr: qr || session.qrCode || null,
+      initializing: session.isInitializing,
+      connected: session.ready,
+    });
   } catch (err) {
-    res.status(408).json({ error: err.message || "QR timeout" });
+    const session = s(req);
+    if (session.isInitializing || !session.ready) {
+      return res.json({
+        qr: session.qrCode || null,
+        initializing: session.isInitializing,
+        connected: session.ready,
+        message: "QR code is initializing in background...",
+      });
+    }
+    res.status(500).json({ error: err.message || "Failed to generate QR code" });
   }
 });
 
@@ -489,7 +514,28 @@ router.post("/send-location", async (req, res) => {
 router.post("/logout", async (req, res) => {
   try {
     await s(req).logout();
-    res.json({ success: true });
+    res.json({ success: true, message: "WhatsApp session disconnected successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/reconnect", async (req, res) => {
+  try {
+    const session = s(req);
+    await session.init(false);
+    res.json({ success: true, message: "Reconnection triggered in background", initializing: session.isInitializing });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/reset-session", async (req, res) => {
+  try {
+    const session = s(req);
+    await session.logout().catch(() => {});
+    await session.init(true).catch(() => {});
+    res.json({ success: true, message: "Session reset and fresh QR initialization started", initializing: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

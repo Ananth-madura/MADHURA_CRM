@@ -1496,58 +1496,12 @@ class WaFlowEngine {
 
   interpolate(template, vars = {}) {
     if (!template || typeof template !== "string") return "";
-    
-    const known = {
-      name: vars.name || vars.customer_name || "Valued Customer",
-      customer_name: vars.name || vars.customer_name || "Valued Customer",
-      company: vars.company || vars.company_name || "ACHME Solutions",
-      company_name: vars.company || vars.company_name || "ACHME Solutions",
-      city: vars.city || vars.location_city || vars.booking_city || "our city",
-      service: vars.service || vars.product || vars.service_inquiry || "AMC & Services",
-      date: vars.date || new Date().toLocaleDateString("en-IN"),
-      start_time: vars.start_time || "09:00 AM",
-      end_time: vars.end_time || "08:00 PM",
-      amount: vars.amount ? `₹${vars.amount}` : "",
-      invoice_no: vars.invoice_no || vars.invoice_number || "",
-      due_date: vars.due_date || "",
-      booking_date: vars.booking_date || "",
-      booking_city: vars.booking_city || vars.city || "",
-      selected_option: vars.selected_option || "",
-      payment_status: vars.payment_status || "Pending",
-      amc_contract_no: vars.amc_contract_no || "",
-      amc_status: vars.amc_status || "Active",
-      amc_expiry: vars.amc_expiry || "",
-    };
-
-    // 1. Resolve {placeholder} and {{placeholder}} tokens
-    let text = template.replace(/\{\{?\s*([\w.]+)\s*\}?\}/g, (match, key) => {
-      const parts = key.split(".");
-      const prop = (parts.length > 1 ? parts[1] : parts[0]).toLowerCase();
-      if (Object.prototype.hasOwnProperty.call(known, prop) && known[prop] !== "") {
-        return known[prop];
-      }
-      if (vars[prop] !== undefined && vars[prop] !== null) {
-        return String(vars[prop]);
-      }
-      if (vars[key] !== undefined && vars[key] !== null) {
-        return String(vars[key]);
-      }
-      return match;
-    });
-
-    // 2. Resolve Spintax text variation {Option 1|Option 2}
-    const spintaxRegex = /\{([^{}]+)\}/g;
-    let iterations = 0;
-    while (text.match(spintaxRegex) && iterations < 5) {
-      text = text.replace(spintaxRegex, (_, choices) => {
-        if (!choices.includes("|")) return `{${choices}}`;
-        const options = choices.split("|");
-        return options[Math.floor(Math.random() * options.length)].trim();
-      });
-      iterations++;
+    try {
+      const { formatMessagePlaceholders } = require("./waAutomationService");
+      return formatMessagePlaceholders(template, vars.name || vars.customer_name, vars);
+    } catch (_) {
+      return template;
     }
-
-    return text;
   }
 
   async logEvent(runId, nodeKey, eventType, payload = {}) {

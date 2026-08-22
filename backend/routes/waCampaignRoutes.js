@@ -28,14 +28,186 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
+// ── Test Spintax Variations ──────────────────────────────────────────────────
+router.post("/test-spintax", auth, async (req, res) => {
+  try {
+    const { text, count = 5 } = req.body;
+    if (!text) return res.status(400).json({ error: "Text is required" });
+    const { parseSpintax } = require("../services/waCampaignEngine");
+    const samples = [];
+    for (let i = 0; i < Math.min(10, Math.max(1, count)); i++) {
+      samples.push(parseSpintax(text));
+    }
+    res.json({ success: true, original: text, samples });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Multi-Tenant Sender Pools ────────────────────────────────────────────────
+router.get("/sender-pools", auth, async (req, res) => {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const [pools] = await db.promise().query(
+      `SELECT p.*, COUNT(m.id) as total_members,
+              SUM(IF(m.is_active = 1, 1, 0)) as active_members,
+              SUM(m.sent_today) as total_sent_today
+       FROM wa_sender_pools p
+       LEFT JOIN wa_sender_pool_members m ON p.id = m.pool_id
+       WHERE p.tenant_id = ? OR p.tenant_id IS NULL
+       GROUP BY p.id ORDER BY p.id DESC`,
+      [tenantId]
+    );
+    res.json(pools);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/sender-pools", auth, async (req, res) => {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const { pool_name, routing_strategy = "round_robin", description = null } = req.body;
+    if (!pool_name) return res.status(400).json({ error: "pool_name is required" });
+
+    const [result] = await db.promise().query(
+      `INSERT INTO wa_sender_pools (tenant_id, pool_name, routing_strategy, description, created_by)
+       VALUES (?, ?, ?, ?, ?)`,
+      [tenantId, pool_name, routing_strategy, description, req.user?.id || null]
+    );
+    const [pool] = await db.promise().query("SELECT * FROM wa_sender_pools WHERE id = ?", [result.insertId]);
+    res.status(201).json(pool[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/sender-pools/:id", auth, async (req, res) => {
+  try {
+    const [pool] = await db.promise().query("SELECT * FROM wa_sender_pools WHERE id = ?", [req.params.id]);
+    if (!pool.length) return res.status(404).json({ error: "Pool not found" });
+    const [members] = await db.promise().query(
+      "SELECT * FROM wa_sender_pool_members WHERE pool_id = ? ORDER BY id ASC",
+      [req.params.id]
+    );
+    res.json({ ...pool[0], members });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/sender-pools/:id/members", auth, async (req, res) => {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const { phone_number, sender_type = "web_session", account_id = null, session_key = null, weight = 1, daily_limit = 1000, hourly_limit = 150 } = req.body;
+    if (!phone_number) return res.status(400).json({ error: "phone_number is required" });
+
+    const [result] = await db.promise().query(
+      `INSERT INTO wa_sender_pool_members (
+        pool_id, tenant_id, account_id, session_key, phone_number, sender_type,
+        weight, daily_limit, hourly_limit, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        req.params.id, tenantId, account_id, session_key || String(req.user?.id || 1),
+        phone_number.replace(/\D/g, ""), sender_type, parseInt(weight) || 1,
+        parseInt(daily_limit) || 1000, parseInt(hourly_limit) || 150
+      ]
+    );
+    res.status(201).json({ success: true, memberId: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/sender-pools/:id/members/:memberId", auth, async (req, res) => {
+  try {
+    await db.promise().query("DELETE FROM wa_sender_pool_members WHERE id = ? AND pool_id = ?", [req.params.memberId, req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Anti-Ban & Warmup Settings ───────────────────────────────────────────────
+router.get("/anti-ban/settings", auth, async (req, res) => {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || 1;
+    const [rows] = await db.promise().query(
+      "SELECT * FROM wa_anti_ban_settings WHERE (tenant_id = ? AND user_id = ?) OR id = 1 LIMIT 1",
+      [tenantId, userId]
+    );
+    res.json(rows[0] || {
+      warmup_enabled: 1,
+      min_delay_sec: 8,
+      max_delay_sec: 20,
+      pause_every_messages: 30,
+      pause_duration_sec: 180,
+      daily_limit: 1000,
+      hourly_limit: 150,
+      spintax_enabled: 1,
+      opt_out_auto_detect: 1
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/anti-ban/settings", auth, async (req, res) => {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || 1;
+    const {
+      warmup_enabled = 1, min_delay_sec = 8, max_delay_sec = 20,
+      pause_every_messages = 30, pause_duration_sec = 180,
+      daily_limit = 1000, hourly_limit = 150, spintax_enabled = 1,
+      opt_out_auto_detect = 1, working_hours_enabled = 1,
+      start_time = "09:00", end_time = "20:00"
+    } = req.body;
+
+    await db.promise().query(
+      `INSERT INTO wa_anti_ban_settings (
+        tenant_id, user_id, warmup_enabled, min_delay_sec, max_delay_sec,
+        pause_every_messages, pause_duration_sec, daily_limit, hourly_limit,
+        spintax_enabled, opt_out_auto_detect, working_hours_enabled, start_time, end_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        warmup_enabled = VALUES(warmup_enabled),
+        min_delay_sec = VALUES(min_delay_sec),
+        max_delay_sec = VALUES(max_delay_sec),
+        pause_every_messages = VALUES(pause_every_messages),
+        pause_duration_sec = VALUES(pause_duration_sec),
+        daily_limit = VALUES(daily_limit),
+        hourly_limit = VALUES(hourly_limit),
+        spintax_enabled = VALUES(spintax_enabled),
+        opt_out_auto_detect = VALUES(opt_out_auto_detect),
+        working_hours_enabled = VALUES(working_hours_enabled),
+        start_time = VALUES(start_time),
+        end_time = VALUES(end_time)`,
+      [
+        tenantId, userId, warmup_enabled ? 1 : 0, parseInt(min_delay_sec) || 8, parseInt(max_delay_sec) || 20,
+        parseInt(pause_every_messages) || 30, parseInt(pause_duration_sec) || 180,
+        parseInt(daily_limit) || 1000, parseInt(hourly_limit) || 150,
+        spintax_enabled ? 1 : 0, opt_out_auto_detect ? 1 : 0,
+        working_hours_enabled ? 1 : 0, start_time, end_time
+      ]
+    );
+    res.json({ success: true, message: "Anti-ban settings saved successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Create campaign ───────────────────────────────────────────────────────────
 router.post("/", auth, async (req, res) => {
   try {
+    const tenantId = req.user?.tenant_id || 1;
     const {
       name, description, type, template_id, message_text, media_type, media_url, group_id, scheduled_at,
       whatsapp_number, daily_limit, start_time, end_time, timezone, random_delay_min, random_delay_max,
       pause_every, pause_duration_min, pause_duration_max, retry_failed, max_retries, retry_delay_min,
-      retry_delay_max, exclude_prev_recipients, duplicate_filter
+      retry_delay_max, exclude_prev_recipients, duplicate_filter, pool_id, routing_strategy = "round_robin",
+      spintax_enabled = 1, warmup_mode = 0
     } = req.body;
 
     if (!name) return res.status(400).json({ error: "name required" });
@@ -52,22 +224,23 @@ router.post("/", auth, async (req, res) => {
         scheduled_at, total_contacts, whatsapp_number, daily_limit, start_time, end_time, timezone,
         random_delay_min, random_delay_max, pause_every, pause_duration_min, pause_duration_max,
         retry_failed, max_retries, retry_delay_min, retry_delay_max, exclude_prev_recipients,
-        duplicate_filter, created_by, session_key
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        duplicate_filter, pool_id, routing_strategy, spintax_enabled, warmup_mode, tenant_id, created_by, session_key
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         name, description || null, type || "text", template_id || null, message_text || null,
         media_type || null, media_url || null, group_id || null,
         scheduled_at ? "scheduled" : "draft", scheduled_at || null, totalContacts,
         whatsapp_number || null, parseInt(daily_limit) || 0,
-        start_time || "09:00", end_time || "21:00", timezone || "Asia/Kolkata",
-        parseInt(random_delay_min) || 8, parseInt(random_delay_max) || 15,
-        parseInt(pause_every) || 25, parseInt(pause_duration_min) || 120, parseInt(pause_duration_max) || 300,
+        start_time || "09:00", end_time || "20:00", timezone || "Asia/Kolkata",
+        parseInt(random_delay_min) || 8, parseInt(random_delay_max) || 16,
+        parseInt(pause_every) || 30, parseInt(pause_duration_min) || 120, parseInt(pause_duration_max) || 240,
         retry_failed !== false ? 1 : 0, parseInt(max_retries) || 3,
         parseInt(retry_delay_min) || 15, parseInt(retry_delay_max) || 30,
         exclude_prev_recipients ? 1 : 0, duplicate_filter !== false ? 1 : 0,
-        req.user?.id || null,
-        // Send from the number this user linked, not whichever is default.
-        String(req.user?.id || "")
+        pool_id ? parseInt(pool_id) : null, routing_strategy || "round_robin",
+        spintax_enabled !== false ? 1 : 0, warmup_mode ? 1 : 0,
+        tenantId, req.user?.id || null,
+        String(req.user?.id || "1")
       ]
     );
     const [row] = await db.promise().query("SELECT * FROM wa_campaigns WHERE id = ?", [result.insertId]);
@@ -491,6 +664,7 @@ router.post("/upload-media", auth, upload.single("file"), async (req, res) => {
 // ── Wizard broadcast: contacts + message (text/template/media) + optional location ─
 router.post("/create-wizard", auth, async (req, res) => {
   try {
+    const tenantId = req.user?.tenant_id || 1;
     const {
       name,
       contacts,
@@ -503,6 +677,10 @@ router.post("/create-wizard", auth, async (req, res) => {
       daily_limit = 800,
       start_time = "09:00",
       end_time = "20:00",
+      pool_id = null,
+      routing_strategy = "round_robin",
+      spintax_enabled = 1,
+      warmup_mode = 0,
     } = req.body;
     if (!name) return res.status(400).json({ error: "name required" });
     if (!contacts || !Array.isArray(contacts) || !contacts.length) {
@@ -515,8 +693,8 @@ router.post("/create-wizard", auth, async (req, res) => {
 
     const userConfigLoaded = await configureForUser(req.user.id);
     const webReady = require("../services/whatsappService").get(req.user.id).ready;
-    if (!userConfigLoaded && !wa.isConfigured() && !webReady) {
-      return res.status(400).json({ error: "WhatsApp not connected. Scan the QR on the WhatsApp Accounts page, or add Cloud API credentials in Settings > WhatsApp Config." });
+    if (!userConfigLoaded && !wa.isConfigured() && !webReady && !pool_id) {
+      return res.status(400).json({ error: "WhatsApp not connected. Scan the QR on the WhatsApp Accounts page, select a sender pool, or add Cloud API credentials." });
     }
     if (!userConfigLoaded) resetToEnvConfig();
 
@@ -533,30 +711,48 @@ router.post("/create-wizard", auth, async (req, res) => {
     }
 
     const [grpRes] = await db.promise().query(
-      "INSERT INTO wa_contact_groups (name, description, created_by) VALUES (?,?,?)",
-      [name + " (Group)", `Wizard campaign group for ${contacts.length} contacts`, req.user?.id || null]
+      "INSERT INTO wa_contact_groups (name, description, tenant_id, created_by) VALUES (?,?,?,?)",
+      [name + " (Group)", `Wizard campaign group for ${contacts.length} contacts`, tenantId, req.user?.id || null]
     );
     const groupId = grpRes.insertId;
 
     const groupValues = contacts.map(c => [
       groupId, c.name || null,
       String(c.phone).replace(/[^0-9]/g, "").slice(-10),
-      c.country_code || "91", c.source || null
+      c.country_code || "91", c.source || null, tenantId
     ]);
     await db.promise().query(
-      "INSERT IGNORE INTO wa_group_contacts (group_id, name, phone, country_code, notes) VALUES ?",
+      "INSERT IGNORE INTO wa_group_contacts (group_id, name, phone, country_code, notes, tenant_id) VALUES ?",
       [groupValues]
-    );
+    ).catch(async () => {
+      // Fallback if tenant_id column doesn't exist on wa_group_contacts
+      const legacyGroupValues = contacts.map(c => [
+        groupId, c.name || null,
+        String(c.phone).replace(/[^0-9]/g, "").slice(-10),
+        c.country_code || "91", c.source || null
+      ]);
+      await db.promise().query(
+        "INSERT IGNORE INTO wa_group_contacts (group_id, name, phone, country_code, notes) VALUES ?",
+        [legacyGroupValues]
+      );
+    });
 
     const campaignType = templateName ? "template" : (media_url ? "media" : "text");
     const [campRes] = await db.promise().query(
-      `INSERT INTO wa_campaigns (name, description, type, message_text, media_type, media_url, group_id, status, total_contacts,
-        random_delay_min, random_delay_max, pause_every, pause_duration_min, daily_limit, start_time, end_time, retry_failed, duplicate_filter, created_by, session_key)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [name, `Wizard campaign for ${contacts.length} contacts`, campaignType, message_text || null,
+      `INSERT INTO wa_campaigns (
+        name, description, type, message_text, media_type, media_url, group_id, status, total_contacts,
+        random_delay_min, random_delay_max, pause_every, pause_duration_min, daily_limit, start_time, end_time,
+        retry_failed, duplicate_filter, pool_id, routing_strategy, spintax_enabled, warmup_mode, tenant_id, created_by, session_key
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        name, `Wizard campaign for ${contacts.length} contacts`, campaignType, message_text || null,
         media_type || null, media_url || null, groupId, "running", contacts.length,
         parseInt(delay_min) || 35, parseInt(delay_max) || 55, parseInt(pause_every) || 25, parseInt(pause_duration_min) || 180,
-        parseInt(daily_limit) || 800, start_time || "09:00", end_time || "20:00", 1, 1, req.user?.id || null, String(req.user?.id || "")]
+        parseInt(daily_limit) || 800, start_time || "09:00", end_time || "20:00", 1, 1,
+        pool_id ? parseInt(pool_id) : null, routing_strategy || "round_robin",
+        spintax_enabled !== false ? 1 : 0, warmup_mode ? 1 : 0,
+        tenantId, req.user?.id || null, String(req.user?.id || "1")
+      ]
     );
     const campaignId = campRes.insertId;
 
@@ -566,23 +762,39 @@ router.post("/create-wizard", auth, async (req, res) => {
       c.name, message_text || null, templateName, templateComponents.length ? JSON.stringify(templateComponents) : null,
       media_type || null, media_url || null,
       location?.lat ?? null, location?.lng ?? null, location?.name || null, location?.address || null,
-      "queued"
+      "queued", pool_id ? parseInt(pool_id) : null, tenantId
     ]);
 
     await db.promise().query(
       `INSERT INTO wa_campaign_messages
         (campaign_id, phone, contact_name, message_text, template_name, template_components, media_type, media_url,
-         location_lat, location_lng, location_name, location_address, status)
+         location_lat, location_lng, location_name, location_address, status, pool_id, tenant_id)
        VALUES ?`,
       [messageList]
-    );
+    ).catch(async () => {
+      // Fallback without pool_id & tenant_id columns
+      const legacyMessageList = groupContacts.map(c => [
+        campaignId, (c.country_code || "91") + c.phone.replace(/^0+/, ""),
+        c.name, message_text || null, templateName, templateComponents.length ? JSON.stringify(templateComponents) : null,
+        media_type || null, media_url || null,
+        location?.lat ?? null, location?.lng ?? null, location?.name || null, location?.address || null,
+        "queued"
+      ]);
+      await db.promise().query(
+        `INSERT INTO wa_campaign_messages
+          (campaign_id, phone, contact_name, message_text, template_name, template_components, media_type, media_url,
+           location_lat, location_lng, location_name, location_address, status)
+         VALUES ?`,
+        [legacyMessageList]
+      );
+    });
 
     await db.promise().query("UPDATE wa_campaigns SET started_at=NOW() WHERE id=?", [campaignId]);
 
     const { startCampaignEngine } = require("../services/waCampaignEngine");
     startCampaignEngine(campaignId);
 
-    res.status(201).json({ success: true, campaignId, totalContacts: contacts.length, delayMin: delay_min, delayMax: delay_max });
+    res.status(201).json({ success: true, campaignId, totalContacts: contacts.length, delayMin: delay_min, delayMax: delay_max, poolId: pool_id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

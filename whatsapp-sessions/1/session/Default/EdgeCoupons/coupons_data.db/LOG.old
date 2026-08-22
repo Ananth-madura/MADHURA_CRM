@@ -1,0 +1,5 @@
+2026/08/22-10:54:05.551 397c Creating DB E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/08/22-10:54:06.599 397c Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/08/22-10:54:26.914 752c Level-0 table #5: started
+2026/08/22-10:54:26.922 752c Level-0 table #5: 683273 bytes OK
+2026/08/22-10:54:26.928 752c Delete type=0 #3

@@ -10,6 +10,7 @@ import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
 import WhatsAppInteractiveReminders from "../components/WhatsAppInteractiveReminders";
+import WAVariablePicker from "../components/WAVariablePicker";
 
 const TRIGGER_TYPES = [
   { value: "welcome_message", label: "Welcome Message", desc: "First inbound message / contact added", emoji: "👋" },
@@ -1059,26 +1060,44 @@ export default function WhatsAppAutomations() {
                 </div>
 
                 {form.msg_kind === "text" && (
-                  <div>
+                  <div className="space-y-2">
+                    <WAVariablePicker
+                      onInsert={(tag) => setForm((f) => ({ ...f, message_text: (f.message_text || "") + " " + tag }))}
+                    />
+
                     <textarea
-                      rows={3}
+                      rows={4}
                       value={form.message_text || ""}
                       onChange={(e) => setForm((f) => ({ ...f, message_text: e.target.value }))}
                       className="w-full p-3 border rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-amber-500 resize-none font-sans"
-                      placeholder="Type dynamic message here..."
+                      placeholder="Type dynamic message here, e.g. Hello {{name}}! Your invoice {{invoice_no}} for {{amount}} is due on {{due_date}}..."
                     />
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {PLACEHOLDERS.map((p) => (
-                        <button
-                          key={p.tag}
-                          type="button"
-                          onClick={() => insertPlaceholder("message_text", p.tag)}
-                          className="px-2 py-0.5 bg-white text-amber-800 border border-amber-200 rounded text-[10px] font-mono hover:bg-amber-100"
-                        >
-                          + {p.tag}
-                        </button>
-                      ))}
-                    </div>
+
+                    {form.message_text && (
+                      <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1 text-xs">
+                        <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase">
+                          <span className="flex items-center gap-1"><Sparkles size={11} /> Live Preview:</span>
+                          <span className="text-[9px] text-emerald-400 font-mono">Dynamic Per Recipient</span>
+                        </div>
+                        <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap">
+                          {form.message_text
+                            .replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim())
+                            .replace(/\{([^{}]+)\}/g, (_, choices) => choices.includes("|") ? choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim() : `{${choices}}`)
+                            .replace(/\{\{?\s*name\s*\}?\}/gi, "Rahul Sharma")
+                            .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rahul")
+                            .replace(/\{\{?\s*company\s*\}?\}/gi, "Apex Logistics")
+                            .replace(/\{\{?\s*address\s*\}?\}/gi, "Plot 42, MIDC Industrial Area")
+                            .replace(/\{\{?\s*city\s*\}?\}/gi, "Mumbai")
+                            .replace(/\{\{?\s*invoice_no\s*\}?\}/gi, "INV-2026-092")
+                            .replace(/\{\{?\s*amount\s*\}?\}/gi, "₹14,800")
+                            .replace(/\{\{?\s*due_date\s*\}?\}/gi, "2026-08-30")
+                            .replace(/\{\{?\s*service\s*\}?\}/gi, "HVAC Maintenance AMC")
+                            .replace(/\{\{?\s*greeting_time\s*\}?\}/gi, new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")
+                            .replace(/\{\{?\s*time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
+                            .replace(/\{\{?\s*date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

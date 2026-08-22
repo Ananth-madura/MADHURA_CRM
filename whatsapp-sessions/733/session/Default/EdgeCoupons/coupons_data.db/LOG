@@ -1,6 +1,6 @@
-2026/08/21-11:58:18.930 2b48 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/08/21-11:58:18.934 2b48 Recovering log #49
-2026/08/21-11:58:18.936 2b48 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/000049.log 
-2026/08/21-11:58:20.156 fd4 Level-0 table #53: started
-2026/08/21-11:58:20.169 fd4 Level-0 table #53: 683376 bytes OK
-2026/08/21-11:58:20.174 fd4 Delete type=0 #49
+2026/08/22-11:28:42.824 7528 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/08/22-11:28:42.826 7528 Recovering log #65
+2026/08/22-11:28:42.827 7528 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/000065.log 
+2026/08/22-11:28:50.220 3b1c Level-0 table #69: started
+2026/08/22-11:28:50.227 3b1c Level-0 table #69: 683376 bytes OK
+2026/08/22-11:28:50.230 3b1c Delete type=0 #65

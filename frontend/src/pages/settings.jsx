@@ -32,6 +32,8 @@ const Settings = () => {
 
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [twoFaLoading, setTwoFaLoading] = useState(false);
+  const [waStatus, setWaStatus] = useState(null);
+  const [aiSettings, setAiSettings] = useState(null);
   const { user, login } = useAuth();
 
   useEffect(() => {
@@ -55,7 +57,22 @@ const Settings = () => {
         console.error("Failed to fetch 2FA status:", err);
       }
     };
+
+    const fetchWaStatus = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [sRes, aiRes] = await Promise.all([
+          axios.get(`${API}/api/whatsapp/unified-status`, { headers }).catch(() => null),
+          axios.get(`${API}/api/wa/ai/settings`, { headers }).catch(() => null),
+        ]);
+        if (sRes?.data) setWaStatus(sRes.data);
+        if (aiRes?.data) setAiSettings(aiRes.data);
+      } catch (_) {}
+    };
+
     fetch2FAStatus();
+    fetchWaStatus();
   }, []);
 
   const handle2FAToggle = async () => {
@@ -266,57 +283,101 @@ const Settings = () => {
             {activeSection === "whatsapp" && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">WhatsApp Engine & Integration Settings</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Manage multi-device WhatsApp Web connectivity, Meta Cloud API tokens, contact synchronization, and anti-ban broadcast safety.
-                  </p>
+                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">WhatsApp Engine & AI Control Center</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Manage 24/7 AI conversational intelligence, API keys, WhatsApp Web sessions, and Meta Cloud API credentials.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate("/dashboard/whatsapp/accounts")}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-purple-500/20"
+                    >
+                      Open Full Control Hub →
+                    </button>
+                  </div>
+
+                  {/* Live Status Overview Banner */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-6 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                        <Shield size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900">Active Engine:</span>
+                          <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                            {waStatus?.activeEngine || (waStatus?.web?.connected ? "WhatsApp Web" : waStatus?.cloud?.configured ? "Meta Cloud API" : "Offline")}
+                          </span>
+                        </div>
+                        <p className="text-gray-500 text-[11px] mt-0.5">
+                          {waStatus?.phone ? `Linked Number: +${waStatus.phone}` : "No device or cloud API linked"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1 rounded-full border font-bold text-[11px] flex items-center gap-1.5 ${
+                        aiSettings?.enabled ? "bg-purple-50 text-purple-800 border-purple-200" : "bg-gray-100 text-gray-600 border-gray-200"
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${aiSettings?.enabled ? "bg-purple-600 animate-pulse" : "bg-gray-400"}`} />
+                        <span>AI Assistant: {aiSettings?.enabled ? "ACTIVE" : "PAUSED"}</span>
+                      </span>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl flex flex-col justify-between">
                       <div>
-                        <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">AI Intelligence</span>
-                        <h4 className="text-base font-bold text-purple-950 mt-1">AI Assistant & Lead Capture</h4>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">AI Intelligence</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${aiSettings?.has_api_key ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                            {aiSettings?.has_api_key ? "Key Configured" : "Key Missing"}
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-purple-950 mt-1">AI Assistant & API Key</h4>
                         <p className="text-xs text-purple-800 mt-1">
-                          Configure OpenAI, Gemini, Llama models, system personas, and automatic CRM lead capture.
+                          Configure OpenRouter, OpenAI, Gemini, Groq, or DeepSeek API keys, models, and lead capture.
                         </p>
                       </div>
                       <button
                         onClick={() => navigate("/dashboard/whatsapp/accounts")}
                         className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
                       >
-                        Configure AI Bot →
+                        Manage AI & Keys →
                       </button>
                     </div>
 
                     <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col justify-between">
                       <div>
                         <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Engine Status</span>
-                        <h4 className="text-base font-bold text-emerald-950 mt-1">Multi-Engine WhatsApp Manager</h4>
+                        <h4 className="text-base font-bold text-emerald-950 mt-1">WhatsApp Web & QR Code</h4>
                         <p className="text-xs text-emerald-800 mt-1">
-                          Configure Meta Cloud API credentials or scan QR for direct WhatsApp Web multi-device session.
+                          Scan live QR code or link via phone pairing code with anti-ban humanized pacing.
                         </p>
                       </div>
                       <button
                         onClick={() => navigate("/dashboard/whatsapp/accounts")}
                         className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
                       >
-                        Manage Accounts & API →
+                        Scan QR & Reconnect →
                       </button>
                     </div>
 
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex flex-col justify-between">
                       <div>
-                        <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Contacts & Audiences</span>
-                        <h4 className="text-base font-bold text-blue-950 mt-1">WhatsApp Contacts Sync</h4>
+                        <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Meta Cloud API</span>
+                        <h4 className="text-base font-bold text-blue-950 mt-1">Official Meta Business API</h4>
                         <p className="text-xs text-blue-800 mt-1">
-                          Sync contacts from CRM leads, import CSV lists, and manage opt-in consents.
+                          Manage Permanent Access Tokens, Phone Number ID, Webhooks, and Quality Tier.
                         </p>
                       </div>
                       <button
-                        onClick={() => navigate("/dashboard/whatsapp/contacts")}
+                        onClick={() => navigate("/dashboard/whatsapp/accounts")}
                         className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm self-start"
                       >
-                        Open Contacts Manager →
+                        Meta Credentials →
                       </button>
                     </div>
                   </div>

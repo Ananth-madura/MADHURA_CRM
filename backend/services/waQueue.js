@@ -64,33 +64,26 @@ async function startWorker() {
   }
 }
 
-async function processSingleMessage(campaignId, contactId, phone, message, templateName, templateComponents) {
-  const waCloud = require("./whatsappCloudApi");
-  const waWeb = require("./whatsappService").default();
+async function processSingleMessage(campaignId, contactId, phone, message, templateName, templateComponents, sessionKey = 1, poolId = null, routingStrategy = "round_robin", tenantId = 1) {
+  const waLoadBalancer = require("./waLoadBalancer");
   try {
     let result;
-    if (waCloud.isConfigured()) {
-      if (templateName) {
-        result = await waCloud.sendTemplate(phone, templateName, "en", templateComponents || []);
-      } else {
-        result = await waCloud.sendText(phone, message);
-      }
-    } else if (waWeb.ready) {
-      const formattedPhone = phone.includes("@c.us") ? phone : `${phone.replace(/\D/g, "")}@c.us`;
-      result = await waWeb.sendMessage(formattedPhone, message);
+    if (templateName) {
+      result = await waLoadBalancer.sendTemplateMessage(phone, templateName, "en", templateComponents || [], sessionKey, null, poolId, routingStrategy, tenantId);
     } else {
-      throw new Error("Neither Meta Cloud API nor WhatsApp Web linked session is ready.");
+      result = await waLoadBalancer.sendTextMessage(phone, message, sessionKey, null, poolId, routingStrategy, tenantId);
     }
 
-    const msgId = result?.messages?.[0]?.id || result?.id?._serialized || "sent_" + Date.now();
+    const msgId = result?.result?.messages?.[0]?.id || result?.result?.id?._serialized || "sent_" + Date.now();
+    const senderPhone = result?.senderPhone || null;
 
     await db.promise().query(
-      `UPDATE wa_campaign_messages SET status = 'sent', wa_message_id = ?, sent_at = NOW() WHERE id = ?`,
-      [msgId, contactId]
+      `UPDATE wa_campaign_messages SET status = 'sent', wa_message_id = ?, sender_phone = ?, pool_id = ?, sent_at = NOW() WHERE id = ?`,
+      [msgId, senderPhone, poolId || null, contactId]
     );
     await db.promise().query(
-      `UPDATE wa_message_logs SET status = 'sent', wa_message_id = ?, metadata = ? WHERE campaign_message_id = ?`,
-      [msgId, JSON.stringify(result || {}), contactId]
+      `UPDATE wa_message_logs SET status = 'sent', wa_message_id = ?, sender_phone = ?, metadata = ? WHERE campaign_message_id = ?`,
+      [msgId, senderPhone, JSON.stringify(result || {}), contactId]
     );
   } catch (err) {
     const errorMsg = err.response?.data?.error?.message || err.message;

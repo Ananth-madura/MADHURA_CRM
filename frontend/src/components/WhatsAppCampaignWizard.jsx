@@ -67,6 +67,11 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
   // ── Step 4: review & anti-ban settings ────────────────────────────────────
   const [campaignName, setCampaignName] = useState("");
   const [pacingMode, setPacingMode] = useState("safe_800"); // "safe_800" | "standard"
+  const [senderPools, setSenderPools] = useState([]);
+  const [selectedPoolId, setSelectedPoolId] = useState("");
+  const [routingStrategy, setRoutingStrategy] = useState("round_robin");
+  const [spintaxEnabled, setSpintaxEnabled] = useState(true);
+  const [warmupMode, setWarmupMode] = useState(false);
   const [launching, setLaunching] = useState(false);
 
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem("token")}` });
@@ -80,6 +85,10 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
     setMediaFile(null); setMediaPreview(null); setUploadedMedia(null);
     setIncludeLocation(false); setLocName(""); setLocAddress(""); setLocLat(""); setLocLng("");
     setCampaignName("");
+    setSelectedPoolId("");
+    setRoutingStrategy("round_robin");
+    setSpintaxEnabled(true);
+    setWarmupMode(false);
 
     setCrmLoading(true);
     axios.get(`${API}/api/wa/groups/sources/all`, { headers: headers() })
@@ -88,6 +97,9 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
       .finally(() => setCrmLoading(false));
     axios.get(`${API}/api/wa/templates`, { headers: headers() })
       .then(({ data }) => setTemplates(data || []))
+      .catch(() => {});
+    axios.get(`${API}/api/wa/campaigns/sender-pools`, { headers: headers() })
+      .then(({ data }) => setSenderPools(data || []))
       .catch(() => {});
   }, [isOpen]);
 
@@ -241,6 +253,10 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
         daily_limit: isSafeMode ? 800 : 0,
         start_time: "09:00",
         end_time: "20:00",
+        pool_id: selectedPoolId ? parseInt(selectedPoolId) : null,
+        routing_strategy: routingStrategy,
+        spintax_enabled: spintaxEnabled ? 1 : 0,
+        warmup_mode: warmupMode ? 1 : 0,
       };
       const { data } = await axios.post(`${API}/api/wa/campaigns/create-wizard`, payload, { headers: headers() });
       if (onSuccess) onSuccess(data);
@@ -611,6 +627,70 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                     <span className="text-gray-700 truncate">{locName || `${locLat}, ${locLng}`}</span>
                   </div>
                 )}
+              </div>
+
+              {/* Sender Pool / Load Balancer Selector */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    🌐 Sender Load Balancer & Multi-Number Pool
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    {senderPools.length > 0 ? `${senderPools.length} Pool(s) Available` : "Direct Account Mode"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-600 block mb-1">Sender Route</label>
+                    <select
+                      value={selectedPoolId}
+                      onChange={(e) => setSelectedPoolId(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-[#25D366] outline-none"
+                    >
+                      <option value="">👤 My Linked WhatsApp Number (Single)</option>
+                      {senderPools.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          📦 {p.pool_name} ({p.active_members || 0} numbers)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-600 block mb-1">Distribution Strategy</label>
+                    <select
+                      value={routingStrategy}
+                      onChange={(e) => setRoutingStrategy(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-[#25D366] outline-none"
+                    >
+                      <option value="round_robin">🔄 Round-Robin (Equal Distribution)</option>
+                      <option value="least_loaded">⚖️ Least-Loaded (Lowest Daily Count)</option>
+                      <option value="cloud_first">☁️ Cloud API First (High Volume)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={warmupMode}
+                      onChange={(e) => setWarmupMode(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#25D366] focus:ring-[#25D366]"
+                    />
+                    <span className="font-semibold text-gray-700">New Number Safe Warm-Up Curve</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={spintaxEnabled}
+                      onChange={(e) => setSpintaxEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#25D366] focus:ring-[#25D366]"
+                    />
+                    <span className="font-semibold text-gray-700">Dynamic Spintax Variation</span>
+                  </label>
+                </div>
               </div>
 
               {/* Anti-Ban Pacing Mode Selector */}

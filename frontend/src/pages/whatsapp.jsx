@@ -346,12 +346,12 @@ export default function WhatsAppPage() {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       let res;
       try {
-        res = await axios.get(`${API}/api/whatsapp/unified-status`, { headers });
+        res = await axios.get(`${API}/api/whatsapp/unified-status`, { headers, timeout: 10000 });
       } catch (e1) {
         try {
-          res = await axios.get(`/api/whatsapp/unified-status`, { headers });
+          res = await axios.get(`/api/whatsapp/unified-status`, { headers, timeout: 10000 });
         } catch (e2) {
-          res = await axios.get(`${API}/api/whatsapp/status`, { headers });
+          res = await axios.get(`${API}/api/whatsapp/status`, { headers, timeout: 10000 });
         }
       }
       const raw = res.data;
@@ -359,6 +359,7 @@ export default function WhatsAppPage() {
       const isWeb = Boolean(raw.web?.connected || raw.isWeb);
       const isConnected = Boolean(raw.connected || isCloud || isWeb);
       const activePhone = raw.phone || raw.web?.phone || raw.cloud?.display_phone_number || raw.cloud?.phoneNumberId || null;
+      const serverQr = raw.qr || raw.web?.qr || null;
 
       const flat = {
         connected: isConnected,
@@ -367,7 +368,7 @@ export default function WhatsAppPage() {
         phone: activePhone,
         activeEngine: raw.activeEngine || (isCloud && isWeb ? "Dual (Cloud API + Web)" : isCloud ? "Meta Cloud API" : isWeb ? "WhatsApp Web" : "Disconnected"),
         initializing: raw.web?.initializing || false,
-        hasQr: raw.web?.hasQr || false,
+        hasQr: Boolean(raw.web?.hasQr || serverQr),
         cloud: raw.cloud || null,
         web: raw.web || null,
       };
@@ -375,6 +376,11 @@ export default function WhatsAppPage() {
       setStatus(flat);
       if (flat.connected) {
         setQrCode(null);
+        setQrLoading(false);
+      } else if (serverQr) {
+        setQrCode(serverQr);
+        setQrLoading(false);
+        setError(null);
       }
       return flat;
     } catch {
@@ -391,26 +397,37 @@ export default function WhatsAppPage() {
       const endpoint = force ? "/api/whatsapp/qr?force=true" : "/api/whatsapp/qr";
       let res;
       try {
-        res = await axios.get(`${API}${endpoint}`, { headers, timeout: 70000 });
+        res = await axios.get(`${API}${endpoint}`, { headers, timeout: 20000 });
       } catch (e1) {
-        res = await axios.get(endpoint, { headers, timeout: 70000 });
+        res = await axios.get(endpoint, { headers, timeout: 20000 });
       }
       if (res.data && res.data.qr) {
         setQrCode(res.data.qr);
         setStatus((s) => ({ ...s, hasQr: true }));
+        setQrLoading(false);
+      } else if (res.data && res.data.initializing) {
+        // Still initializing in background — keep spinner, websocket and status polling will pick it up
+        setQrLoading(true);
       } else if (res.data && res.data.error) {
         setError(res.data.error);
+        setQrLoading(false);
       } else {
-        // No QR needed — a saved session was restored directly. The status poll
-        // below will flip the UI over to the connected chat view momentarily.
+        // Connected or completed without QR
         fetchStatus();
+        setQrLoading(false);
       }
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || "Failed to connect to WhatsApp backend server. Please verify server status.";
-      setError(msg);
+      if (err.response?.status === 504 || err.code === "ECONNABORTED") {
+        console.warn("ℹ️ WhatsApp QR generation in progress in background...");
+        // Keep loading state alive for WebSocket wa_qr or status polling
+        setQrLoading(true);
+      } else {
+        const msg = err.response?.data?.error || err.message || "Failed to generate QR code. Please click Fresh QR / Reset.";
+        setError(msg);
+        setQrLoading(false);
+      }
     }
-    setQrLoading(false);
-  }, []);
+  }, [fetchStatus]);
 
   const fetchChats = useCallback(async (refresh = false) => {
     setChatsLoading(true);
@@ -1339,7 +1356,23 @@ export default function WhatsAppPage() {
       fetchAccountDetails();
     };
 
+    const handleWaQr = (data) => {
+      const qrVal = data?.qr || (typeof data === "string" ? data : null);
+      if (qrVal) {
+        setQrCode(qrVal);
+        setQrLoading(false);
+        setError(null);
+        setStatus((s) => ({ ...s, hasQr: true }));
+      }
+    };
+    const handleWaDisconnected = () => {
+      setStatus((s) => ({ ...s, connected: false, isWeb: false }));
+      fetchStatus();
+    };
+
+    socket.on("wa_qr", handleWaQr);
     socket.on("wa_ready", handleWaReady);
+    socket.on("wa_disconnected", handleWaDisconnected);
     socket.on("wa_contacts_synced", handleWaSynced);
     socket.on("wa_chats_synced", handleWaSynced);
 
@@ -1376,7 +1409,9 @@ export default function WhatsAppPage() {
       socket.off("wa_message", handleRealtimeUpdate);
       socket.off("wa_chat_history_updated", handleChatHistoryUpdated);
       socket.off("wa_agent_handoff", handleHandoffAlert);
+      socket.off("wa_qr", handleWaQr);
       socket.off("wa_ready", handleWaReady);
+      socket.off("wa_disconnected", handleWaDisconnected);
       socket.off("wa_contacts_synced", handleWaSynced);
       socket.off("wa_chats_synced", handleWaSynced);
       socket.off("wa_chat_read", handleChatReadEvent);

@@ -8,6 +8,7 @@ import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
 import WhatsAppCampaignWizard from "../components/WhatsAppCampaignWizard";
+import WAVariablePicker from "../components/WAVariablePicker";
 
 const STATUS_COLORS = {
   draft: "bg-gray-100 text-gray-600 border-gray-200",
@@ -667,83 +668,49 @@ export default function WACampaigns() {
                     <span className="text-[10px] text-gray-400 font-mono">{(f.message_text || "").length} chars</span>
                   </div>
 
-                  {/* Clickable Placeholders Toolbar */}
-                  <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11px] font-bold text-emerald-900 uppercase">Insert Dynamic Placeholders:</span>
-                      <span className="text-[10px] text-emerald-700">Click to insert</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {PLACEHOLDERS.map(({ tag, label }) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + tag }))}
-                          className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md font-mono text-[11px] transition shadow-2xs"
-                          title={`Insert ${label}`}
-                        >
-                          + {tag}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Spintax Quick Pickers & Variations */}
-                    <div className="space-y-1.5 pt-2 border-t border-emerald-200/60 mt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-gray-700 uppercase flex items-center gap-1">
-                          <Sparkles size={11} className="text-amber-500" />
-                          <span>Anti-Ban Spintax & Dynamic Word Randomizers:</span>
-                        </span>
-                        <span className="text-[9px] text-emerald-700 font-semibold">Random per recipient</span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1">
-                        {[
-                          { label: "+ [hii|heloo|welcom|yes we are|how it's|how that all]", val: "[hii|heloo|welcom|yes we are|how it's|how that all]" },
-                          { label: "+ {Hi|Hello|Hey|Greetings|Welcome}", val: "{Hi|Hello|Hey|Greetings|Welcome}" },
-                          { label: "+ {Hope you're well|Good day|Trust all is well}", val: "{Hope you are doing well|Good day|Trust you are having a great week}" },
-                          { label: "+ {We are pleased to offer|Yes we are here with|Excited to share}", val: "{We are pleased to share|Yes we are here with|Excited to introduce}" },
-                          { label: "+ {Best regards|Warm regards|Thanks & Regards}", val: "{Best regards|Warm regards|Thanks & Regards}" },
-                          { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
-                        ].map(s => (
-                          <button
-                            key={s.label}
-                            type="button"
-                            onClick={() => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + s.val }))}
-                            className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-mono text-[10px] rounded border border-amber-300 transition shadow-2xs font-semibold"
-                          >
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  <WAVariablePicker
+                    onInsert={(tag) => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + tag }))}
+                    className="mb-2"
+                  />
 
                   <textarea
                     value={f.message_text}
                     onChange={e => setForm({ ...f, message_text: e.target.value })}
                     rows={4}
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none font-sans"
-                    placeholder="Hello {name}! [hii|heloo|welcom|yes we are|how it's|how that all] Thank you for reaching out to {company}..."
+                    placeholder="Hello {{name}}! {{greeting_time}}, thank you for reaching out to {{company}}. Your service {{service}} in {{city}} is scheduled for {{date}} at {{time}}..."
                   />
 
-                  {/* Live Spintax Randomization Preview */}
-                  {f.message_text && (f.message_text.includes("|") || f.message_text.includes("{")) && (
-                    <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                  {/* Live Multi-Dynamic & Spintax Randomization Preview */}
+                  {f.message_text && (
+                    <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1.5 text-xs mt-2">
                       <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase tracking-wider">
-                        <span className="flex items-center gap-1"><Sparkles size={12} /> Live Anti-Ban Random Sample:</span>
-                        <span className="text-[9px] text-slate-400 font-mono">100% Unique Per Contact</span>
+                        <span className="flex items-center gap-1"><Sparkles size={12} /> Live Multi-Dynamic Sample Preview:</span>
+                        <span className="text-[9px] text-emerald-400 font-mono">100% Unique Per Contact</span>
                       </div>
-                      <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap">
+                      <div className="p-2.5 bg-slate-800/90 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
                         {f.message_text
                           .replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim())
                           .replace(/\{([^{}]+)\}/g, (_, choices) => choices.includes("|") ? choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim() : `{${choices}}`)
-                          .replace(/\{name\}/gi, "Rahul Sharma")
-                          .replace(/\{company\}/gi, "ACHME Solutions")
-                          .replace(/\{service\}/gi, "AC Maintenance AMC")
-                          .replace(/\{city\}/gi, "Mumbai")
-                          .replace(/\{amount\}/gi, "₹12,500")
-                          .replace(/\{date\}/gi, new Date().toLocaleDateString("en-IN"))}
+                          .replace(/\{\{?\s*name\s*\}?\}/gi, "Rahul Sharma")
+                          .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rahul")
+                          .replace(/\{\{?\s*company\s*\}?\}/gi, "Apex Logistics")
+                          .replace(/\{\{?\s*phone\s*\}?\}/gi, "+91 98765 43210")
+                          .replace(/\{\{?\s*address\s*\}?\}/gi, "Plot 42, MIDC Industrial Area")
+                          .replace(/\{\{?\s*city\s*\}?\}/gi, "Mumbai")
+                          .replace(/\{\{?\s*state\s*\}?\}/gi, "Maharashtra")
+                          .replace(/\{\{?\s*email\s*\}?\}/gi, "rahul@apexlogistics.com")
+                          .replace(/\{\{?\s*service\s*\}?\}/gi, "HVAC Maintenance AMC")
+                          .replace(/\{\{?\s*invoice_no\s*\}?\}/gi, "INV-2026-092")
+                          .replace(/\{\{?\s*amount\s*\}?\}/gi, "₹14,800")
+                          .replace(/\{\{?\s*due_date\s*\}?\}/gi, "2026-08-30")
+                          .replace(/\{\{?\s*greeting_time\s*\}?\}/gi, new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")
+                          .replace(/\{\{?\s*time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
+                          .replace(/\{\{?\s*current_time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
+                          .replace(/\{\{?\s*date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
+                          .replace(/\{\{?\s*current_date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
+                          .replace(/\{\{?\s*day\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { weekday: "long" }))
+                          .replace(/\{\{?\s*agent_name\s*\}?\}/gi, "Pooja Mehta")}
                       </div>
                     </div>
                   )}

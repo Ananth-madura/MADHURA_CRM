@@ -692,13 +692,120 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_ai_settings", "custom_api_url", "VARCHAR(255) DEFAULT NULL");
   await addColumnIfNotExists("wa_ai_settings", "auto_lead_capture", "TINYINT(1) DEFAULT 1");
   await addColumnIfNotExists("wa_ai_settings", "human_handoff_keywords", "VARCHAR(255) DEFAULT 'human, agent, executive, support, speak to person, call me'");
+  await addColumnIfNotExists("wa_ai_settings", "handoff_cooldown_min", "INT DEFAULT 180");
+  await addColumnIfNotExists("wa_ai_settings", "typing_delay_sec", "INT DEFAULT 2");
   await addColumnIfNotExists("wa_ai_settings", "temperature", "DECIMAL(3,2) DEFAULT 0.70");
   await addColumnIfNotExists("wa_ai_settings", "max_tokens", "INT DEFAULT 350");
+  await addColumnIfNotExists("wa_ai_settings", "working_hours_only", "TINYINT(1) DEFAULT 0");
+  await addColumnIfNotExists("wa_ai_settings", "work_start_time", "VARCHAR(10) DEFAULT '09:00'");
+  await addColumnIfNotExists("wa_ai_settings", "work_end_time", "VARCHAR(10) DEFAULT '20:00'");
+  await addColumnIfNotExists("wa_ai_settings", "fallback_message", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_ai_settings", "enable_crm_tools", "TINYINT(1) DEFAULT 1");
 
   // 9. wa_automation_options column additions
   await addColumnIfNotExists("wa_automation_options", "action_type", "VARCHAR(50) DEFAULT 'reply_text'");
   await addColumnIfNotExists("wa_automation_options", "action_payload", "JSON DEFAULT NULL");
   await addColumnIfNotExists("wa_automation_options", "next_step_text", "TEXT DEFAULT NULL");
+
+  // 10. Multi-Tenant SaaS, Load Balancer & Anti-Ban Architecture Tables & Columns
+  const multiTenantTables = [
+    `CREATE TABLE IF NOT EXISTS wa_sender_pools (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      tenant_id INT DEFAULT 1,
+      pool_name VARCHAR(255) NOT NULL,
+      routing_strategy ENUM('round_robin', 'least_loaded', 'weighted', 'health_scored', 'cloud_first') DEFAULT 'round_robin',
+      is_active TINYINT(1) DEFAULT 1,
+      description TEXT DEFAULT NULL,
+      created_by INT DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_tenant (tenant_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS wa_sender_pool_members (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      pool_id INT NOT NULL,
+      tenant_id INT DEFAULT 1,
+      account_id INT DEFAULT NULL,
+      session_key VARCHAR(100) DEFAULT NULL,
+      phone_number VARCHAR(30) NOT NULL,
+      sender_type ENUM('cloud_api', 'web_session') DEFAULT 'web_session',
+      weight INT DEFAULT 1,
+      daily_limit INT DEFAULT 1000,
+      hourly_limit INT DEFAULT 150,
+      sent_today INT DEFAULT 0,
+      sent_this_hour INT DEFAULT 0,
+      last_sent_date DATE DEFAULT NULL,
+      last_sent_hour INT DEFAULT NULL,
+      consecutive_errors INT DEFAULT 0,
+      in_cooldown_until DATETIME DEFAULT NULL,
+      health_status ENUM('healthy', 'warning', 'cooldown', 'offline') DEFAULT 'healthy',
+      is_active TINYINT(1) DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (pool_id) REFERENCES wa_sender_pools(id) ON DELETE CASCADE,
+      INDEX idx_pool (pool_id),
+      INDEX idx_tenant (tenant_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS wa_anti_ban_settings (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      tenant_id INT DEFAULT 1,
+      user_id INT DEFAULT NULL,
+      warmup_enabled TINYINT(1) DEFAULT 1,
+      warmup_start_date DATE DEFAULT NULL,
+      min_delay_sec INT DEFAULT 8,
+      max_delay_sec INT DEFAULT 20,
+      pause_every_messages INT DEFAULT 30,
+      pause_duration_sec INT DEFAULT 180,
+      daily_limit INT DEFAULT 1000,
+      hourly_limit INT DEFAULT 150,
+      spintax_enabled TINYINT(1) DEFAULT 1,
+      opt_out_auto_detect TINYINT(1) DEFAULT 1,
+      working_hours_enabled TINYINT(1) DEFAULT 1,
+      start_time VARCHAR(10) DEFAULT '09:00',
+      end_time VARCHAR(10) DEFAULT '20:00',
+      timezone VARCHAR(50) DEFAULT 'Asia/Kolkata',
+      is_active TINYINT(1) DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_tenant_user (tenant_id, user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  ];
+
+  for (const tbl of multiTenantTables) {
+    try {
+      await queryAsync(tbl);
+    } catch (e) {
+      console.warn("⚠️ Pool table warning:", e.message);
+    }
+  }
+
+  // Multi-Tenant Isolation column upgrades across all WhatsApp tables
+  const tenantScopedTables = [
+    "wa_campaigns", "wa_campaign_messages", "wa_accounts", "wa_contacts",
+    "wa_opt_outs", "wa_message_logs", "wa_templates", "wa_contact_groups",
+    "wa_automations", "wa_interactive_reminders", "wa_flows"
+  ];
+  for (const tbl of tenantScopedTables) {
+    await addColumnIfNotExists(tbl, "tenant_id", "INT DEFAULT 1");
+    await addIndexIfNotExists(tbl, `idx_${tbl}_tenant`, "tenant_id");
+  }
+
+  // Load balancing & Anti-ban columns on campaigns & message logs
+  await addColumnIfNotExists("wa_campaigns", "pool_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaigns", "routing_strategy", "VARCHAR(50) DEFAULT 'round_robin'");
+  await addColumnIfNotExists("wa_campaigns", "spintax_enabled", "TINYINT(1) DEFAULT 1");
+  await addColumnIfNotExists("wa_campaigns", "warmup_mode", "TINYINT(1) DEFAULT 0");
+
+  await addColumnIfNotExists("wa_campaign_messages", "sender_phone", "VARCHAR(30) DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "sender_account_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaign_messages", "pool_id", "INT DEFAULT NULL");
+
+  await addColumnIfNotExists("wa_message_logs", "sender_phone", "VARCHAR(30) DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "sender_account_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "pool_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_message_logs", "tenant_id", "INT DEFAULT 1");
 
   // ── Seed Prebuilt Templates, Reminders and Automation Rules ───────────────────────────
   try {

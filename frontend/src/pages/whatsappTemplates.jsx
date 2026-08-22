@@ -6,40 +6,41 @@ import {
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
+import WAVariablePicker from "../components/WAVariablePicker";
 import { useNavigate } from "react-router-dom";
-
-const PLACEHOLDER_ITEMS = [
-  { key: "{name}", label: "Name", desc: "Customer's Name", example: "Rajesh Kumar", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  { key: "{company}", label: "Company", desc: "Company / Shop Name", example: "ACHME Solutions", color: "bg-purple-50 text-purple-700 border-purple-200" },
-  { key: "{service}", label: "Service", desc: "Service / Product Item", example: "AC Maintenance & AMC", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  { key: "{city}", label: "City", desc: "Customer City", example: "Chennai", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
-  { key: "{date}", label: "Date", desc: "Today's Date", example: new Date().toLocaleDateString("en-IN"), color: "bg-amber-50 text-amber-700 border-amber-200" },
-  { key: "{start_time}", label: "Start Time", desc: "Opening Hour", example: "09:00 AM", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  { key: "{end_time}", label: "End Time", desc: "Closing Hour", example: "08:00 PM", color: "bg-pink-50 text-pink-700 border-pink-200" },
-  { key: "{amount}", label: "Amount", desc: "Invoice / Bill Amount", example: "₹4,500", color: "bg-teal-50 text-teal-700 border-teal-200" },
-  { key: "{invoice_no}", label: "Invoice #", desc: "Invoice Number", example: "INV-2026-089", color: "bg-orange-50 text-orange-700 border-orange-200" },
-  { key: "{due_date}", label: "Due Date", desc: "Payment Due Date", example: "25 Aug 2026", color: "bg-rose-50 text-rose-700 border-rose-200" },
-];
-
-const SPINTAX_PRESETS = [
-  { label: "+ Greeting {Hi|Hello|Dear}", val: "{Hi|Hello|Dear}" },
-  { label: "+ Opening {Hope you are well|Greetings}", val: "{Hope you are doing well|Greetings from our team}" },
-  { label: "+ Closing {Best regards|Warm wishes}", val: "{Best regards|Warm wishes}" },
-  { label: "+ Opt-out Footer", val: "\n\nReply STOP to unsubscribe" },
-];
 
 // Sample preview resolver for interactive phone preview
 function renderPreviewText(templateText) {
   if (!templateText) return "Type your message or insert placeholders to preview...";
   let result = templateText;
-  PLACEHOLDER_ITEMS.forEach(p => {
-    result = result.split(p.key).join(p.example);
-  });
-  // Simple spintax resolution for preview
+  
+  // Resolve Spintax choices
+  result = result.replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[0].trim());
   result = result.replace(/\{([^{}]+)\}/g, (_, choices) => {
     if (!choices.includes("|")) return `{${choices}}`;
     return choices.split("|")[0].trim();
   });
+
+  // Resolve all standard & custom multi-dynamic placeholders
+  result = result
+    .replace(/\{\{?\s*name\s*\}?\}/gi, "Rajesh Kumar")
+    .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rajesh")
+    .replace(/\{\{?\s*company\s*\}?\}/gi, "ACHME Solutions")
+    .replace(/\{\{?\s*phone\s*\}?\}/gi, "+91 98765 43210")
+    .replace(/\{\{?\s*address\s*\}?\}/gi, "12, Mount Road, Guindy")
+    .replace(/\{\{?\s*city\s*\}?\}/gi, "Chennai")
+    .replace(/\{\{?\s*service\s*\}?\}/gi, "AC Maintenance & AMC")
+    .replace(/\{\{?\s*invoice_no\s*\}?\}/gi, "INV-2026-089")
+    .replace(/\{\{?\s*amount\s*\}?\}/gi, "₹14,500")
+    .replace(/\{\{?\s*due_date\s*\}?\}/gi, "25 Aug 2026")
+    .replace(/\{\{?\s*greeting_time\s*\}?\}/gi, new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")
+    .replace(/\{\{?\s*time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
+    .replace(/\{\{?\s*current_time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
+    .replace(/\{\{?\s*date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
+    .replace(/\{\{?\s*current_date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
+    .replace(/\{\{?\s*day\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { weekday: "long" }))
+    .replace(/\{\{?\s*agent_name\s*\}?\}/gi, "Pooja Mehta");
+
   return result;
 }
 
@@ -525,43 +526,10 @@ export default function WATemplates() {
                     <span className="text-[10px] text-gray-400 font-mono">{(form.body || "").length} chars</span>
                   </div>
 
-                  {/* Quick Click Placeholders Toolbar */}
-                  <div className="mb-2 bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200/70">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">
-                        ✨ Insert Dynamic Placeholders:
-                      </span>
-                      <span className="text-[10px] text-emerald-700">Click to insert into message</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5">
-                      {PLACEHOLDER_ITEMS.map((p) => (
-                        <button
-                          key={p.key}
-                          type="button"
-                          onClick={() => insertPlaceholder(p.key)}
-                          className="px-2 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-mono font-semibold transition shadow-2xs"
-                        >
-                          + {p.key}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Anti-Ban Spintax helpers */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-200/50 mt-2">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase">Spintax:</span>
-                      {SPINTAX_PRESETS.map((s) => (
-                        <button
-                          key={s.label}
-                          type="button"
-                          onClick={() => insertPlaceholder(s.val)}
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-md text-[10px] font-semibold transition"
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <WAVariablePicker
+                    onInsert={(tag) => insertPlaceholder(tag)}
+                    className="mb-2"
+                  />
 
                   <textarea
                     ref={bodyTextareaRef}

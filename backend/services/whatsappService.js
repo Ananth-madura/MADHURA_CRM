@@ -148,20 +148,25 @@ class WhatsAppService {
   }
 
   async _doInit(forceFresh = false) {
-    if (this.client && !forceFresh && !this.isInitializing) return;
+    if (this.ready) return;
     if (this.isInitializing && !forceFresh) return;
+    if (this.client && !forceFresh && !this.isInitializing && (this.ready || this.qrCode)) return;
 
     const sessionPath = this.sessionPath;
+    // Clean up any stale/dead client instance before initializing a new one
+    if (this.client) {
+      try {
+        await this.client.destroy().catch(() => {});
+      } catch (_) {}
+      this.client = null;
+    }
+
     // Only wipe the saved session on an explicit reset (forceFresh). A normal
     // reconnect — e.g. after a server restart — must reuse the saved LocalAuth
     // session so the linked device stays connected until the user logs out,
     // instead of forcing a fresh QR scan every time the process restarts.
     if (forceFresh) {
       try {
-        if (this.client) {
-          await this.client.destroy().catch(() => {});
-          this.client = null;
-        }
         if (fs.existsSync(sessionPath)) {
           fs.rmSync(sessionPath, { recursive: true, force: true });
         }
@@ -169,17 +174,29 @@ class WhatsAppService {
     }
 
     // Each live session is a headless Chrome holding WhatsApp Web (~350-500MB
-    // RSS). Cap how many can run at once so linking a 4th number degrades into
-    // a clear error instead of swapping the CRM to death.
-    const maxSessions = Number(process.env.WA_MAX_SESSIONS || 3);
-    const liveCount = all().filter((s) => s !== this && s.client).length;
-    if (liveCount >= maxSessions) {
-      throw new Error(
-        `Maximum of ${maxSessions} WhatsApp sessions are already active. Log one out first, or raise WA_MAX_SESSIONS.`
-      );
+    // RSS). On a multi-tenant VPS with 120+ tenants, LRU session hibernation
+    // frees idle browser memory while preserving saved login tokens on disk.
+    const maxSessions = Number(process.env.WA_MAX_SESSIONS || 15);
+    const liveSessions = all().filter((s) => s !== this && s.client);
+    if (liveSessions.length >= maxSessions) {
+      // Find oldest idle session to hibernate
+      const oldestIdle = liveSessions
+        .filter((s) => s.ready && !s.isInitializing && !s._isSending)
+        .sort((a, b) => (a.lastActiveAt || 0) - (b.lastActiveAt || 0))[0];
+
+      if (oldestIdle) {
+        console.log(`💤 [VPS Memory Optimizer] Hibernating idle session ${oldestIdle.key} to make room for session ${this.key}`);
+        await oldestIdle.hibernate();
+      } else {
+        throw new Error(
+          `Maximum of ${maxSessions} active WhatsApp browser sessions reached. Please use Meta Cloud API for high-volume bulk marketing.`
+        );
+      }
     }
 
     this.isInitializing = true;
+    this._isHibernated = false;
+    this.lastActiveAt = Date.now();
     if (!fs.existsSync(sessionPath)) {
       fs.mkdirSync(sessionPath, { recursive: true });
     }
@@ -268,6 +285,7 @@ class WhatsAppService {
         this.ready = false;
         this.isInitializing = false;
         console.log("✅ WhatsApp QR Code generated successfully!");
+        this.emitWaEvent("wa_qr", null, null, { qr });
         this.qrCallbacks.forEach((cb) => cb(qr));
         this.qrCallbacks = [];
       });
@@ -606,7 +624,21 @@ class WhatsAppService {
       phone: this.phone || null,
       initializing: this.isInitializing,
       hasQr: !!this.qrCode,
+      qr: this.qrCode || null,
     };
+  }
+
+  // Hibernates idle browser process while keeping saved LocalAuth profile on disk
+  async hibernate() {
+    if (!this.client) return;
+    console.log(`💤 [VPS RAM Saver] Hibernating idle WhatsApp Web session ${this.key}`);
+    const deadClient = this.client;
+    this.client = null;
+    this.isInitializing = false;
+    this._isHibernated = true;
+    try {
+      await deadClient.destroy().catch(() => {});
+    } catch (_) {}
   }
 
   // Tears down a dead/crashed client and schedules a reconnect.
@@ -653,11 +685,13 @@ class WhatsAppService {
       isWeb: webConnected,
       activeEngine,
       phone: activePhone,
+      qr: status.qr || this.qrCode || null,
       web: {
         connected: webConnected,
         phone: this.phone || null,
         initializing: this.isInitializing,
         hasQr: !!this.qrCode,
+        qr: this.qrCode || null,
       },
       cloud: waCloud.getConfig(),
     };
@@ -713,12 +747,14 @@ class WhatsAppService {
     });
   }
 
-  async getQr(timeout = 45000) {
+  async getQr(timeout = 12000) {
     if (this.qrCode) return this.qrCode;
     if (this.ready) return null; // already connected via a restored session — no QR needed
 
-    if (!this.client || (!this.isInitializing && !this.ready)) {
-      this.init(false).catch(() => {}); // reuse saved session if one exists; only /qr?force=true wipes it
+    if (!this.client || (!this.isInitializing && !this.ready && !this.qrCode)) {
+      this.init(false).catch((err) => {
+        console.warn("⚠️ WhatsApp init error in getQr:", err?.message || err);
+      });
     }
 
     return new Promise((resolve, reject) => {
@@ -734,12 +770,15 @@ class WhatsAppService {
           clearTimeout(timeoutTimer);
           return resolve(null);
         }
-      }, 300);
+      }, 200);
 
       const timeoutTimer = setTimeout(() => {
         clearInterval(checkTimer);
         const idx = this.qrCallbacks.indexOf(resolve);
         if (idx !== -1) this.qrCallbacks.splice(idx, 1);
+        if (this.isInitializing) {
+          return resolve(this.qrCode || null);
+        }
         reject(new Error("QR code generation timed out. Please click Get QR Code to try again."));
       }, timeout);
 

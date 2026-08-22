@@ -10,10 +10,15 @@ const waKnowledgeBase = require("../services/waKnowledgeBase");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// ── GET AI Settings ──────────────────────────────────────────────────────────
 router.get("/settings", verifyToken, async (req, res) => {
   try {
     const [rows] = await db.promise().query(
-      "SELECT enabled, provider, model, system_prompt, api_key, auto_lead_capture, human_handoff_keywords, custom_api_url, temperature, max_tokens FROM wa_ai_settings WHERE id = 1"
+      `SELECT enabled, provider, model, system_prompt, api_key, auto_lead_capture, 
+              human_handoff_keywords, handoff_cooldown_min, typing_delay_sec, 
+              custom_api_url, temperature, max_tokens, working_hours_only, 
+              work_start_time, work_end_time, fallback_message, enable_crm_tools 
+       FROM wa_ai_settings WHERE id = 1`
     );
     const row = rows[0] || {};
     let maskedKey = "";
@@ -41,9 +46,16 @@ router.get("/settings", verifyToken, async (req, res) => {
       masked_api_key: maskedKey,
       auto_lead_capture: row.auto_lead_capture !== 0,
       human_handoff_keywords: row.human_handoff_keywords || "human, agent, executive, support, speak to person, call me",
+      handoff_cooldown_min: parseInt(row.handoff_cooldown_min, 10) || 180,
+      typing_delay_sec: parseInt(row.typing_delay_sec, 10) >= 0 ? parseInt(row.typing_delay_sec, 10) : 2,
       custom_api_url: row.custom_api_url || "",
       temperature: parseFloat(row.temperature) || 0.70,
       max_tokens: parseInt(row.max_tokens, 10) || 350,
+      working_hours_only: Boolean(row.working_hours_only),
+      work_start_time: row.work_start_time || "09:00",
+      work_end_time: row.work_end_time || "20:00",
+      fallback_message: row.fallback_message || "",
+      enable_crm_tools: row.enable_crm_tools !== 0,
       kb_docs_count: docs.length,
     });
   } catch (err) {
@@ -51,6 +63,7 @@ router.get("/settings", verifyToken, async (req, res) => {
   }
 });
 
+// ── UPDATE AI Settings ───────────────────────────────────────────────────────
 router.put("/settings", verifyToken, async (req, res) => {
   try {
     const {
@@ -61,9 +74,16 @@ router.put("/settings", verifyToken, async (req, res) => {
       api_key,
       auto_lead_capture,
       human_handoff_keywords,
+      handoff_cooldown_min,
+      typing_delay_sec,
       custom_api_url,
       temperature,
       max_tokens,
+      working_hours_only,
+      work_start_time,
+      work_end_time,
+      fallback_message,
+      enable_crm_tools,
     } = req.body;
 
     const fields = [
@@ -73,9 +93,16 @@ router.put("/settings", verifyToken, async (req, res) => {
       "system_prompt = ?",
       "auto_lead_capture = ?",
       "human_handoff_keywords = ?",
+      "handoff_cooldown_min = ?",
+      "typing_delay_sec = ?",
       "custom_api_url = ?",
       "temperature = ?",
       "max_tokens = ?",
+      "working_hours_only = ?",
+      "work_start_time = ?",
+      "work_end_time = ?",
+      "fallback_message = ?",
+      "enable_crm_tools = ?",
     ];
     const params = [
       enabled ? 1 : 0,
@@ -84,9 +111,16 @@ router.put("/settings", verifyToken, async (req, res) => {
       system_prompt || null,
       auto_lead_capture !== false ? 1 : 0,
       human_handoff_keywords || "human, agent, executive, support, speak to person, call me",
+      parseInt(handoff_cooldown_min, 10) || 180,
+      parseInt(typing_delay_sec, 10) >= 0 ? parseInt(typing_delay_sec, 10) : 2,
       custom_api_url || null,
       parseFloat(temperature) || 0.70,
       parseInt(max_tokens, 10) || 350,
+      working_hours_only ? 1 : 0,
+      work_start_time || "09:00",
+      work_end_time || "20:00",
+      fallback_message || null,
+      enable_crm_tools !== false ? 1 : 0,
     ];
 
     if (api_key && api_key !== "••••••••" && !api_key.includes("••••")) {
@@ -99,8 +133,11 @@ router.put("/settings", verifyToken, async (req, res) => {
       await db.promise().query(`UPDATE wa_ai_settings SET ${fields.join(", ")} WHERE id = 1`, params);
     } else {
       await db.promise().query(
-        `INSERT INTO wa_ai_settings (id, enabled, provider, model, system_prompt, auto_lead_capture, human_handoff_keywords, custom_api_url, temperature, max_tokens, api_key)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO wa_ai_settings (id, enabled, provider, model, system_prompt, auto_lead_capture, 
+                                     human_handoff_keywords, handoff_cooldown_min, typing_delay_sec, 
+                                     custom_api_url, temperature, max_tokens, working_hours_only, 
+                                     work_start_time, work_end_time, fallback_message, enable_crm_tools, api_key)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           enabled ? 1 : 0,
           provider || "openrouter",
@@ -108,9 +145,16 @@ router.put("/settings", verifyToken, async (req, res) => {
           system_prompt || null,
           auto_lead_capture !== false ? 1 : 0,
           human_handoff_keywords || "human, agent, executive, support, speak to person, call me",
+          parseInt(handoff_cooldown_min, 10) || 180,
+          parseInt(typing_delay_sec, 10) >= 0 ? parseInt(typing_delay_sec, 10) : 2,
           custom_api_url || null,
           parseFloat(temperature) || 0.70,
           parseInt(max_tokens, 10) || 350,
+          working_hours_only ? 1 : 0,
+          work_start_time || "09:00",
+          work_end_time || "20:00",
+          fallback_message || null,
+          enable_crm_tools !== false ? 1 : 0,
           api_key ? encrypt(api_key.trim()) : null,
         ]
       );
@@ -122,6 +166,88 @@ router.put("/settings", verifyToken, async (req, res) => {
   }
 });
 
+// ── 1-Click Master AI Toggle (Start / Stop Service) ──────────────────────────
+router.post("/toggle", verifyToken, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const newState = enabled !== undefined ? (enabled ? 1 : 0) : 1;
+    await db.promise().query("UPDATE wa_ai_settings SET enabled = ? WHERE id = 1", [newState]);
+    res.json({ success: true, enabled: Boolean(newState), message: newState ? "AI Service Started!" : "AI Service Stopped." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Validate API Key Live with Provider ──────────────────────────────────────
+router.post("/validate-key", verifyToken, async (req, res) => {
+  try {
+    let { provider, api_key, model, custom_api_url } = req.body;
+
+    // If key not sent or masked, fetch saved key from DB
+    if (!api_key || api_key.includes("••••")) {
+      const [rows] = await db.promise().query("SELECT api_key, provider, model, custom_api_url FROM wa_ai_settings WHERE id = 1");
+      if (rows.length && rows[0].api_key) {
+        api_key = decrypt(rows[0].api_key);
+        if (!provider) provider = rows[0].provider;
+        if (!model) model = rows[0].model;
+        if (!custom_api_url) custom_api_url = rows[0].custom_api_url;
+      }
+    }
+
+    if (!api_key) {
+      return res.status(400).json({ success: false, error: "Please enter an API Key to test" });
+    }
+
+    const result = await waAi.validateApiKey(provider || "openrouter", api_key, model, custom_api_url);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── AI Intelligence Stats Overview ──────────────────────────────────────────
+router.get("/stats", verifyToken, async (req, res) => {
+  try {
+    const [[{ totalReplies }]] = await db.promise().query(
+      "SELECT COALESCE(SUM(ai_reply_count), 0) as totalReplies FROM wa_contacts"
+    ).catch(() => [[{ totalReplies: 0 }]]);
+
+    const [[{ leadsCaptured }]] = await db.promise().query(
+      "SELECT COUNT(*) as leadsCaptured FROM telecalls WHERE source LIKE '%WhatsApp%'"
+    ).catch(() => [[{ leadsCaptured: 0 }]]);
+
+    const [[{ activeHandoffs }]] = await db.promise().query(
+      "SELECT COUNT(*) as activeHandoffs FROM wa_contacts WHERE ai_paused_until > NOW()"
+    ).catch(() => [[{ activeHandoffs: 0 }]]);
+
+    const docs = await waKnowledgeBase.listDocuments().catch(() => []);
+
+    const [settings] = await db.promise().query(
+      "SELECT enabled, provider, model, api_key FROM wa_ai_settings WHERE id = 1"
+    );
+    const hasKey = Boolean(settings[0]?.api_key);
+    const isRunning = Boolean(settings[0]?.enabled && hasKey);
+
+    res.json({
+      isRunning,
+      enabled: Boolean(settings[0]?.enabled),
+      hasKey,
+      provider: settings[0]?.provider || "openrouter",
+      model: settings[0]?.model || "meta-llama/llama-3.3-70b-instruct:free",
+      totalReplies: totalReplies || 0,
+      leadsCaptured: leadsCaptured || 0,
+      activeHandoffs: activeHandoffs || 0,
+      kbDocsCount: docs.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── AI Interactive Simulation Test ───────────────────────────────────────────
 router.post("/test", verifyToken, async (req, res) => {
   try {
     const { message, phone = "919876543210", contact_name = "Demo Client" } = req.body;

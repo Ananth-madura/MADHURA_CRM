@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
+import WAVariablePicker from "../components/WAVariablePicker";
 import {
   Bot, Plus, Play, Edit2, Trash2, Loader2, GitFork, Send, X,
   Sparkles, PhoneCall, ArrowRight, Smartphone, Database, Globe,
@@ -1076,27 +1077,16 @@ export default function WhatsAppFlows() {
                         {node.node_type === "send_message" && (
                           <div className="space-y-2">
                             <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-[11px] text-gray-600 font-bold uppercase">Message Text</label>
-                                <div className="flex flex-wrap gap-1">
-                                  {PLACEHOLDERS.slice(0, 5).map((p) => (
-                                    <button
-                                      key={p.tag}
-                                      type="button"
-                                      onClick={() => insertPlaceholderIntoNode(idx, "text", p.tag)}
-                                      className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-mono rounded"
-                                    >
-                                      + {p.tag}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
+                              <WAVariablePicker
+                                onInsert={(tag) => updateNodeConfig(idx, { text: (node.config.text || "") + " " + tag })}
+                                className="mb-2"
+                              />
                               <textarea
-                                rows={2}
+                                rows={3}
                                 value={node.config.text || ""}
                                 onChange={(e) => updateNodeConfig(idx, { text: e.target.value })}
                                 className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
-                                placeholder="Hello {name}! Thank you for messaging {company}..."
+                                placeholder="Hello {{name}}! {{greeting_time}}, thank you for messaging {{company}}. Your service is {{service}} in {{city}}..."
                               />
                             </div>
                             <div>
@@ -1358,55 +1348,92 @@ export default function WhatsAppFlows() {
                         )}
 
                         {node.node_type === "collect_input" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="sm:col-span-3">
-                              <label className="block text-[11px] text-gray-600 font-bold uppercase mb-1">Input Question / Prompt</label>
+                          <div className="space-y-3">
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] text-gray-700 font-bold uppercase">Question Prompt Text *</label>
+                                <span className="text-[10px] text-purple-700 font-semibold">Collects & saves user response</span>
+                              </div>
+
+                              <WAVariablePicker
+                                onInsert={(tag) => updateNodeConfig(idx, { prompt_text: (node.config.prompt_text || "") + " " + tag })}
+                                className="mb-2"
+                              />
+
                               <input
                                 type="text"
                                 value={node.config.prompt_text || ""}
                                 onChange={(e) => updateNodeConfig(idx, { prompt_text: e.target.value })}
-                                placeholder="Please enter your preferred date (e.g. Tomorrow or 25 Aug):"
-                                className="w-full p-2 border rounded-xl text-xs bg-gray-50"
+                                placeholder="e.g. Hello {{name}}! Please provide your service location or city:"
+                                className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
                               />
-                            </div>
 
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Store in Variable</label>
-                              <input
-                                type="text"
-                                value={node.config.var_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { var_key: e.target.value })}
-                                placeholder="e.g. booking_date, city, inquiry"
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Validation Type</label>
-                              <select
-                                value={node.config.validation_type || "none"}
-                                onChange={(e) => updateNodeConfig(idx, { validation_type: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
-                              >
-                                <option value="none">Any Text</option>
-                                <option value="number">Numeric Only (Digits)</option>
-                                <option value="email">Email Address</option>
-                                <option value="phone">10-Digit Mobile Number</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Choose Next Step --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
+                              {/* 1-Click Question Presets */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">Quick Questions:</span>
+                                {[
+                                  { label: "👤 Name", q: "Please share your full name:", v: "name", t: "none" },
+                                  { label: "📍 City / Location", q: "Which city or area are you located in?", v: "city", t: "none" },
+                                  { label: "📞 Mobile", q: "Please confirm your 10-digit mobile number:", v: "phone", t: "phone" },
+                                  { label: "✉️ Email", q: "What is your email address for invoices?", v: "email", t: "email" },
+                                  { label: "📅 Preferred Date", q: "When would you prefer our technician to visit? (e.g. Tomorrow or 25 Aug):", v: "booking_date", t: "none" },
+                                  { label: "🛠️ Service Requirement", q: "Please describe your service or maintenance requirement:", v: "inquiry", t: "none" },
+                                ].map((preset) => (
+                                  <button
+                                    key={preset.label}
+                                    type="button"
+                                    onClick={() => updateNodeConfig(idx, {
+                                      prompt_text: preset.q,
+                                      var_key: preset.v,
+                                      validation_type: preset.t
+                                    })}
+                                    className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[10px] font-semibold transition"
+                                  >
+                                    {preset.label}
+                                  </button>
                                 ))}
-                              </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Store in Variable</label>
+                                <input
+                                  type="text"
+                                  value={node.config.var_key || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { var_key: e.target.value })}
+                                  placeholder="e.g. booking_date, city, inquiry"
+                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Validation Type</label>
+                                <select
+                                  value={node.config.validation_type || "none"}
+                                  onChange={(e) => updateNodeConfig(idx, { validation_type: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50"
+                                >
+                                  <option value="none">Any Text Response</option>
+                                  <option value="number">Numeric Only (Digits)</option>
+                                  <option value="email">Email Address (@)</option>
+                                  <option value="phone">10-Digit Mobile Number</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                                <select
+                                  value={node.config.next_node_key || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                                >
+                                  <option value="">-- Choose Next Step --</option>
+                                  {availableNodeKeys.map((k) => (
+                                    <option key={k} value={k}>{k}</option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -1606,33 +1633,52 @@ export default function WhatsAppFlows() {
                                   className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
                                 >
                                   <option value="image">📷 Image (PNG, JPG, WEBP)</option>
-                                  <option value="video">🎥 Video (MP4, MOV, 3GP)</option>
-                                  <option value="audio">🎵 Audio / Voice (MP3, WAV, OGG)</option>
-                                  <option value="document">📄 PDF / Word Document</option>
-                                  <option value="excel">📊 Excel / Spreadsheet (XLSX, CSV)</option>
+                                  <option value="document">📄 PDF Document (.pdf)</option>
+                                  <option value="document">📝 Word Document (.docx)</option>
+                                  <option value="video">🎥 Video (MP4, MOV)</option>
+                                  <option value="audio">🎵 Audio Voice Note (MP3, OGG)</option>
+                                  <option value="excel">📊 Excel Spreadsheet (XLSX, CSV)</option>
                                 </select>
                               </div>
                               <div className="sm:col-span-2">
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Public URL</label>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media / Document Public URL *</label>
                                 <input
                                   type="text"
                                   value={node.config.media_url || ""}
                                   onChange={(e) => updateNodeConfig(idx, { media_url: e.target.value })}
-                                  placeholder="https://achme.in/brochure.pdf"
+                                  placeholder="https://example.com/catalog.pdf or https://example.com/photo.jpg"
                                   className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
                                 />
                               </div>
                             </div>
 
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] text-gray-500 font-bold uppercase">Caption / Message Text</label>
+                                <span className="text-[9px] text-cyan-800">Dynamic variables supported</span>
+                              </div>
+                              <WAVariablePicker
+                                onInsert={(tag) => updateNodeConfig(idx, { caption: (node.config.caption || "") + " " + tag, text: (node.config.text || "") + " " + tag })}
+                                className="mb-2"
+                              />
+                              <input
+                                type="text"
+                                value={node.config.caption || node.config.text || ""}
+                                onChange={(e) => updateNodeConfig(idx, { caption: e.target.value, text: e.target.value })}
+                                placeholder="Here is your document / brochure for {{company}}, {{name}}!"
+                                className="w-full p-2 border rounded-lg text-xs bg-white"
+                              />
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Caption / Message Text</label>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Attachment Filename (Optional)</label>
                                 <input
                                   type="text"
-                                  value={node.config.caption || node.config.text || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { caption: e.target.value, text: e.target.value })}
-                                  placeholder="Here is your document for {company}"
-                                  className="w-full p-2 border rounded-lg text-xs bg-white"
+                                  value={node.config.filename || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { filename: e.target.value })}
+                                  placeholder="e.g. Brochure-2026.pdf"
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
                                 />
                               </div>
                               <div>

@@ -432,9 +432,9 @@ echo             proxy_set_header Host              $host;
 echo             proxy_set_header X-Real-IP         $remote_addr;
 echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 echo             proxy_set_header X-Forwarded-Proto $scheme;
-echo             proxy_connect_timeout  120s;
-echo             proxy_send_timeout     120s;
-echo             proxy_read_timeout     120s;
+echo             proxy_connect_timeout  180s;
+echo             proxy_send_timeout     180s;
+echo             proxy_read_timeout     180s;
 echo             client_max_body_size   50M;
 echo         }
 echo.

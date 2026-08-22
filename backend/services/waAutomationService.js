@@ -16,33 +16,83 @@ function cleanPhoneNumber(phone) {
 }
 
 // Looks up a contact's real CRM record by phone so template/message
-// placeholders can be filled with actual data instead of being left blank —
-// checked in the same order everywhere else in the app treats these sources.
-// ponytail: first match wins (one CRM row per phone assumed, as elsewhere in this codebase).
+// placeholders can be filled with actual deep data across all modules
 async function lookupCrmDataByPhone(phone) {
   const last10 = (phone || "").replace(/\D/g, "").slice(-10);
+  const digitsOnly = (phone || "").replace(/\D/g, "");
   if (last10.length < 10) return {};
 
+  const profile = {};
+
   const sources = [
-    ["clients", "name", "company_name", "city", "email", "phone"],
-    ["telecalls", "customer_name", "company_name", "location_city", "email", "mobile_number"],
-    ["walkins", "customer_name", "company_name", "location_city", "email", "mobile_number"],
-    ["fields", "customer_name", "company_name", "location_city", "email", "mobile_number"],
+    ["clients", "name", "company_name", "city", "address", "email", "phone"],
+    ["telecalls", "customer_name", "company_name", "location_city", "address", "email", "mobile_number", "service", "assigned_to", "remarks"],
+    ["walkins", "customer_name", "company_name", "location_city", "address", "email", "mobile_number", "purpose", "assigned_to"],
+    ["fields", "customer_name", "company_name", "location_city", "address", "email", "mobile_number", "service", "assigned_to"],
+    ["wa_contacts", "name", "company", "city", "address", "email", "phone", "service", "assigned_agent_name", "notes"],
   ];
 
-  for (const [table, nameCol, companyCol, cityCol, emailCol, phoneCol] of sources) {
+  for (const [table, nameCol, companyCol, cityCol, addressCol, emailCol, phoneCol, serviceCol, agentCol, notesCol] of sources) {
     try {
+      const selectFields = [
+        nameCol ? `${nameCol} AS name` : null,
+        companyCol ? `${companyCol} AS company` : null,
+        cityCol ? `${cityCol} AS city` : null,
+        addressCol ? `${addressCol} AS address` : null,
+        emailCol ? `${emailCol} AS email` : null,
+        serviceCol ? `${serviceCol} AS service` : null,
+        agentCol ? `${agentCol} AS assigned_agent` : null,
+        notesCol ? `${notesCol} AS notes` : null,
+      ].filter(Boolean).join(", ");
+
       const [rows] = await db.promise().query(
-        `SELECT ${nameCol} AS name, ${companyCol} AS company, ${cityCol} AS city, ${emailCol} AS email
-         FROM ${table} WHERE ${phoneCol} LIKE ? LIMIT 1`,
-        [`%${last10}`]
+        `SELECT ${selectFields} FROM ${table} WHERE ${phoneCol} LIKE ? OR ${phoneCol} LIKE ? LIMIT 1`,
+        [`%${last10}`, `%${digitsOnly}`]
       );
-      if (rows[0]) return rows[0];
-    } catch (_) {
-      // table may not exist in every deployment — skip
-    }
+      if (rows && rows[0]) {
+        Object.assign(profile, rows[0]);
+        break;
+      }
+    } catch (_) {}
   }
-  return {};
+
+  // Also query latest invoice & contract if client company or name exists
+  const lookupName = profile.company || profile.name;
+  if (lookupName) {
+    try {
+      const [invRows] = await db.promise().query(
+        `SELECT invoice_no, total_amount, due_date, status 
+         FROM clientinvoices 
+         WHERE client_company = ? OR customer_name = ? 
+         ORDER BY id DESC LIMIT 1`,
+        [lookupName, lookupName]
+      );
+      if (invRows && invRows[0]) {
+        profile.invoice_no = invRows[0].invoice_no;
+        profile.invoice_amount = invRows[0].total_amount;
+        profile.amount = invRows[0].total_amount;
+        profile.due_date = invRows[0].due_date;
+        profile.invoice_status = invRows[0].status;
+      }
+    } catch (_) {}
+
+    try {
+      const [amcRows] = await db.promise().query(
+        `SELECT contract_title, total_amount, start_date, end_date, status 
+         FROM contracts 
+         WHERE client_company = ? 
+         ORDER BY id DESC LIMIT 1`,
+        [lookupName]
+      );
+      if (amcRows && amcRows[0]) {
+        profile.contract_title = amcRows[0].contract_title;
+        profile.amc_plan = amcRows[0].contract_title;
+        profile.amc_expiry = amcRows[0].end_date;
+      }
+    } catch (_) {}
+  }
+
+  return profile;
 }
 
 // Resolves Spintax format {option1|option2|option3} or [option1|option2|option3]
@@ -80,7 +130,6 @@ function resolveSpintax(text, injectMicroJitter = true) {
   }
 
   // 3. Anti-Ban Invisible Micro-Jitter (Zero-Width Space & Non-Joiner Injection)
-  // Ensures every outbound message has a 100% unique cryptographic hash for WhatsApp spam filters
   if (injectMicroJitter && result.length > 0) {
     const zwChars = ["\u200B", "\u200C", "\u200D", "\uFEFF"];
     const randomZw = zwChars[Math.floor(Math.random() * zwChars.length)];
@@ -90,58 +139,139 @@ function resolveSpintax(text, injectMicroJitter = true) {
   return result;
 }
 
-// Substitutes {placeholder} tokens in a message and applies Spintax text variation.
+// Substitutes multi-dynamic {{placeholder}} and {placeholder} tokens in a message
 function formatMessagePlaceholders(templateText, contactName, data = {}) {
-  let msg = templateText || "Hello {name}!";
-  const nameVal = contactName || data.name || data.customer_name || data.company_name || "Customer";
+  let msg = templateText || "Hello {{name}}!";
+  const rawName = contactName || data.name || data.customer_name || data.client_name || data.company_name || data.company || "Customer";
+  const nameParts = (rawName || "").trim().split(/\s+/);
+  const firstName = nameParts[0] || "Customer";
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  let greetingTime = "Hello";
+  if (currentHour < 12) greetingTime = "Good morning";
+  else if (currentHour < 17) greetingTime = "Good afternoon";
+  else greetingTime = "Good evening";
+
+  const dateOptions = { day: "2-digit", month: "short", year: "numeric" };
+  const formattedDate = now.toLocaleDateString("en-IN", dateOptions);
+  const formattedTime = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const dayName = now.toLocaleDateString("en-IN", { weekday: "long" });
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowFormatted = tomorrow.toLocaleDateString("en-IN", dateOptions);
+
+  const amountVal = data.amount || data.total_amount || data.invoice_amount || data.balance || "";
+  const formattedAmount = amountVal ? (String(amountVal).startsWith("₹") ? String(amountVal) : `₹${amountVal}`) : "";
 
   const known = {
-    name: nameVal,
-    customer_name: nameVal,
-    company: data.company || data.company_name || "",
-    company_name: data.company || data.company_name || "",
+    // 👤 Contact Person
+    name: rawName,
+    first_name: firstName,
+    firstname: firstName,
+    last_name: lastName,
+    lastname: lastName,
+    customer_name: rawName,
+    client_name: rawName,
+    
+    // 🏢 Business & Company
+    company: data.company || data.company_name || data.business_name || "",
+    company_name: data.company || data.company_name || data.business_name || "",
+    brand_name: "MADHURA CRM",
+    sender_company: "MADHURA CRM",
+    my_company: "MADHURA CRM",
+
+    // 📞 Phone & Email
+    phone: data.phone || data.mobile || data.mobile_number || "",
+    mobile: data.phone || data.mobile || data.mobile_number || "",
+    email: data.email || data.email_id || "",
+
+    // 📍 Location & Address
+    address: data.address || data.street_address || data.city || data.location_city || "our office",
+    street_address: data.address || data.street_address || "",
     city: data.city || data.location_city || "our city",
+    location: data.location || data.address || data.city || "",
     location_city: data.city || data.location_city || "our city",
-    invoice_no: data.invoice_no || data.invoice_number || "",
+    state: data.state || "",
+    pincode: data.pincode || data.zip || "",
+
+    // 💼 Service & Offerings
+    service: data.service || data.product || data.service_name || "AMC & Services",
+    service_name: data.service || data.product || "AMC & Services",
+    product: data.product || data.service || "Solutions",
+    purpose: data.purpose || data.remarks || data.notes || "",
+    notes: data.notes || data.remarks || "",
+    assigned_agent: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
+    agent_name: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
+
+    // 🧾 Invoicing & Payments
+    invoice_no: data.invoice_no || data.invoice_number || data.bill_no || "",
     invoice_number: data.invoice_no || data.invoice_number || "",
-    amount: data.amount ? `₹${data.amount}` : "",
-    date: data.date || new Date().toLocaleDateString("en-IN"),
-    due_date: data.due_date || "",
-    service: data.service || data.product || "AMC & Services",
+    amount: formattedAmount,
+    total_amount: formattedAmount,
+    invoice_amount: formattedAmount,
+    balance: formattedAmount,
+    due_date: data.due_date ? String(data.due_date).split("T")[0] : "",
+    invoice_status: data.invoice_status || "Pending",
+    contract_title: data.contract_title || data.amc_plan || "",
+    amc_plan: data.amc_plan || data.contract_title || "",
+    amc_expiry: data.amc_expiry || "",
+
+    // ⏰ Dynamic Time & Date
+    greeting_time: greetingTime,
+    time: formattedTime,
+    current_time: formattedTime,
+    date: formattedDate,
+    current_date: formattedDate,
+    today: formattedDate,
+    day: dayName,
+    day_of_week: dayName,
+    tomorrow_date: tomorrowFormatted,
+    year: String(now.getFullYear()),
+    month: now.toLocaleDateString("en-IN", { month: "long" }),
     start_time: data.start_time || "09:00 AM",
     end_time: data.end_time || "08:00 PM",
+
+    // 🏷️ Custom Fields
+    custom_1: data.custom_1 || "",
+    custom_2: data.custom_2 || "",
+    custom_3: data.custom_3 || "",
+    custom_4: data.custom_4 || "",
+    custom_5: data.custom_5 || "",
   };
 
   const dataLookup = {};
-  for (const key of Object.keys(data)) dataLookup[key.toLowerCase()] = data[key];
+  for (const key of Object.keys(data)) {
+    dataLookup[key.toLowerCase()] = data[key];
+  }
 
-  // 1. Resolve standard CRM placeholders
-  let resolved = msg.replace(/\{\{?([a-zA-Z0-9_]+)\}?\}/g, (match, key) => {
-    const lowerKey = key.toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(known, lowerKey)) return known[lowerKey];
-    if (Object.prototype.hasOwnProperty.call(dataLookup, lowerKey) && dataLookup[lowerKey] != null) {
-      return String(dataLookup[lowerKey]);
+  // 1. Resolve {{placeholder}} and {placeholder} tokens (case-insensitive & whitespace-tolerant)
+  let resolved = msg.replace(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g, (match, rawToken) => {
+    const parts = rawToken.split(".");
+    const cleanKey = (parts.length > 1 ? parts[1] : parts[0]).toLowerCase();
+
+    if (Object.prototype.hasOwnProperty.call(known, cleanKey) && known[cleanKey] !== "") {
+      return String(known[cleanKey]);
     }
-    return match; // unknown placeholder — leave as-is
+    if (Object.prototype.hasOwnProperty.call(dataLookup, cleanKey) && dataLookup[cleanKey] != null && dataLookup[cleanKey] !== "") {
+      return String(dataLookup[cleanKey]);
+    }
+    return match; // Unknown variable — leave as-is
   });
 
-  // 2. Resolve Spintax dynamic choices {Hi|Hello|Dear}
+  // 2. Resolve Spintax dynamic text choices [Option 1|Option 2] and {Option 1|Option 2}
   return resolveSpintax(resolved);
 }
 
-// Meta Cloud API template sends need a `body` component with one positional
-// {{1}},{{2}}... parameter per variable — our wa_templates.body only stores a
-// friendly {name}-style mirror of that copy. Extract the tokens in the order
-// they appear in our stored body text and resolve each one the same way a
-// plain-text send would, so the actual sent template isn't left with blank
-// or literal {{n}} placeholders.
 function buildTemplateBodyComponent(templateBody, contactName, data = {}) {
   if (!templateBody) return null;
-  const tokens = [...templateBody.matchAll(/\{\{?([a-zA-Z0-9_]+)\}?\}/g)].map((m) => m[1]);
+  const tokens = [...templateBody.matchAll(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g)].map((m) => m[1]);
   if (!tokens.length) return null;
   return {
     type: "body",
-    parameters: tokens.map((t) => ({ type: "text", text: formatMessagePlaceholders(`{${t}}`, contactName, data) })),
+    parameters: tokens.map((t) => ({ type: "text", text: formatMessagePlaceholders(`{{${t}}}`, contactName, data) })),
   };
 }
 
