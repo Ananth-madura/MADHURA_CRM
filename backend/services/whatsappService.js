@@ -843,19 +843,26 @@ class WhatsAppService {
 
   async getChats(forceRefresh = false) {
     const now = Date.now();
-    if (!forceRefresh && now - this.lastChatsFetch < 10000 && this.chatsCache.length > 0) {
+    // Fast path 1: Instant cache return (< 1ms)
+    if (!forceRefresh && (now - this.lastChatsFetch < 30000) && this.chatsCache.length > 0) {
       return this.chatsCache;
     }
-    if (this.chatsFetching && this.chatsCache.length > 0 && !forceRefresh) return this.chatsCache;
+    // Fast path 2: Return existing cache immediately while refreshing in background
+    if (this.chatsCache.length > 0 && !forceRefresh) {
+      if (!this.chatsFetching) {
+        process.nextTick(() => this.getChats(true).catch(() => {}));
+      }
+      return this.chatsCache;
+    }
     this.chatsFetching = true;
 
     const chatMap = new Map();
     const phoneToChatId = new Map();
 
-    // 1. Fetch live chats from WhatsApp Web if connected
+    // 1. Fetch live chats from WhatsApp Web if connected (fast 1500ms timeout)
     if (this.ready && this.client) {
       try {
-        let chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), 4000, "WhatsApp Web getChats")).catch(() => []);
+        let chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), 1500, "WhatsApp Web getChats")).catch(() => []);
 
         (chats || []).forEach((c) => {
           const chatId = c.id?._serialized || String(c.id);

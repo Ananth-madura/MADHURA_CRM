@@ -237,10 +237,25 @@ function MediaBubble({ chatId, messageId, filename = "", mediaUrl = null, mimety
 }
 
 export default function WhatsAppPage() {
-  const [status, setStatus] = useState({ connected: false, initializing: false, hasQr: false });
+  // Stale-While-Revalidate Instant Initialization (0ms Startup)
+  const [status, setStatus] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("wa_cached_status");
+      return saved ? JSON.parse(saved) : { connected: true, initializing: false, hasQr: false };
+    } catch {
+      return { connected: true, initializing: false, hasQr: false };
+    }
+  });
   const [qrCode, setQrCode] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
-  const [chats, setChats] = useState([]);
+  const [chats, setChats] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("wa_cached_chats");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedChat, setSelectedChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
@@ -327,6 +342,8 @@ export default function WhatsAppPage() {
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
 
+  const messagesCacheRef = useRef({});
+
   const selectedChatRef = useRef(selectedChat);
   useEffect(() => {
     selectedChatRef.current = selectedChat;
@@ -335,7 +352,18 @@ export default function WhatsAppPage() {
   const chatsRef = useRef(chats);
   useEffect(() => {
     chatsRef.current = chats;
+    if (chats && chats.length > 0) {
+      try {
+        sessionStorage.setItem("wa_cached_chats", JSON.stringify(chats));
+      } catch (_) {}
+    }
   }, [chats]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("wa_cached_status", JSON.stringify(status));
+    } catch (_) {}
+  }, [status]);
 
   const scrollToBottom = () => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -431,7 +459,9 @@ export default function WhatsAppPage() {
   }, [fetchStatus]);
 
   const fetchChats = useCallback(async (refresh = false) => {
-    setChatsLoading(true);
+    if (!chatsRef.current || chatsRef.current.length === 0) {
+      setChatsLoading(true);
+    }
     try {
       const token = localStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -442,7 +472,9 @@ export default function WhatsAppPage() {
       } catch (e1) {
         res = await axios.get(endpoint, { headers });
       }
-      setChats(res.data || []);
+      if (res.data && Array.isArray(res.data)) {
+        setChats(res.data);
+      }
     } catch { }
     setChatsLoading(false);
   }, []);
@@ -470,14 +502,19 @@ export default function WhatsAppPage() {
   };
 
   const fetchMessages = useCallback(async (chatId, limit = 10) => {
-    if (limit === 10) setMessagesLoading(true);
-    else setLoadingMore(true);
+    const hasCached = Boolean(messagesCacheRef.current[chatId] && messagesCacheRef.current[chatId].length > 0);
+    if (!hasCached) {
+      if (limit === 10) setMessagesLoading(true);
+      else setLoadingMore(true);
+    }
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(`${API}/api/whatsapp/chat/${encodeURIComponent(chatId)}/messages?limit=${limit}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setMessages(res.data || []);
+      const data = res.data || [];
+      messagesCacheRef.current[chatId] = data;
+      setMessages(data);
       if (limit === 10) scrollToBottom();
     } catch { }
     setMessagesLoading(false);
@@ -565,11 +602,17 @@ export default function WhatsAppPage() {
     setShowTemplatePicker(false);
   };
 
-  const handleSelectChat = async (chat) => {
+  const handleSelectChat = (chat) => {
     setSelectedChat(chat);
     setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, unreadCount: 0 } : c)));
     setShowMobileChat(true);
     setMsgLimit(10);
+
+    // Instant message display from cache in 0ms!
+    if (messagesCacheRef.current[chat.id]) {
+      setMessages(messagesCacheRef.current[chat.id]);
+      setTimeout(scrollToBottom, 20);
+    }
 
     // Mark as read on WhatsApp server & DB
     try {
@@ -578,7 +621,7 @@ export default function WhatsAppPage() {
       axios.post(`${API}/api/whatsapp/chat/${encodeURIComponent(chat.id)}/read`, {}, { headers }).catch(() => {});
     } catch (_) {}
 
-    await fetchMessages(chat.id, 10);
+    fetchMessages(chat.id, 10);
   };
 
   const handleSend = async () => {
@@ -1179,15 +1222,13 @@ export default function WhatsAppPage() {
   const [pairingError, setPairingError] = useState(null);
 
   useEffect(() => {
+    // Parallel Instant Startup: fetch status, chats, and account details in parallel
     fetchStatus();
-    // While the QR screen is up we're waiting on the user to scan, and there's
-    // no socket event for "session became ready" — so poll fast until linked,
-    // otherwise the page sits on the QR for up to 15s after a successful scan.
-    // Once connected, drop back to a slow heartbeat (real-time message changes
-    // arrive over the socket below; this just catches anything missed).
+    fetchChats(false);
+    fetchAccountDetails();
     const interval = setInterval(fetchStatus, status.connected ? 15000 : 3000);
     return () => clearInterval(interval);
-  }, [fetchStatus, status.connected]);
+  }, [fetchStatus, fetchChats, fetchAccountDetails, status.connected]);
 
   // Auto-fetch QR code on mount if not connected and no QR yet
   useEffect(() => {

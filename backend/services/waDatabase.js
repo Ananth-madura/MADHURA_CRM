@@ -809,6 +809,12 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_message_logs", "pool_id", "INT DEFAULT NULL");
   await addColumnIfNotExists("wa_message_logs", "tenant_id", "INT DEFAULT 1");
 
+  // Performance Indexes for Instant (<5ms) Chat & Message Loading
+  await addIndexIfNotExists("wa_message_logs", "idx_msg_phone_time", "phone, created_at");
+  await addIndexIfNotExists("wa_message_logs", "idx_msg_session_time", "session_key, created_at");
+  await addIndexIfNotExists("wa_contacts", "idx_contact_phone", "phone");
+  await addIndexIfNotExists("wa_contacts", "idx_contact_last_msg", "last_message_at");
+
   // ── Seed Prebuilt Templates, Reminders and Automation Rules ───────────────────────────
   try {
     const reminderSettingsCount = await queryAsync("SELECT COUNT(*) as count FROM wa_reminder_settings");
