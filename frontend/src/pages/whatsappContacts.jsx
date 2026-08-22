@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
+import WAContactAvatar from "../components/WAContactAvatar";
 
 const FILTERS = [
   { id: "all", label: "All Contacts", icon: Users },
@@ -201,6 +202,19 @@ export default function WhatsAppContacts() {
     setImporting(false);
   };
 
+  const [syncingPics, setSyncingPics] = useState(false);
+  const handleSyncProfilePics = async () => {
+    setSyncingPics(true);
+    try {
+      const { data } = await axios.post(`${API}/api/whatsapp/sync-profile-pics`, {}, { headers: headers() });
+      fetchContacts(1, filter, search);
+      alert(`Synced ${data.syncedCount || 0} profile photos from WhatsApp!`);
+    } catch (err) {
+      alert("Failed to sync profile photos: " + (err.response?.data?.error || err.message));
+    }
+    setSyncingPics(false);
+  };
+
   const handleSyncWhatsAppContacts = async () => {
     setImporting(true);
     setImportResult(null);
@@ -339,6 +353,16 @@ export default function WhatsAppContacts() {
           >
             {importing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             <span>Sync from WhatsApp</span>
+          </button>
+
+          <button
+            onClick={handleSyncProfilePics}
+            disabled={syncingPics}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl hover:bg-purple-100 transition text-xs font-bold shadow-sm disabled:opacity-50"
+            title="Fetch real WhatsApp profile photos for all contacts"
+          >
+            {syncingPics ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            <span>Sync Profile Photos</span>
           </button>
 
           {/* CRM Import Dropdown */}
@@ -532,9 +556,13 @@ export default function WhatsAppContacts() {
                     <tr key={c.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#25D366] to-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-sm shadow-[#25D366]/20">
-                            {(c.name || "?").charAt(0).toUpperCase()}
-                          </div>
+                          <WAContactAvatar
+                            src={c.profile_pic_url || c.avatar_url}
+                            name={c.name}
+                            phone={c.phone}
+                            size="sm"
+                            clickable={true}
+                          />
                           <div>
                             <p className="font-bold text-gray-900">{c.name}</p>
                             {c.email && <p className="text-[11px] text-gray-400">{c.email}</p>}

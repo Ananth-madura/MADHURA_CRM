@@ -41,6 +41,7 @@ import WhatsAppNav from "../components/WhatsAppNav";
 import socket from "../socket/socket";
 import RichMessageContent from "../components/RichMessageContent";
 import WAConfigPrompt from "../components/WAConfigPrompt";
+import WAContactAvatar from "../components/WAContactAvatar";
 
 function formatChatTime(timestamp) {
   if (!timestamp) return "";
@@ -1796,17 +1797,15 @@ export default function WhatsAppPage() {
                     className={`w-full flex items-center gap-3 px-3.5 py-3 hover:bg-[#202c33] transition text-left cursor-pointer border-l-4 ${isActive ? "bg-[#2a3942] border-[#00a884]" : "border-transparent"
                       }`}
                   >
-                    {/* Contact Avatar */}
-                    <div
-                      className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm shadow-md ${chat.isGroup
-                          ? "bg-purple-900/60 text-purple-300 border border-purple-700/50"
-                          : isActive
-                            ? "bg-[#00a884] text-white"
-                            : "bg-emerald-950/70 text-[#00a884] border border-emerald-800/40"
-                        }`}
-                    >
-                      {(chat.name || "?").charAt(0).toUpperCase()}
-                    </div>
+                    {/* Contact Profile Picture / Avatar */}
+                    <WAContactAvatar
+                      src={chat.profilePicUrl}
+                      name={chat.name}
+                      phone={chat.id}
+                      isGroup={chat.isGroup}
+                      size="md"
+                      isOnline={!chat.isGroup}
+                    />
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1908,9 +1907,17 @@ export default function WhatsAppPage() {
                       fetchContactCrmDetails(selectedChat.id);
                       setShowContactInfoDrawer(true);
                     }}
-                    className="w-10 h-10 rounded-full bg-[#00a884] text-[#111b21] font-extrabold text-sm flex items-center justify-center cursor-pointer hover:opacity-80 transition shadow shrink-0"
+                    className="cursor-pointer"
                   >
-                    {(selectedChat.name || "?").charAt(0).toUpperCase()}
+                    <WAContactAvatar
+                      src={selectedChat.profilePicUrl}
+                      name={selectedChat.name}
+                      phone={selectedChat.id}
+                      isGroup={selectedChat.isGroup}
+                      size="md"
+                      isOnline={!selectedChat.isGroup}
+                      clickable={true}
+                    />
                   </div>
                   <div
                     onClick={() => {
@@ -2672,8 +2679,34 @@ export default function WhatsAppPage() {
             </button>
 
             <div className="text-center pb-6 border-b border-gray-100">
-              <div className="w-20 h-20 rounded-full bg-[#25D366]/20 text-[#25D366] font-extrabold text-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
-                {(selectedChat.name || "?").charAt(0).toUpperCase()}
+              <div className="flex flex-col items-center justify-center mx-auto mb-3">
+                <WAContactAvatar
+                  src={selectedChat.profilePicUrl}
+                  name={selectedChat.name}
+                  phone={selectedChat.id}
+                  isGroup={selectedChat.isGroup}
+                  size="2xl"
+                  clickable={true}
+                  className="shadow-lg shadow-black/10"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await axios.get(`${API}/api/whatsapp/chat/${encodeURIComponent(selectedChat.id)}/profile-pic`, {
+                        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+                      });
+                      if (res.data?.profilePicUrl) {
+                        setSelectedChat(prev => ({ ...prev, profilePicUrl: res.data.profilePicUrl }));
+                        setChats(prev => prev.map(c => c.id === selectedChat.id ? { ...c, profilePicUrl: res.data.profilePicUrl } : c));
+                      }
+                    } catch (_) {}
+                  }}
+                  className="mt-2 text-[10px] text-[#00a884] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw size={11} />
+                  <span>Refresh WhatsApp Photo</span>
+                </button>
               </div>
               <h3 className="text-lg font-bold text-gray-800">{selectedChat.name}</h3>
               <p className="text-xs font-mono text-gray-500 mt-0.5">+{selectedChat.id?.replace(/\D/g, "")}</p>

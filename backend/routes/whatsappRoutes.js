@@ -256,6 +256,70 @@ router.get("/contact-balance", async (req, res) => {
   }
 });
 
+// Fetch Profile Picture for a Chat / Phone Number
+router.get("/chat/:chatId/profile-pic", async (req, res) => {
+  try {
+    const rawChatId = req.params.chatId;
+    const picUrl = await s(req).getProfilePicUrl(rawChatId);
+    res.json({ success: true, chatId: rawChatId, profilePicUrl: picUrl || null });
+  } catch (err) {
+    res.json({ success: false, profilePicUrl: null });
+  }
+});
+
+router.get("/contact/:phone/profile-pic", async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
+    const picUrl = await s(req).getProfilePicUrl(cleanPhone);
+    res.json({ success: true, phone: cleanPhone, profilePicUrl: picUrl || null });
+  } catch (err) {
+    res.json({ success: false, profilePicUrl: null });
+  }
+});
+
+// Manually update or save a contact's avatar URL
+router.post("/contact/:phone/profile-pic", async (req, res) => {
+  try {
+    const { profile_pic_url } = req.body;
+    const cleanPhone = req.params.phone.replace(/\D/g, "").slice(-10);
+    if (!cleanPhone) return res.status(400).json({ error: "Invalid phone number" });
+
+    await db.promise().query(
+      "UPDATE wa_contacts SET profile_pic_url = ?, avatar_url = ? WHERE phone LIKE ?",
+      [profile_pic_url, profile_pic_url, `%${cleanPhone}`]
+    );
+    res.json({ success: true, phone: cleanPhone, profilePicUrl: profile_pic_url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch sync profile pictures for top active contacts
+router.post("/sync-profile-pics", async (req, res) => {
+  try {
+    const [contacts] = await db.promise().query(
+      "SELECT id, phone, name FROM wa_contacts WHERE profile_pic_url IS NULL OR profile_pic_url = '' ORDER BY last_message_at DESC LIMIT 50"
+    );
+
+    let syncedCount = 0;
+    const session = s(req);
+
+    for (const c of contacts) {
+      if (!c.phone) continue;
+      const clean = c.phone.replace(/\D/g, "").slice(-10);
+      try {
+        const url = await session.getProfilePicUrl(clean);
+        if (url) syncedCount++;
+      } catch (_) {}
+    }
+
+    res.json({ success: true, syncedCount, totalChecked: contacts.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/account-balance", async (req, res) => {
   try {
     const balance = await s(req).getAccountBalance();

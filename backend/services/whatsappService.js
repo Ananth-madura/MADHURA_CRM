@@ -927,7 +927,7 @@ class WhatsAppService {
 
       // 2b. Also include recent active contacts from wa_contacts when using Meta Cloud API or offline web
       const [recentContacts] = await db.promise().query(
-        `SELECT name, phone, last_message_text, last_message_at, unread_count
+        `SELECT name, phone, last_message_text, last_message_at, unread_count, profile_pic_url, avatar_url
          FROM wa_contacts
          WHERE is_blocked = 0
          ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC LIMIT 100`
@@ -944,24 +944,30 @@ class WhatsAppService {
             name: c.name || `+91 ${cleanPhone}`,
             unreadCount: c.unread_count || 0,
             timestamp: logTime,
+            profilePicUrl: c.profile_pic_url || c.avatar_url || null,
             lastMessage: c.last_message_text ? { body: c.last_message_text, timestamp: logTime, fromMe: false } : null,
             hasMessages: Boolean(c.last_message_text),
           });
           phoneToChatId.set(cleanPhone, chatId);
+        } else {
+          const existing = chatMap.get(chatId);
+          if (c.profile_pic_url || c.avatar_url) {
+            existing.profilePicUrl = c.profile_pic_url || c.avatar_url;
+          }
         }
       });
     } catch (e) {
       console.error("Fast DB chat fetch error:", e.message);
     }
 
-    // 3. Enrich contact names only for existing active session chats (never add non-session contacts)
+    // 3. Enrich contact names & profile pictures for session chats
     if (phoneToChatId.size > 0) {
       try {
         const db = require("../config/database");
         const phones = Array.from(phoneToChatId.keys());
         if (phones.length > 0) {
           const [waContacts] = await db.promise().query(
-            `SELECT name, phone FROM wa_contacts WHERE (${phones.map(() => "phone LIKE ?").join(" OR ")}) AND name IS NOT NULL AND name != ''`,
+            `SELECT name, phone, profile_pic_url, avatar_url FROM wa_contacts WHERE (${phones.map(() => "phone LIKE ?").join(" OR ")})`,
             phones.map((p) => `%${p}`)
           );
 
@@ -970,8 +976,13 @@ class WhatsAppService {
             if (phoneToChatId.has(clean)) {
               const chatId = phoneToChatId.get(clean);
               const chat = chatMap.get(chatId);
-              if (chat && (!chat.name || chat.name.startsWith("+") || chat.name === "Unknown")) {
-                chat.name = c.name;
+              if (chat) {
+                if (c.name && (!chat.name || chat.name.startsWith("+") || chat.name === "Unknown")) {
+                  chat.name = c.name;
+                }
+                if (c.profile_pic_url || c.avatar_url) {
+                  chat.profilePicUrl = c.profile_pic_url || c.avatar_url;
+                }
               }
             }
           });
@@ -992,6 +1003,43 @@ class WhatsAppService {
     this.lastChatsFetch = now;
     this.chatsFetching = false;
     return this.chatsCache;
+  }
+
+  async getProfilePicUrl(chatId) {
+    if (!chatId) return null;
+    const cleanPhone = String(chatId).replace(/\D/g, "").slice(-10);
+    const db = require("../config/database");
+
+    // 1. Check in wa_contacts DB first
+    try {
+      const [rows] = await db.promise().query(
+        "SELECT profile_pic_url, avatar_url FROM wa_contacts WHERE phone LIKE ? LIMIT 1",
+        [`%${cleanPhone}`]
+      );
+      if (rows[0] && (rows[0].profile_pic_url || rows[0].avatar_url)) {
+        return rows[0].profile_pic_url || rows[0].avatar_url;
+      }
+    } catch (_) {}
+
+    // 2. Fetch live from WhatsApp Web client if connected
+    if (this.ready && this.client) {
+      try {
+        const fullChatId = chatId.includes("@") ? chatId : `91${cleanPhone}@c.us`;
+        const picUrl = await this.enqueue(() =>
+          this.withTimeout(this.client.getProfilePicUrl(fullChatId), 4000, "getProfilePicUrl")
+        ).catch(() => null);
+
+        if (picUrl) {
+          await db.promise().query(
+            "UPDATE wa_contacts SET profile_pic_url = ? WHERE phone LIKE ?",
+            [picUrl, `%${cleanPhone}`]
+          ).catch(() => {});
+          return picUrl;
+        }
+      } catch (_) {}
+    }
+
+    return null;
   }
 
   async getMessages(chatId, forceRefresh = false, limit = 10) {

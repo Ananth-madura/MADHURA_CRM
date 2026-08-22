@@ -683,6 +683,8 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_contacts", "last_message_text", "TEXT DEFAULT NULL");
   await addColumnIfNotExists("wa_contacts", "last_message_at", "DATETIME DEFAULT NULL");
   await addColumnIfNotExists("wa_contacts", "unread_count", "INT DEFAULT 0");
+  await addColumnIfNotExists("wa_contacts", "profile_pic_url", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_contacts", "avatar_url", "TEXT DEFAULT NULL");
 
   // 7. wa_flows trigger_type
   try { await queryAsync("ALTER TABLE wa_flows MODIFY COLUMN trigger_type VARCHAR(50) DEFAULT 'keyword'"); } catch (_) {}
