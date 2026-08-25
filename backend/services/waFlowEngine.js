@@ -17,6 +17,106 @@ class WaFlowEngine {
   }
 
   /**
+   * Read a flow's configured trigger keywords (tolerates the legacy single
+   * `keyword` field and a JSON-string trigger_config).
+   */
+  getTriggerKeywords(flow) {
+    let cfg = {};
+    try {
+      cfg = typeof flow?.trigger_config === "string"
+        ? JSON.parse(flow.trigger_config)
+        : (flow?.trigger_config || {});
+    } catch (_) {}
+    const kws = cfg.keywords || (cfg.keyword ? [cfg.keyword] : []);
+    return Array.isArray(kws) ? kws.map((k) => String(k || "").toLowerCase().trim()).filter(Boolean) : [];
+  }
+
+  /**
+   * Does this inbound message fire the flow's keyword trigger?
+   * Single source of truth — starting a flow from idle and switching flows
+   * mid-conversation previously used two different, silently inconsistent rule
+   * sets, so a phrase like "invoice status please" would start the invoice flow
+   * when idle but not switch to it mid-chat.
+   *
+   * strict = true is used for mid-conversation switching: only a deliberate,
+   * command-like message may hijack a running flow, otherwise a passing mention
+   * inside an answer ("the AC broke, and my invoice is wrong") would discard
+   * everything the customer already typed.
+   */
+  matchesTriggerKeywords(rawText, flow, { strict = false } = {}) {
+    const raw = String(rawText || "").trim();
+    const lower = raw.toLowerCase();
+    if (!lower) return false;
+
+    const keywords = this.getTriggerKeywords(flow);
+    if (!keywords.length) return false;
+
+    return keywords.some((kw) => {
+      // Exact match
+      if (lower === kw) return true;
+      // Keyword followed by a separator: "invoice, please" / "invoice!" / "menu?"
+      if (lower.startsWith(kw) && /^[\s,.!?:;-]/.test(lower.slice(kw.length))) return true;
+      if (strict) return false;
+
+      // Whole-word mention anywhere in the sentence
+      try {
+        if (new RegExp(`\\b${this.escapeRegex(kw)}\\b`, "i").test(raw)) return true;
+      } catch (_) {}
+      // Loose containment for longer keywords. Both sides need >= 3 chars,
+      // otherwise a 1-2 letter reply ("in", "a") triggers any flow containing it.
+      if (kw.length >= 3 && lower.includes(kw)) return true;
+      if (kw.length >= 3 && lower.length >= 3 && kw.includes(lower)) return true;
+      return false;
+    });
+  }
+
+  /**
+   * Normalize a flow media reference.
+   * - Resolves relative/uploaded paths ("/uploads/wa-media/x.pdf") to an absolute
+   *   public URL so both WhatsApp Web and Meta Cloud API can fetch the file.
+   * - Infers the WhatsApp media type (image | video | audio | document) from the
+   *   file extension so a mislabelled node still delivers.
+   * Returns null when there is nothing sendable.
+   */
+  resolveMedia(rawUrl, declaredType = "", declaredFilename = "") {
+    const url = String(rawUrl || "").trim();
+    if (!url) return null;
+
+    let absolute = url;
+    if (!/^https?:\/\//i.test(absolute)) {
+      const base = String(
+        process.env.PUBLIC_BASE_URL || process.env.REACT_APP_API_URL || ""
+      ).replace(/\/+$/, "");
+      if (!base) return null; // relative path with no public base — WhatsApp could never fetch it
+      absolute = `${base}/${absolute.replace(/^\/+/, "")}`;
+    }
+
+    const path = absolute.split("?")[0];
+    const ext = (path.match(/\.([a-z0-9]+)$/i) || [, ""])[1].toLowerCase();
+    const BY_EXT = {
+      jpg: "image", jpeg: "image", png: "image", webp: "image", gif: "image",
+      mp4: "video", mov: "video", "3gp": "video", mkv: "video",
+      mp3: "audio", ogg: "audio", wav: "audio", m4a: "audio", aac: "audio",
+    };
+
+    let type = String(declaredType || "").toLowerCase();
+    if (["pdf", "doc", "docx", "xls", "xlsx", "csv", "excel", "txt", "ppt", "pptx", "file"].includes(type)) {
+      type = "document";
+    }
+    if (!["image", "video", "audio", "document"].includes(type)) {
+      type = BY_EXT[ext] || "document";
+    } else if (type !== "document") {
+      // An explicit "document" is always honoured; other types must match the real file
+      type = BY_EXT[ext] || "document";
+    }
+
+    const filename =
+      declaredFilename || decodeURIComponent(path.split("/").pop() || "attachment");
+
+    return { url: absolute, type, filename };
+  }
+
+  /**
    * Record outbound bot message in database & broadcast live WebSocket event to CRM chat
    */
   async recordAndEmitBotMessage(phone, text, type = "text", interactivePayload = null) {
@@ -67,25 +167,20 @@ class WaFlowEngine {
    * Dispatch inbound message to any active flow run or trigger a new flow.
    * Returns true if message was consumed by a flow, false otherwise.
    */
-  async dispatchInbound(phone, messageText, interactiveReplyId = null, sessionKey = null) {
+  async dispatchInbound(phone, messageText, interactiveReplyId = null, sessionKey = null, inboundMedia = null) {
     if (!phone) return false;
     const cleanPhone = phone.replace(/\D/g, "");
-    const rawTrimmed = (messageText || "").trim();
-    const lowerText = rawTrimmed.toLowerCase();
 
     try {
       // 1. Check for an active flow run for this phone
       const [activeRuns] = await db.promise().query(
-        `SELECT r.*, f.fallback_policy, f.name as flow_name, f.trigger_type, f.trigger_config
+        `SELECT r.*, f.fallback_policy, f.name as flow_name, f.trigger_type, f.trigger_config, f.entry_node_key
          FROM wa_flow_runs r
          JOIN wa_flows f ON r.flow_id = f.id
          WHERE r.phone LIKE ? AND r.status = 'active'
          ORDER BY r.id DESC LIMIT 1`,
         [`%${cleanPhone.slice(-10)}`]
       );
-
-      // Check if user typed a universal restart/menu command or a priority keyword for another flow
-      const isRestartCmd = ["menu", "main menu", "start", "restart", "home", "hi", "hello", "help", "namaste"].includes(lowerText);
 
       // Check if run is stale (> 4 hours since last activity)
       let isStale = false;
@@ -109,15 +204,9 @@ class WaFlowEngine {
 
         let switchedFlow = null;
         for (const f of otherFlows) {
-          if (f.trigger_type === "keyword") {
-            let tcfg = {};
-            try { tcfg = typeof f.trigger_config === "string" ? JSON.parse(f.trigger_config) : (f.trigger_config || {}); } catch (_) {}
-            const kws = tcfg.keywords || (tcfg.keyword ? [tcfg.keyword] : []);
-            const isMatch = kws.some(k => {
-              const kw = k.toLowerCase().trim();
-              return kw && (lowerText === kw || lowerText.startsWith(kw + " ") || lowerText === kw + "!");
-            });
-            if (isMatch) {
+          if (f.trigger_type === "keyword" || !f.trigger_type) {
+            // strict: only a deliberate command may abandon a running flow
+            if (this.matchesTriggerKeywords(messageText, f, { strict: true })) {
               switchedFlow = f;
               break;
             }
@@ -127,10 +216,10 @@ class WaFlowEngine {
         if (switchedFlow) {
           console.log(`🔀 Customer switched from Flow #${run.flow_id} to Flow "${switchedFlow.name}" (#${switchedFlow.id})`);
           await this.completeRun(run.id, `switched_to_flow_${switchedFlow.id}`);
-          return await this.startFlowRun(switchedFlow, cleanPhone, sessionKey);
+          return await this.startFlowRun(switchedFlow, cleanPhone, sessionKey, messageText);
         }
 
-        return await this.advanceActiveRun(run, messageText, interactiveReplyId, sessionKey);
+        return await this.advanceActiveRun(run, messageText, interactiveReplyId, sessionKey, inboundMedia);
       }
 
       // If stale run was open, mark as timed out before triggering fresh flow
@@ -153,32 +242,9 @@ class WaFlowEngine {
       // Priority 1: Keyword Match Flows
       for (const flow of activeFlows) {
         if (flow.trigger_type === "keyword" || !flow.trigger_type) {
-          let triggerConfig = {};
-          try {
-            triggerConfig = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
-          } catch (_) {}
-
-          const keywords = triggerConfig.keywords || (triggerConfig.keyword ? [triggerConfig.keyword] : []);
-          const matches = keywords.some(k => {
-            const kw = k.toLowerCase().trim();
-            if (!kw) return false;
-            // Exact match
-            if (lowerText === kw) return true;
-            // Starts with keyword followed by space, punctuation, or exclamation
-            if (lowerText.startsWith(kw + " ") || lowerText.startsWith(kw + ",") || lowerText.startsWith(kw + "!") || lowerText.startsWith(kw + ".") || lowerText.startsWith(kw + "?")) return true;
-            // Word boundary match
-            try {
-              const reg = new RegExp(`\\b${this.escapeRegex(kw)}\\b`, "i");
-              if (reg.test(rawTrimmed)) return true;
-            } catch (_) {}
-            // Substring containment for multi-word or long keywords (>= 3 chars)
-            if (kw.length >= 3 && (lowerText.includes(kw) || kw.includes(lowerText))) return true;
-            return false;
-          });
-
-          if (matches) {
+          if (this.matchesTriggerKeywords(messageText, flow)) {
             console.log(`🤖 Triggering Keyword WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-            return await this.startFlowRun(flow, cleanPhone, sessionKey);
+            return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
           }
         }
       }
@@ -204,7 +270,7 @@ class WaFlowEngine {
 
             if (count <= 1 || recentInbounds.length === 0) {
               console.log(`👋 Triggering First-Inbound/Welcome Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-              return await this.startFlowRun(flow, cleanPhone, sessionKey);
+              return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
             }
           } catch (e) {
             console.warn("First-inbound check error:", e.message);
@@ -217,7 +283,7 @@ class WaFlowEngine {
         const isUniversalTrigger = ["all_inbound", "universal", "default", "fallback", "no_keyword", "catch_all"].includes(flow.trigger_type);
         if (isUniversalTrigger) {
           console.log(`🌐 Triggering Universal 24/7 WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-          return await this.startFlowRun(flow, cleanPhone, sessionKey);
+          return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
         }
       }
 
@@ -225,7 +291,7 @@ class WaFlowEngine {
       for (const flow of activeFlows) {
         if (flow.trigger_type === "ai_intent") {
           console.log(`🧠 Triggering AI Intent Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-          return await this.startFlowRun(flow, cleanPhone, sessionKey);
+          return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
         }
       }
 
@@ -239,9 +305,9 @@ class WaFlowEngine {
   /**
    * Start a brand new flow execution for a phone number
    */
-  async startFlowRun(flow, cleanPhone, sessionKey = null) {
+  async startFlowRun(flow, cleanPhone, sessionKey = null, triggerText = "") {
     const entryNodeKey = flow.entry_node_key || "start";
-    
+
     // Close any previous active runs for this phone
     await db.promise().query(
       "UPDATE wa_flow_runs SET status = 'completed', end_reason = 'new_flow_started', ended_at = NOW() WHERE phone LIKE ? AND status = 'active'",
@@ -250,6 +316,15 @@ class WaFlowEngine {
 
     // Deep CRM Context auto-resolution from database
     const initialVars = await this.resolveInitialCrmVars(cleanPhone);
+
+    // The message that triggered the flow is the AI nodes' input — without it,
+    // an ai_generate / ai_intent step placed before any collect_input sees nothing.
+    const trimmedTrigger = String(triggerText || "").trim();
+    if (trimmedTrigger) {
+      initialVars.last_input = trimmedTrigger;
+      initialVars.input = trimmedTrigger;
+      initialVars.trigger_message = trimmedTrigger;
+    }
 
     const [runRes] = await db.promise().query(
       `INSERT INTO wa_flow_runs (flow_id, phone, status, current_node_key, vars, reprompt_count, started_at)
@@ -273,7 +348,7 @@ class WaFlowEngine {
   /**
    * Advance an active flow run with customer reply
    */
-  async advanceActiveRun(run, messageText, interactiveReplyId, sessionKey = null) {
+  async advanceActiveRun(run, messageText, interactiveReplyId, sessionKey = null, inboundMedia = null) {
     const runId = run.id;
     const cleanPhone = run.phone;
     const rawTrimmed = (messageText || "").trim();
@@ -283,6 +358,10 @@ class WaFlowEngine {
     try {
       vars = typeof run.vars === "string" ? JSON.parse(run.vars) : (run.vars || {});
     } catch (_) {}
+
+    // Every inbound reply — typed text OR a tapped option — becomes the input that
+    // ai_generate / ai_intent steps read. Without this only collect_input fed them.
+    if (rawTrimmed) vars.last_input = rawTrimmed;
 
     // Global Command: Live Agent Transfer
     if (["agent", "human", "support", "talk to human", "representative", "person", "help desk", "live support", "executive"].includes(lowerText)) {
@@ -306,7 +385,7 @@ class WaFlowEngine {
 
     // Global Command: Jump to Main Menu / Restart Flow
     if (["menu", "main menu", "start", "restart", "home"].includes(lowerText)) {
-      const entryNode = "start";
+      const entryNode = run.entry_node_key || "start";
       await db.promise().query(
         "UPDATE wa_flow_runs SET current_node_key = ?, reprompt_count = 0, last_advanced_at = NOW() WHERE id = ?",
         [entryNode, runId]
@@ -336,6 +415,62 @@ class WaFlowEngine {
       const varKey = config.var_key || "input";
       const inputVal = (messageText || "").trim();
       const validationType = config.validation_type || "none";
+      const strictValidation = (validationType !== "none" && validationType !== "") || !!config.regex;
+      // Attachments answer free-text questions by default. A validated question
+      // (email / phone / number / regex) rejects them unless explicitly opted in,
+      // so a photo can never satisfy "what is your email?".
+      const mediaAllowed = config.accept_media === true || (config.accept_media !== false && !strictValidation);
+
+      if (inboundMedia && inboundMedia.hasMedia) {
+        if (!mediaAllowed) {
+          const repromptCount = (run.reprompt_count || 0) + 1;
+          if (repromptCount >= 3) {
+            return await this.handleFallback(runId, cleanPhone, run.fallback_policy, sessionKey);
+          }
+          await db.promise().query("UPDATE wa_flow_runs SET reprompt_count = ? WHERE id = ?", [repromptCount, runId]);
+          await this.sendFlowMessage(
+            cleanPhone,
+            config.invalid_prompt || "Sorry, I can't read attachments for this question. Please type your answer.",
+            sessionKey
+          );
+          return true;
+        }
+
+        // Persist the file only now that we know a step actually wants it
+        const saved = typeof inboundMedia.resolve === "function"
+          ? await inboundMedia.resolve().catch((e) => {
+              console.warn("[WA Flow] Inbound attachment download failed:", e.message);
+              return null;
+            })
+          : null;
+
+        const label = inputVal || saved?.filename || inboundMedia.filename || `[${inboundMedia.type || "attachment"}]`;
+        vars[varKey] = label;
+        vars[`${varKey}_url`] = saved?.url || "";
+        vars[`${varKey}_type`] = inboundMedia.type || "document";
+        vars[`${varKey}_filename`] = saved?.filename || inboundMedia.filename || "";
+        vars.last_input = label;
+        vars.last_attachment_url = saved?.url || "";
+        vars.last_attachment_type = inboundMedia.type || "document";
+
+        await this.logEvent(runId, run.current_node_key, "attachment_received", {
+          varKey,
+          type: inboundMedia.type,
+          url: saved?.url || null,
+          filename: vars[`${varKey}_filename`],
+        });
+
+        nextNodeKey = config.next_node_key;
+        if (!nextNodeKey) {
+          await this.completeRun(runId, "flow_end_reached");
+          return true;
+        }
+        await db.promise().query(
+          "UPDATE wa_flow_runs SET vars = ?, current_node_key = ?, reprompt_count = 0, last_advanced_at = NOW() WHERE id = ?",
+          [JSON.stringify(vars), nextNodeKey, runId]
+        );
+        return await this.executeNodeChain(runId, run.flow_id, cleanPhone, nextNodeKey, vars, sessionKey);
+      }
 
       // Input Validation
       let isValid = true;
@@ -391,7 +526,7 @@ class WaFlowEngine {
         } else if (vars._nav_history.length > 0) {
           nextNodeKey = vars._nav_history.pop();
         } else {
-          nextNodeKey = "start";
+          nextNodeKey = run.entry_node_key || "start";
         }
         console.log(`↩️ [WA Flow] Customer navigating BACK to node: ${nextNodeKey}`);
       }
@@ -419,7 +554,7 @@ class WaFlowEngine {
             } else if (vars._nav_history.length > 0) {
               nextNodeKey = vars._nav_history.pop();
             } else {
-              nextNodeKey = "start";
+              nextNodeKey = run.entry_node_key || "start";
             }
           } else {
             const numIdx = numVal - 1;
@@ -550,9 +685,24 @@ class WaFlowEngine {
 
         case "send_media": {
           const renderedCaption = this.interpolate(config.caption || config.text || "", vars);
-          const renderedUrl = this.interpolate(config.media_url || "", vars);
+          const renderedUrl = this.interpolate(config.media_url || config.url || "", vars);
           const renderedFilename = config.filename ? this.interpolate(config.filename, vars) : "";
-          await this.sendFlowMedia(cleanPhone, config.media_type || "image", renderedUrl, renderedCaption, renderedFilename, sessionKey);
+          const declaredType = String(config.media_type || "").toLowerCase();
+
+          if (declaredType === "link") {
+            // Share a link as a normal text message so WhatsApp renders the rich preview
+            const linkBody = [renderedCaption, renderedUrl].filter((s) => String(s || "").trim()).join("\n");
+            if (linkBody.trim()) await this.sendFlowMessage(cleanPhone, linkBody, sessionKey);
+          } else {
+            const media = this.resolveMedia(renderedUrl, declaredType, renderedFilename);
+            if (media) {
+              await this.sendFlowMedia(cleanPhone, media.type, media.url, renderedCaption, media.filename, sessionKey);
+            } else {
+              console.warn(`[WA Flow] send_media node '${nodeKey}' skipped — no reachable media URL (set PUBLIC_BASE_URL for uploaded files).`);
+              // Don't silently drop the message: at least deliver the caption
+              if (renderedCaption.trim()) await this.sendFlowMessage(cleanPhone, renderedCaption, sessionKey);
+            }
+          }
           nodeKey = config.next_node_key;
           break;
         }
@@ -671,8 +821,12 @@ class WaFlowEngine {
               timeout: 10000,
             });
 
-            if (config.response_mapping && typeof config.response_mapping === "object") {
-              for (const [varName, jsonPath] of Object.entries(config.response_mapping)) {
+            // An empty mapping object must not swallow the response
+            const mapping = config.response_mapping && typeof config.response_mapping === "object"
+              ? Object.entries(config.response_mapping).filter(([k, v]) => k && v)
+              : [];
+            if (mapping.length) {
+              for (const [varName, jsonPath] of mapping) {
                 vars[varName] = this.extractJsonPath(response.data, jsonPath) || "";
               }
             } else if (response.data && typeof response.data === "object") {
@@ -792,7 +946,7 @@ class WaFlowEngine {
             const [targetFlows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ?", [config.target_flow_id]);
             if (targetFlows[0]) {
               await this.completeRun(runId, `jumped_to_flow_${config.target_flow_id}`);
-              return await this.startFlowRun(targetFlows[0], cleanPhone, sessionKey);
+              return await this.startFlowRun(targetFlows[0], cleanPhone, sessionKey, vars.last_input || "");
             }
           }
           nodeKey = config.next_node_key;
@@ -1151,8 +1305,26 @@ class WaFlowEngine {
             }
             vars.selected_option = matched.title;
             vars.selected_option_id = matched.reply_id || matched.id;
+            vars._reprompt_count = 0;
             nextNodeKey = matched.next_node_key || matched.next_node;
           } else if (!nextNodeKey) {
+            // Mirror the live bot: re-show the numbered menu once before falling
+            // through, instead of silently selecting option 1.
+            const tries = (vars._reprompt_count || 0) + 1;
+            if (!currentNode.config?.fallback_node_key && tries < 2 && buttons.length > 0) {
+              vars._reprompt_count = tries;
+              let promptMsg = "Please choose one of the options below (reply with option number):\n\n";
+              buttons.forEach((b, i) => { promptMsg += `*${i + 1}.* ${b.title}\n`; });
+              promptMsg += "\n_Reply 0 or BACK for previous menu, or MENU for main menu._";
+              return {
+                handled: true,
+                messages: [{ sender: "bot", type: "text", text: promptMsg, at: new Date() }],
+                vars,
+                currentNodeKey: currentNode.node_key,
+                isEnded: false,
+                logs: [`Unrecognised reply "${rawTrimmed}" — reprompting with the option list.`]
+              };
+            }
             nextNodeKey = currentNode.config?.fallback_node_key || currentNode.config?.next_node_key || (buttons[0] && (buttons[0].next_node_key || buttons[0].next_node));
           }
         }
@@ -1182,14 +1354,29 @@ class WaFlowEngine {
         currentNodeKey = node.config?.next_node_key;
       } else if (node.node_type === "send_media") {
         const caption = this.interpolate(node.config?.caption || node.config?.text || "", vars);
-        simulatedMessages.push({
-          sender: "bot",
-          type: "media",
-          media_type: node.config?.media_type || "image",
-          media_url: node.config?.media_url,
-          caption,
-          at: new Date()
-        });
+        const rawUrl = this.interpolate(node.config?.media_url || node.config?.url || "", vars);
+        const declared = String(node.config?.media_type || "").toLowerCase();
+
+        if (declared === "link") {
+          simulatedMessages.push({
+            sender: "bot",
+            type: "text",
+            text: [caption, rawUrl].filter((s) => String(s || "").trim()).join("\n"),
+            at: new Date()
+          });
+        } else {
+          const media = this.resolveMedia(rawUrl, declared, node.config?.filename || "");
+          simulatedMessages.push({
+            sender: "bot",
+            type: "media",
+            media_type: media?.type || declared || "document",
+            media_url: media?.url || rawUrl,
+            filename: media?.filename || node.config?.filename || "",
+            caption,
+            at: new Date()
+          });
+          if (!media) stepLogs.push(`[Warning] '${node.node_key}' has no reachable media URL — set PUBLIC_BASE_URL for uploaded files.`);
+        }
         currentNodeKey = node.config?.next_node_key;
       } else if (node.node_type === "send_buttons") {
         const text = this.interpolate(node.config?.text || "", vars);
@@ -1289,6 +1476,40 @@ class WaFlowEngine {
       } else if (node.node_type === "delay") {
         stepLogs.push(`[Pause] Delay ${node.config?.delay_seconds || 3}s`);
         currentNodeKey = node.config?.next_node_key;
+      } else if (node.node_type === "send_template") {
+        stepLogs.push(`[Template] Sends approved template #${node.config?.template_id || node.config?.template_name || "?"}`);
+        simulatedMessages.push({
+          sender: "bot",
+          type: "text",
+          text: `🧾 _[Approved template #${node.config?.template_id || node.config?.template_name || "?"} would be delivered here]_`,
+          at: new Date()
+        });
+        currentNodeKey = node.config?.next_node_key;
+      } else if (node.node_type === "api_webhook") {
+        // No live HTTP call in the simulator — follow the success path
+        stepLogs.push(`[Webhook] ${node.config?.method || "GET"} ${node.config?.url || ""} (not called in simulation, taking success path)`);
+        vars.webhook_status = "success";
+        currentNodeKey = node.config?.success_next || node.config?.next_node_key;
+      } else if (node.node_type === "ai_generate") {
+        simulatedMessages.push({
+          sender: "bot",
+          type: "text",
+          text: "🧠 _[AI-generated reply would appear here — the live bot answers using your AI settings]_",
+          at: new Date()
+        });
+        currentNodeKey = node.config?.next_node_key;
+      } else if (node.node_type === "ai_intent") {
+        // Without calling the model, route on the first configured intent so the
+        // rest of the branch stays walkable in the preview
+        const branchKeys = Object.keys(node.config?.branches || {});
+        const picked = branchKeys[0];
+        vars.ai_detected_intent = picked || "unknown";
+        stepLogs.push(`[AI Intent] Simulated as '${picked || "unknown"}' (live bot classifies the real message)`);
+        currentNodeKey = (picked && node.config.branches[picked]) || node.config?.fallback_node || node.config?.next_node_key;
+      } else if (node.node_type === "jump_to_flow") {
+        stepLogs.push(`[Jump] Hands the customer over to flow #${node.config?.target_flow_id || "?"} — simulation stops here.`);
+        isFlowEnded = true;
+        break;
       } else if (node.node_type === "handoff") {
         const note = node.config?.note || "Connecting to live support agent...";
         simulatedMessages.push({ sender: "bot", type: "handoff", text: note, at: new Date() });
@@ -1445,12 +1666,32 @@ class WaFlowEngine {
       text
     });
 
-    if (waCloud.isConfigured()) {
-      const formattedBtns = buttons.slice(0, 3).map((b, i) => ({
-        type: "reply",
-        reply: { id: b.reply_id || b.id || `btn_${i + 1}`, title: (b.title || `Option ${i + 1}`).slice(0, 20) }
-      }));
-      const sent = await waCloud.sendInteractiveButtons(phone, text, formattedBtns, headerText, footerText).catch(() => null);
+    if (waCloud.isConfigured() && buttons.length) {
+      // Cloud API reply-buttons cap at 3. Beyond that, render as a list so that
+      // EVERY option stays tappable instead of being silently dropped.
+      const sent = buttons.length > 3
+        ? await waCloud.sendInteractiveList(
+            phone,
+            text,
+            "View Options",
+            buttons.slice(0, 10).map((b, i) => ({
+              id: b.reply_id || b.id || `btn_${i + 1}`,
+              title: (b.title || `Option ${i + 1}`).slice(0, 24),
+              description: b.description || undefined,
+            })),
+            headerText,
+            footerText
+          ).catch(() => null)
+        : await waCloud.sendInteractiveButtons(
+            phone,
+            text,
+            buttons.map((b, i) => ({
+              id: b.reply_id || b.id || `btn_${i + 1}`,
+              title: (b.title || `Option ${i + 1}`).slice(0, 20),
+            })),
+            headerText,
+            footerText
+          ).catch(() => null);
       if (sent) return sent;
     }
 
@@ -1478,16 +1719,16 @@ class WaFlowEngine {
       text
     });
 
-    if (waCloud.isConfigured()) {
+    if (waCloud.isConfigured() && rows.length) {
       const formattedSections = [{
         title: title || "Options",
         rows: rows.slice(0, 10).map((r, i) => ({
           id: r.id || r.reply_id || `row_${i + 1}`,
           title: (r.title || `Option ${i + 1}`).slice(0, 24),
-          description: r.description ? (r.description || "").slice(0, 72) : undefined
+          description: r.description ? String(r.description).slice(0, 72) : undefined
         }))
       }];
-      const sent = await waCloud.sendInteractiveList(phone, text, buttonText, formattedSections).catch(() => null);
+      const sent = await waCloud.sendInteractiveList(phone, text, buttonText, formattedSections, title).catch(() => null);
       if (sent) return sent;
     }
 

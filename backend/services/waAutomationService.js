@@ -289,22 +289,28 @@ async function triggerAutomation(triggerType, eventInfo = {}) {
   }
 
   try {
-    // 1. Check if phone is opted out or blocked
+    // 1. Check if phone is opted out or blocked.
+    // Opt-outs are recorded from several paths with different phone formats
+    // ("9876543210" vs "919876543210"), so this MUST match on the last 10 digits
+    // like the campaign engine does — an exact match let opted-out people keep
+    // receiving automated messages.
     const [optOuts] = await db.promise().query(
-      "SELECT id FROM wa_opt_outs WHERE phone = ? LIMIT 1",
-      [cleanPhone]
+      "SELECT id FROM wa_opt_outs WHERE phone = ? OR phone LIKE ? LIMIT 1",
+      [cleanPhone, `%${cleanPhone.slice(-10)}`]
     );
     if (optOuts.length > 0) {
       console.log(`[WA Automation] Skipped '${triggerType}' for ${cleanPhone}: user opted out`);
       return { success: false, reason: "opted_out" };
     }
 
+    // is_unsubscribed matters as much as is_blocked — the opt-out writers set
+    // is_unsubscribed, so checking only is_blocked missed every unsubscribe.
     const [blocked] = await db.promise().query(
-      "SELECT id FROM wa_contacts WHERE (phone = ? OR phone LIKE ?) AND is_blocked = 1 LIMIT 1",
+      "SELECT id FROM wa_contacts WHERE (phone = ? OR phone LIKE ?) AND (is_blocked = 1 OR is_unsubscribed = 1) LIMIT 1",
       [cleanPhone, `%${cleanPhone.slice(-10)}`]
     );
     if (blocked.length > 0) {
-      console.log(`[WA Automation] Skipped '${triggerType}' for ${cleanPhone}: contact blocked`);
+      console.log(`[WA Automation] Skipped '${triggerType}' for ${cleanPhone}: contact blocked or unsubscribed`);
       return { success: false, reason: "blocked" };
     }
 
@@ -337,16 +343,27 @@ async function triggerAutomation(triggerType, eventInfo = {}) {
       const messageText = formatMessagePlaceholders(rawText, resolvedName, mergedData);
 
       if (rule.delay_minutes > 0) {
-        // Schedule delayed execution
-        setTimeout(async () => {
-          await executeAutomationSend(rule, cleanPhone, resolvedName, messageText, mergedData);
-        }, rule.delay_minutes * 60 * 1000);
-
-        await db.promise().query(
-          `INSERT INTO wa_automation_logs (automation_id, phone, contact_name, trigger_data, status)
-           VALUES (?, ?, ?, ?, 'sent')`,
-          [rule.id, cleanPhone, resolvedName, JSON.stringify({ triggerType, scheduledDelay: rule.delay_minutes, ...mergedData })]
+        // Persist the intent FIRST so a restart can't lose it, and log it as
+        // 'scheduled' rather than 'sent' — the old code claimed success before
+        // the message had even been attempted.
+        const [ins] = await db.promise().query(
+          `INSERT INTO wa_automation_logs (automation_id, phone, contact_name, trigger_data, status, scheduled_for)
+           VALUES (?, ?, ?, ?, 'scheduled', DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+          [
+            rule.id,
+            cleanPhone,
+            resolvedName,
+            JSON.stringify({ triggerType, scheduledDelay: rule.delay_minutes, messageText, ...mergedData }),
+            rule.delay_minutes,
+          ]
         );
+        const logId = ins.insertId;
+
+        // Fast path: fire in-process so short delays stay punctual. The claim
+        // below makes this safe against the sweeper picking up the same row.
+        setTimeout(() => {
+          runScheduledAutomation(logId, rule, cleanPhone, resolvedName, messageText, mergedData).catch(() => {});
+        }, rule.delay_minutes * 60 * 1000);
       } else {
         // Execute immediately
         await executeAutomationSend(rule, cleanPhone, resolvedName, messageText, mergedData);
@@ -358,6 +375,83 @@ async function triggerAutomation(triggerType, eventInfo = {}) {
     console.error(`❌ [WA Automation] Error handling '${triggerType}':`, err.message);
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * Run one scheduled automation exactly once.
+ * The row is claimed atomically, so the in-process timer and the restart
+ * sweeper can both point at the same log row without double-sending.
+ */
+async function runScheduledAutomation(logId, rule, cleanPhone, contactName, messageText, data) {
+  const [claim] = await db.promise().query(
+    "UPDATE wa_automation_logs SET status = 'sending' WHERE id = ? AND status = 'scheduled'",
+    [logId]
+  );
+  if (!claim.affectedRows) return false; // already handled elsewhere
+
+  try {
+    await executeAutomationSend(rule, cleanPhone, contactName, messageText, data);
+    await db.promise().query("UPDATE wa_automation_logs SET status = 'sent' WHERE id = ?", [logId]);
+    return true;
+  } catch (err) {
+    await db.promise().query(
+      "UPDATE wa_automation_logs SET status = 'failed', error = ? WHERE id = ?",
+      [String(err.message || err).slice(0, 500), logId]
+    ).catch(() => {});
+    return false;
+  }
+}
+
+/**
+ * Sweeper for delayed automations whose in-process timer never fired
+ * (server restart / crash). Without this every delayed rule was lost silently.
+ */
+async function runDueAutomationsSweep() {
+  try {
+    const [due] = await db.promise().query(
+      `SELECT l.*, a.*, l.id AS log_id, a.id AS rule_id,
+              t.name AS template_name, t.body AS template_body,
+              ft.name AS followup_template_name, ft.body AS followup_template_body
+       FROM wa_automation_logs l
+       JOIN wa_automations a ON l.automation_id = a.id
+       LEFT JOIN wa_templates t ON a.template_id = t.id
+       LEFT JOIN wa_templates ft ON a.followup_template_id = ft.id
+       WHERE l.status = 'scheduled' AND l.scheduled_for IS NOT NULL AND l.scheduled_for <= NOW()
+         AND a.is_active = 1
+       ORDER BY l.scheduled_for ASC LIMIT 50`
+    );
+    if (!due.length) return 0;
+
+    console.log(`⏰ [WA Automation] Recovering ${due.length} delayed automation(s) whose timer was lost`);
+    let ran = 0;
+    for (const row of due) {
+      let payload = {};
+      try {
+        payload = typeof row.trigger_data === "string" ? JSON.parse(row.trigger_data) : (row.trigger_data || {});
+      } catch (_) {}
+
+      const rule = { ...row, id: row.rule_id };
+      const messageText = payload.messageText
+        || formatMessagePlaceholders(rule.message_text || rule.template_body || "Hello {name}!", row.contact_name, payload);
+
+      const ok = await runScheduledAutomation(row.log_id, rule, row.phone, row.contact_name, messageText, payload);
+      if (ok) ran++;
+    }
+    return ran;
+  } catch (err) {
+    console.error("[WA Automation] Delayed-automation sweep error:", err.message);
+    return 0;
+  }
+}
+
+let sweepTimer = null;
+function startAutomationScheduler(intervalMs = 60 * 1000) {
+  if (sweepTimer) return;
+  // One catch-up pass at boot, then every minute
+  runDueAutomationsSweep().catch(() => {});
+  sweepTimer = setInterval(() => runDueAutomationsSweep().catch(() => {}), intervalMs);
+  if (sweepTimer.unref) sweepTimer.unref();
+  console.log("✅ Delayed WhatsApp Automation scheduler started (restart-safe)");
 }
 
 async function getWelcomeSettings() {
@@ -744,4 +838,6 @@ module.exports = {
   updateWelcomeSettings,
   maybeSendWelcomeReply,
   executeAutomationSend,
+  runDueAutomationsSweep,
+  startAutomationScheduler,
 };

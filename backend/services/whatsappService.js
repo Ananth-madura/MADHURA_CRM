@@ -122,6 +122,17 @@ class WhatsAppService {
   }
 
   // Broadcasts real-time WhatsApp events across the shared team inbox and specific user rooms
+  // whatsapp-web.js ack codes -> the status strings the UI renders ticks from.
+  // -1 error, 0 pending, 1 sent to server, 2 delivered to device, 3 read, 4 played
+  static ackToStatus(ack) {
+    if (ack === undefined || ack === null) return null;
+    if (ack < 0) return "failed";
+    if (ack === 0) return "pending";
+    if (ack === 1) return "sent";
+    if (ack === 2) return "delivered";
+    return "read";
+  }
+
   emitWaEvent(event, chatId, phone, message) {
     try {
       const app = require("../server");
@@ -359,6 +370,8 @@ class WhatsAppService {
           type: msg.type || (isMedia ? "document" : "text"),
           hasMedia: isMedia,
           filename: rawFilename || "",
+          ack: typeof msg.ack === "number" ? msg.ack : null,
+          status: WhatsAppService.ackToStatus(msg.ack) || (msg.fromMe ? "sent" : null),
           location: msg.type === "location" && msg.location
             ? { lat: msg.location.latitude, lng: msg.location.longitude, name: msg.location.description || "" }
             : null,
@@ -449,7 +462,19 @@ class WhatsAppService {
             const billHandled = await require("./waCustomerBillingService").handleInboundBillKeyword(cleanPhone, msg.body, this.key).catch(() => false);
             if (billHandled) return;
 
-            const flowHandled = await require("./waFlowEngine").dispatchInbound(cleanPhone, msg.body, interactiveReplyId, this.key).catch(() => false);
+            // Describe any attachment, but DON'T download it yet — the engine
+            // calls resolve() only if the step the customer is on wants a file.
+            const inboundMedia = isMedia
+              ? {
+                  hasMedia: true,
+                  type: msg.type || "document",
+                  filename: rawFilename || "",
+                  caption: msg.body || "",
+                  resolve: () => this.getMediaForMessage(chatId, liveMsg.id, liveMsg.serializedId),
+                }
+              : null;
+
+            const flowHandled = await require("./waFlowEngine").dispatchInbound(cleanPhone, msg.body, interactiveReplyId, this.key, inboundMedia).catch(() => false);
             if (!flowHandled) {
               const handled = await require("./waMenuHandler").handleMenuReply(cleanPhone, { text: msg.body, buttonReplyId: interactiveReplyId }, this.key).catch(() => false);
               if (!handled) {
@@ -478,6 +503,44 @@ class WhatsAppService {
       this.client.on("message_create", safeHandleLiveMessage);
       this.client.on("message", (msg) => {
         if (!msg.fromMe) safeHandleLiveMessage(msg);
+      });
+
+      // Delivery receipts: keeps the tick marks honest (sent -> delivered -> read)
+      // instead of the UI always claiming blue double-ticks.
+      this.client.on("message_ack", (msg, ack) => {
+        try {
+          const status = WhatsAppService.ackToStatus(ack);
+          if (!status) return;
+          const chatId = msg.fromMe ? msg.to : msg.from;
+          if (!chatId) return;
+          const cleanPhone = chatId.replace(/\D/g, "");
+          const msgId = msg.id?.id;
+          const serializedId = msg.id?._serialized;
+
+          const cached = this.messagesCache[chatId];
+          if (Array.isArray(cached)) {
+            const hit = cached.find((m) => m.id === msgId || m.serializedId === serializedId);
+            if (hit) {
+              hit.ack = ack;
+              hit.status = status;
+            }
+          }
+
+          this.emitWaEvent("wa_message_ack", chatId, cleanPhone, { id: msgId, serializedId, ack, status });
+
+          const db = require("../config/database");
+          const statusColumn = { sent: "sent_at", delivered: "delivered_at", read: "read_at" }[status];
+          const sets = ["status = ?"];
+          const params = [status];
+          if (statusColumn) {
+            sets.push(`${statusColumn} = NOW()`);
+          }
+          params.push(msgId, serializedId || msgId);
+          db.promise().query(
+            `UPDATE wa_message_logs SET ${sets.join(", ")} WHERE wa_message_id = ? OR wa_message_id = ?`,
+            params
+          ).catch(() => {});
+        } catch (_) {}
       });
 
       await this.client.initialize();
@@ -883,6 +946,9 @@ class WhatsAppService {
                   body: describeLastMessage(c.lastMessage),
                   timestamp: c.lastMessage.timestamp,
                   fromMe: Boolean(c.lastMessage.fromMe),
+                  type: c.lastMessage.type || null,
+                  hasMedia: Boolean(c.lastMessage.hasMedia),
+                  status: WhatsAppService.ackToStatus(c.lastMessage.ack),
                 }
               : null,
             hasMessages: true,
@@ -897,7 +963,7 @@ class WhatsAppService {
     try {
       const db = require("../config/database");
       const [recentLogs] = await db.promise().query(
-        `SELECT phone, direction, message_text, created_at, wa_message_id
+        `SELECT phone, direction, message_text, message_type, status, created_at, wa_message_id
          FROM wa_message_logs
          WHERE session_key = ? OR session_key IS NULL OR session_key = '1' OR session_key = 'default'
          ORDER BY id DESC LIMIT 500`,
@@ -913,7 +979,7 @@ class WhatsAppService {
         if (chatMap.has(chatId)) {
           const existing = chatMap.get(chatId);
           if (!existing.lastMessage || (logTime > (existing.lastMessage.timestamp || 0))) {
-            existing.lastMessage = { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound" };
+            existing.lastMessage = { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound", type: log.message_type || null, status: log.direction === "outbound" ? (log.status || "sent") : null };
             if (logTime > (existing.timestamp || 0)) {
               existing.timestamp = logTime;
             }
@@ -925,7 +991,7 @@ class WhatsAppService {
             name: `+91 ${cleanPhone}`,
             unreadCount: 0,
             timestamp: logTime,
-            lastMessage: { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound" },
+            lastMessage: { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound", type: log.message_type || null, status: log.direction === "outbound" ? (log.status || "sent") : null },
             hasMessages: true,
           });
           phoneToChatId.set(cleanPhone, chatId);
@@ -1063,7 +1129,7 @@ class WhatsAppService {
       const db = require("../config/database");
       const dbLimit = Math.max(numericLimit, 50);
       const [rows] = await db.promise().query(
-        `SELECT id, phone, direction, message_type, message_text as body, created_at, wa_message_id
+        `SELECT id, phone, direction, message_type, message_text as body, created_at, wa_message_id, status
          FROM wa_message_logs
          WHERE (session_key = ? OR session_key IS NULL OR session_key = '1' OR session_key = 'default')
            AND (phone LIKE ? OR phone LIKE ? OR phone LIKE ? OR phone = ?)
@@ -1081,6 +1147,7 @@ class WhatsAppService {
           hasMedia: Boolean(isFile),
           type: r.message_type || (isFile ? "document" : "text"),
           filename: r.body || "",
+          status: r.direction === "outbound" ? (r.status || "sent") : null,
         });
       });
     } catch (e) {
@@ -1114,6 +1181,8 @@ class WhatsAppService {
                 type: m.type || (isMedia ? "document" : "text"),
                 hasMedia: isMedia,
                 filename: filename || "",
+                ack: typeof m.ack === "number" ? m.ack : null,
+                status: WhatsAppService.ackToStatus(m.ack) || (m.fromMe ? "sent" : null),
                 location: m.type === "location" && m.location
                   ? { lat: m.location.latitude, lng: m.location.longitude, name: m.location.description || "" }
                   : null,

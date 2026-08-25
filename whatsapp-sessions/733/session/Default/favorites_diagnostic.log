@@ -220,3 +220,13 @@
 2026-08-22 05:58:33.591: [INFO] BookmarkModelLoaded, ids_reassigned: 0
 2026-08-22 05:58:33.591: [INFO] BookmarksLoadDropped droppedNodes=0
 2026-08-22 05:58:33.591: [INFO] BookmarksSnapshot Startup total=0 bar=0 other=0 mobile=0 showBar=0 showBarNTP=1
+2026-08-24 06:31:00.351: [INFO] CurrentProfilePath: E:\MADHURA_CRM\whatsapp-sessions\733\session\Default
+2026-08-24 06:31:00.351: [INFO] Profiles total count: 1
+2026-08-24 06:31:00.351: [INFO] Profile: name=Profile 1 path=E:\MADHURA_CRM\whatsapp-sessions\733\session\Default lastActive=2026-08-22T05:58:33.563Z
+2026-08-24 06:31:00.351: [INFO] LastUsedProfileDir: E:\MADHURA_CRM\whatsapp-sessions\733\session\Default
+2026-08-24 06:31:00.351: [INFO] MostRecentlyActiveProfile: name=Profile 1 path=E:\MADHURA_CRM\whatsapp-sessions\733\session\Default lastActive=2026-08-22T05:58:33.563Z
+2026-08-24 06:31:00.351: [INFO] VisibilityChanged: 0
+2026-08-24 06:31:00.418: [INFO] OnDoneLoading sync enabled: 0
+2026-08-24 06:31:00.418: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-08-24 06:31:00.418: [INFO] BookmarksLoadDropped droppedNodes=0
+2026-08-24 06:31:00.418: [INFO] BookmarksSnapshot Startup total=0 bar=0 other=0 mobile=0 showBar=0 showBarNTP=1

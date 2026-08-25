@@ -610,6 +610,15 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_automations", "flow_id", "INT DEFAULT NULL");
   await addColumnIfNotExists("wa_automations", "group_id", "INT DEFAULT NULL");
 
+  // 1b. Durable delayed automations: a rule with delay_minutes used to live only
+  // in an in-process setTimeout, so a restart lost it silently. The row now
+  // carries its own due time and the sweeper picks up anything the timer missed.
+  await addColumnIfNotExists("wa_automation_logs", "scheduled_for", "DATETIME DEFAULT NULL");
+  try {
+    await queryAsync("ALTER TABLE wa_automation_logs MODIFY COLUMN status ENUM('scheduled','sending','sent','failed','skipped') DEFAULT 'sent'");
+  } catch (_) {}
+  await addIndexIfNotExists("wa_automation_logs", "idx_wa_autolog_due", "status, scheduled_for");
+
   // 2. wa_campaigns column additions
   await addColumnIfNotExists("wa_campaigns", "whatsapp_number", "VARCHAR(30) DEFAULT NULL");
   await addColumnIfNotExists("wa_campaigns", "daily_limit", "INT DEFAULT 0");

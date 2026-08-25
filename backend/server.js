@@ -237,6 +237,13 @@ function startServer() {
       console.warn("⚠️ WA interactive reminder schedulers warning:", e.message);
     }
 
+    // Recovers delayed automation rules whose in-process timer was lost on restart
+    try {
+      require("./services/waAutomationService").startAutomationScheduler();
+    } catch (e) {
+      console.warn("⚠️ WA delayed automation scheduler warning:", e.message);
+    }
+
     // Start WhatsApp Cloud API queue worker (no Redis fallback = synchronous)
     const { startWorker } = require("./services/waQueue");
     startWorker().catch(() => {});

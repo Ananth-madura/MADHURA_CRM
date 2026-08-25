@@ -346,6 +346,10 @@ async function runCampaign(campaignId) {
 
   let sentThisSession = 0;
   let totalProcessed = 0;
+  let idleWaits = 0;
+  // Bounds the retry-backoff wait so a row stuck in 'sending' (process died
+  // mid-send) can't hold the loop open forever.
+  const MAX_IDLE_WAITS = 60;
   const seenPhones = new Set();
 
   while (true) {
@@ -380,9 +384,15 @@ async function runCampaign(campaignId) {
       }
     }
 
-    // Fetch next queued message
+    // Fetch next queued message that is actually DUE. Without the next_retry_at
+    // guard a re-queued failure is picked straight back up on the next iteration
+    // (it still has the lowest id), so the backoff never happens and one bad
+    // number burns all its retries back-to-back while blocking the whole campaign.
     const [queuedRows] = await db.promise().query(
-      `SELECT * FROM wa_campaign_messages WHERE campaign_id=? AND status='queued' ORDER BY id ASC LIMIT 1`,
+      `SELECT * FROM wa_campaign_messages
+       WHERE campaign_id=? AND status='queued'
+         AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+       ORDER BY id ASC LIMIT 1`,
       [campaignId]
     );
 
@@ -411,9 +421,21 @@ async function runCampaign(campaignId) {
           "UPDATE wa_campaigns SET status='completed', completed_at=NOW() WHERE id=?",
           [campaignId]
         );
+        break;
       }
-      break;
+
+      // Nothing due right now, but retries are still pending — waiting them out
+      // instead of exiting, which used to strand every scheduled retry.
+      idleWaits++;
+      if (idleWaits > MAX_IDLE_WAITS) {
+        console.warn(`⚠️ Campaign ${campaignId}: ${remaining[0].cnt} message(s) stuck for ${MAX_IDLE_WAITS} min — exiting loop.`);
+        break;
+      }
+      console.log(`⏳ Campaign ${campaignId}: ${remaining[0].cnt} message(s) waiting on retry backoff — rechecking in 60s`);
+      await interruptibleSleep(60 * 1000, campaignId);
+      continue;
     }
+    idleWaits = 0;
 
     // Duplicate check
     if (duplicate_filter && seenPhones.has(nextMsg.phone)) {

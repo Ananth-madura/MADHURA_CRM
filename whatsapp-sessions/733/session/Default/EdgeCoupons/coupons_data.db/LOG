@@ -1,6 +1,15 @@
-2026/08/22-11:28:42.824 7528 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/08/22-11:28:42.826 7528 Recovering log #65
-2026/08/22-11:28:42.827 7528 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/000065.log 
-2026/08/22-11:28:50.220 3b1c Level-0 table #69: started
-2026/08/22-11:28:50.227 3b1c Level-0 table #69: 683376 bytes OK
-2026/08/22-11:28:50.230 3b1c Delete type=0 #65
+2026/08/24-12:01:05.378 2fb8 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/08/24-12:01:05.379 2fb8 Recovering log #68
+2026/08/24-12:01:05.380 2fb8 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\733\session\Default\EdgeCoupons/coupons_data.db/000068.log 
+2026/08/24-12:01:05.534 5620 Level-0 table #72: started
+2026/08/24-12:01:05.540 5620 Level-0 table #72: 683376 bytes OK
+2026/08/24-12:01:05.544 5620 Delete type=0 #68
+2026/08/24-12:01:05.545 4f44 Compacting 4@0 + 1@1 files
+2026/08/24-12:01:05.567 4f44 Generated table #73@0: 3 keys, 683376 bytes
+2026/08/24-12:01:05.567 4f44 Compacted 4@0 + 1@1 files => 683376 bytes
+2026/08/24-12:01:05.570 4f44 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/08/24-12:01:05.571 4f44 Delete type=2 #60
+2026/08/24-12:01:05.571 4f44 Delete type=2 #63
+2026/08/24-12:01:05.571 4f44 Delete type=2 #66
+2026/08/24-12:01:05.571 4f44 Delete type=2 #69
+2026/08/24-12:01:05.571 4f44 Delete type=2 #72

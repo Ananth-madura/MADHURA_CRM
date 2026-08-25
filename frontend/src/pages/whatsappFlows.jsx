@@ -35,13 +35,78 @@ const NODE_TYPES = [
   { type: "condition", label: "Condition Branch", icon: "🔀", color: "bg-amber-50 text-amber-700 border-amber-200" },
   { type: "create_lead", label: "Save CRM Lead", icon: "💼", color: "bg-sky-50 text-sky-700 border-sky-200" },
   { type: "send_media", label: "Media / PDF", icon: "📷", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
+  { type: "send_template", label: "Approved Template", icon: "🧾", color: "bg-lime-50 text-lime-700 border-lime-200" },
   { type: "delay", label: "Pacing Delay", icon: "⏱️", color: "bg-orange-50 text-orange-700 border-orange-200" },
   { type: "api_webhook", label: "API Webhook", icon: "🌐", color: "bg-violet-50 text-violet-700 border-violet-200" },
+  { type: "ai_generate", label: "AI Smart Reply", icon: "🧠", color: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200" },
+  { type: "ai_intent", label: "AI Intent Router", icon: "🎯", color: "bg-purple-50 text-purple-700 border-purple-200" },
   { type: "set_variable", label: "Set Variable", icon: "⚙️", color: "bg-slate-50 text-slate-700 border-slate-200" },
   { type: "set_tag", label: "Tag Contact", icon: "🏷️", color: "bg-pink-50 text-pink-700 border-pink-200" },
+  { type: "add_to_group", label: "Add to Group", icon: "👥", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  { type: "jump_to_flow", label: "Jump to Flow", icon: "↪️", color: "bg-amber-50 text-amber-700 border-amber-200" },
   { type: "handoff", label: "Live Agent Handoff", icon: "👤", color: "bg-rose-50 text-rose-700 border-rose-200" },
   { type: "end", label: "End Flow", icon: "🛑", color: "bg-gray-100 text-gray-700 border-gray-200" }
 ];
+
+/**
+ * Editable key -> value map. Used by the AI Intent router (intent -> step)
+ * and the API Webhook response mapping (variable -> JSON path).
+ */
+function KeyMapEditor({ map, onChange, keyPlaceholder, valuePlaceholder, valueOptions, addLabel }) {
+  const entries = Object.entries(map || {});
+  const commit = (next) => onChange(Object.fromEntries(next));
+
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([k, v], i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={k}
+            placeholder={keyPlaceholder}
+            onChange={(e) => commit(entries.map((en, j) => (j === i ? [e.target.value, v] : en)))}
+            className="flex-1 min-w-0 p-1.5 border rounded-lg text-xs bg-white font-mono"
+          />
+          <ArrowRight size={14} className="text-gray-400 shrink-0" />
+          {valueOptions ? (
+            <select
+              value={v || ""}
+              onChange={(e) => commit(entries.map((en, j) => (j === i ? [k, e.target.value] : en)))}
+              className="w-44 shrink-0 p-1.5 border rounded-lg text-xs font-mono bg-white"
+            >
+              <option value="">-- Target Step --</option>
+              {valueOptions.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={v || ""}
+              placeholder={valuePlaceholder}
+              onChange={(e) => commit(entries.map((en, j) => (j === i ? [k, e.target.value] : en)))}
+              className="flex-1 min-w-0 p-1.5 border rounded-lg text-xs bg-white font-mono"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => commit(entries.filter((_, j) => j !== i))}
+            className="p-1 text-gray-400 hover:text-red-600 shrink-0"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => commit([...entries, ["", ""]])}
+        className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
+      >
+        {addLabel}
+      </button>
+    </div>
+  );
+}
 
 export default function WhatsAppFlows() {
   const [flows, setFlows] = useState([]);
@@ -69,6 +134,7 @@ export default function WhatsAppFlows() {
   const [simLogs, setSimLogs] = useState([]);
   const [simLoading, setSimLoading] = useState(false);
   const [simEnded, setSimEnded] = useState(false);
+  const [simTrigger, setSimTrigger] = useState(null);
 
   // Direct Phone Trigger Modal
   const [showTriggerModal, setShowTriggerModal] = useState(false);
@@ -88,6 +154,10 @@ export default function WhatsAppFlows() {
   const [selectedRunFlowId, setSelectedRunFlowId] = useState("all");
 
   const [seeding, setSeeding] = useState(false);
+  const [uploadingIdx, setUploadingIdx] = useState(null);
+  // Reference lists used by the Template / Group / Jump steps
+  const [templates, setTemplates] = useState([]);
+  const [groups, setGroups] = useState([]);
   const simScrollRef = useRef(null);
 
   const fetchFlows = async () => {
@@ -123,6 +193,19 @@ export default function WhatsAppFlows() {
 
   useEffect(() => {
     fetchFlows();
+  }, []);
+
+  // Templates & contact groups power the dropdowns in the Template / Group steps.
+  // Failing to load them must never block the builder — the steps fall back to a manual ID.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const headers = { Authorization: `Bearer ${token}` };
+    axios.get(`${API}/api/wa/templates`, { headers })
+      .then((res) => setTemplates(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setTemplates([]));
+    axios.get(`${API}/api/wa/groups`, { headers })
+      .then((res) => setGroups(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setGroups([]));
   }, []);
 
   useEffect(() => {
@@ -329,6 +412,30 @@ export default function WhatsAppFlows() {
     });
   };
 
+  // Upload an image / PDF / doc / video / audio straight into a Media step.
+  // Reuses the existing WhatsApp media uploader, which returns a public URL,
+  // the detected media_type and the original filename.
+  const handleUploadNodeMedia = async (nodeIdx, file) => {
+    if (!file) return;
+    setUploadingIdx(nodeIdx);
+    try {
+      const token = localStorage.getItem("token");
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await axios.post(`${API}/api/whatsapp/upload-media`, fd, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      updateNodeConfig(nodeIdx, {
+        media_url: res.data.url,
+        media_type: res.data.media_type,
+        filename: res.data.filename,
+      });
+    } catch (err) {
+      alert("Upload failed: " + (err.response?.data?.error || err.message));
+    }
+    setUploadingIdx(null);
+  };
+
   const insertPlaceholderIntoNode = (nodeIdx, fieldName, tag) => {
     const currentVal = formNodes[nodeIdx]?.config?.[fieldName] || "";
     updateNodeConfig(nodeIdx, { [fieldName]: currentVal + (currentVal.length > 0 ? " " : "") + tag });
@@ -361,10 +468,15 @@ export default function WhatsAppFlows() {
     if (type === "collect_input") defaultCfg = { prompt_text: "Please enter your city/location:", var_key: "city", validation_type: "none", next_node_key: "end_flow" };
     if (type === "crm_lookup") defaultCfg = { lookup_type: "invoice", branch_on_result: true, found_next: "end_flow", not_found_next: "end_flow" };
     if (type === "condition") defaultCfg = { subject_key: "input", operator: "equals", value: "yes", true_next: "end_flow", false_next: "end_flow" };
-    if (type === "api_webhook") defaultCfg = { method: "GET", url: "https://api.example.com/check-status?phone={phone}", next_node_key: "end_flow" };
+    if (type === "api_webhook") defaultCfg = { method: "GET", url: "https://api.example.com/check-status?phone={phone}", headers: "", body: "", response_mapping: {}, success_next: "end_flow", error_next: "end_flow" };
     if (type === "create_lead") defaultCfg = { default_service: "WhatsApp Lead", notes: "Captured via WhatsApp Flow", next_node_key: "end_flow" };
     if (type === "set_variable") defaultCfg = { variable_name: "lead_status", variable_value: "Hot", next_node_key: "end_flow" };
     if (type === "set_tag") defaultCfg = { tag: "Bot Qualified", next_node_key: "end_flow" };
+    if (type === "send_template") defaultCfg = { template_id: "", next_node_key: "end_flow" };
+    if (type === "ai_generate") defaultCfg = { system_prompt: "You are a helpful support assistant for {company}. Answer briefly and politely in the customer's language.", next_node_key: "end_flow" };
+    if (type === "ai_intent") defaultCfg = { branches: { booking: "end_flow", pricing: "end_flow", support: "end_flow" }, fallback_node: "end_flow" };
+    if (type === "add_to_group") defaultCfg = { group_id: "", next_node_key: "end_flow" };
+    if (type === "jump_to_flow") defaultCfg = { target_flow_id: "", next_node_key: "end_flow" };
     if (type === "handoff") defaultCfg = { note: "Customer transferred to human live support agent." };
     if (type === "end") defaultCfg = {};
 
@@ -436,24 +548,42 @@ export default function WhatsAppFlows() {
     setSimCurrentNode(null);
     setSimLogs([]);
     setSimEnded(false);
+    setSimTrigger(null);
     setShowSimulator(true);
     setSimLoading(true);
 
-    // Initial Trigger Execution
+    // Open with a message that ACTUALLY fires this flow, so the preview matches
+    // WhatsApp. A hardcoded "hi" starts an invoice-keyword flow in the simulator
+    // that would never have started on a real chat.
+    let cfg = {};
+    try {
+      cfg = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
+    } catch (_) {}
+    const firstKeyword = (cfg.keywords || [])[0] || cfg.keyword || "hi";
+    const openingMessage = (flow.trigger_type === "keyword" || !flow.trigger_type) ? firstKeyword : "hi";
+
+    setSimMessages([{ sender: "user", type: "text", text: openingMessage, at: new Date() }]);
+
     try {
       const token = localStorage.getItem("token");
       const res = await axios.post(
         `${API}/api/wa/flows/${flow.id}/test-simulate`,
-        { input: "hi", state: null },
+        { input: openingMessage, state: null },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (res.data?.success) {
-        setSimMessages(res.data.messages || []);
+        setSimMessages((prev) => [...prev, ...(res.data.messages || [])]);
         setSimVars(res.data.vars || {});
         setSimCurrentNode(res.data.currentNodeKey);
         setSimLogs(res.data.logs || []);
         setSimEnded(res.data.isEnded || false);
+        setSimTrigger({
+          type: res.data.triggerType,
+          keywords: res.data.triggerKeywords || [],
+          matched: res.data.triggerMatched,
+          input: openingMessage,
+        });
       }
     } catch (err) {
       setSimMessages([{ sender: "system", type: "text", text: `Simulation error: ${err.message}` }]);
@@ -1378,6 +1508,7 @@ export default function WhatsAppFlows() {
                                   { label: "✉️ Email", q: "What is your email address for invoices?", v: "email", t: "email" },
                                   { label: "📅 Preferred Date", q: "When would you prefer our technician to visit? (e.g. Tomorrow or 25 Aug):", v: "booking_date", t: "none" },
                                   { label: "🛠️ Service Requirement", q: "Please describe your service or maintenance requirement:", v: "inquiry", t: "none" },
+                                  { label: "📎 Photo / Document", q: "Please send a photo or PDF of the issue (or type your answer):", v: "attachment", t: "none", media: true },
                                 ].map((preset) => (
                                   <button
                                     key={preset.label}
@@ -1385,7 +1516,8 @@ export default function WhatsAppFlows() {
                                     onClick={() => updateNodeConfig(idx, {
                                       prompt_text: preset.q,
                                       var_key: preset.v,
-                                      validation_type: preset.t
+                                      validation_type: preset.t,
+                                      accept_media: preset.media === true ? true : undefined
                                     })}
                                     className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[10px] font-semibold transition"
                                   >
@@ -1435,6 +1567,35 @@ export default function WhatsAppFlows() {
                                 </select>
                               </div>
                             </div>
+
+                            {/* Attachment answers */}
+                            {(() => {
+                              const strict = !!(node.config.regex) ||
+                                (node.config.validation_type && node.config.validation_type !== "none");
+                              const accepted = node.config.accept_media === true ||
+                                (node.config.accept_media !== false && !strict);
+                              return (
+                                <label className="flex items-start gap-2 p-2.5 bg-cyan-50/60 border border-cyan-100 rounded-xl cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={accepted}
+                                    onChange={(e) => updateNodeConfig(idx, { accept_media: e.target.checked })}
+                                    className="mt-0.5 accent-cyan-600"
+                                  />
+                                  <span className="text-[10px] leading-relaxed text-gray-700">
+                                    <span className="font-bold uppercase">Accept photo / PDF / file as the answer</span>
+                                    <br />
+                                    The file is saved to the CRM and stored in{" "}
+                                    <code className="font-mono text-cyan-800">
+                                      {"{"}{node.config.var_key || "input"}_url{"}"}
+                                    </code>
+                                    {strict && !accepted && (
+                                      <span className="text-amber-700"> — off by default here because this question is validated as {node.config.validation_type || "regex"}.</span>
+                                    )}
+                                  </span>
+                                </label>
+                              );
+                            })()}
                           </div>
                         )}
 
@@ -1633,20 +1794,37 @@ export default function WhatsAppFlows() {
                                   className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
                                 >
                                   <option value="image">📷 Image (PNG, JPG, WEBP)</option>
-                                  <option value="document">📄 PDF Document (.pdf)</option>
-                                  <option value="document">📝 Word Document (.docx)</option>
+                                  <option value="document">📄 File / PDF / Word / Excel</option>
                                   <option value="video">🎥 Video (MP4, MOV)</option>
                                   <option value="audio">🎵 Audio Voice Note (MP3, OGG)</option>
-                                  <option value="excel">📊 Excel Spreadsheet (XLSX, CSV)</option>
+                                  <option value="link">🔗 Link (sends a rich URL preview)</option>
                                 </select>
                               </div>
                               <div className="sm:col-span-2">
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media / Document Public URL *</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="text-[10px] text-gray-500 font-bold uppercase">
+                                    {node.config.media_type === "link" ? "Link URL *" : "Media / Document URL *"}
+                                  </label>
+                                  {node.config.media_type !== "link" && (
+                                    <label className="text-[10px] font-bold text-cyan-800 bg-white border border-cyan-300 rounded px-2 py-0.5 cursor-pointer hover:bg-cyan-50">
+                                      {uploadingIdx === idx ? "Uploading…" : "⬆ Upload file"}
+                                      <input
+                                        type="file"
+                                        className="hidden"
+                                        disabled={uploadingIdx === idx}
+                                        onChange={(e) => {
+                                          handleUploadNodeMedia(idx, e.target.files?.[0]);
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                    </label>
+                                  )}
+                                </div>
                                 <input
                                   type="text"
                                   value={node.config.media_url || ""}
                                   onChange={(e) => updateNodeConfig(idx, { media_url: e.target.value })}
-                                  placeholder="https://example.com/catalog.pdf or https://example.com/photo.jpg"
+                                  placeholder="https://example.com/catalog.pdf — or upload a file"
                                   className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
                                 />
                               </div>
@@ -1694,6 +1872,320 @@ export default function WhatsAppFlows() {
                                   ))}
                                 </select>
                               </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "send_template" && (
+                          <div className="space-y-2 p-3 bg-lime-50/50 rounded-xl border border-lime-100">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Approved WhatsApp Template</label>
+                              {templates.length > 0 ? (
+                                <select
+                                  value={node.config.template_id || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { template_id: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
+                                >
+                                  <option value="">-- Choose Template --</option>
+                                  {templates.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name} ({t.language || "en"})</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={node.config.template_id || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { template_id: e.target.value })}
+                                  placeholder="Template ID or exact template name"
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                />
+                              )}
+                              <p className="text-[9px] text-gray-500 mt-1">Template variables are filled from the flow's collected data automatically.</p>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                              >
+                                <option value="">-- Next Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "api_webhook" && (
+                          <div className="space-y-3 p-3 bg-violet-50/50 rounded-xl border border-violet-100">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Method</label>
+                                <select
+                                  value={node.config.method || "GET"}
+                                  onChange={(e) => updateNodeConfig(idx, { method: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-bold"
+                                >
+                                  {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (<option key={m} value={m}>{m}</option>))}
+                                </select>
+                              </div>
+                              <div className="sm:col-span-3">
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Endpoint URL *</label>
+                                <input
+                                  type="text"
+                                  value={node.config.url || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { url: e.target.value })}
+                                  placeholder="https://api.example.com/status?phone={phone}"
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Headers (JSON)</label>
+                                <textarea
+                                  rows={2}
+                                  value={typeof node.config.headers === "string" ? node.config.headers : JSON.stringify(node.config.headers || {})}
+                                  onChange={(e) => updateNodeConfig(idx, { headers: e.target.value })}
+                                  placeholder='{"Authorization": "Bearer xxx"}'
+                                  className="w-full p-2 border rounded-lg text-[11px] bg-white font-mono resize-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Request Body (JSON, non-GET)</label>
+                                <textarea
+                                  rows={2}
+                                  value={typeof node.config.body === "string" ? node.config.body : JSON.stringify(node.config.body || {})}
+                                  onChange={(e) => updateNodeConfig(idx, { body: e.target.value })}
+                                  placeholder='{"phone": "{phone}", "name": "{name}"}'
+                                  className="w-full p-2 border rounded-lg text-[11px] bg-white font-mono resize-none"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Save Response Into Variables</label>
+                              <KeyMapEditor
+                                map={node.config.response_mapping || {}}
+                                onChange={(next) => updateNodeConfig(idx, { response_mapping: next })}
+                                keyPlaceholder="variable_name"
+                                valuePlaceholder="data.items[0].status"
+                                addLabel="+ Map a response field"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-emerald-700 font-bold uppercase">On Success →</label>
+                                <select
+                                  value={node.config.success_next || node.config.next_node_key || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { success_next: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                >
+                                  <option value="">-- Next Step --</option>
+                                  {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-rose-700 font-bold uppercase">On Error →</label>
+                                <select
+                                  value={node.config.error_next || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { error_next: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                                >
+                                  <option value="">-- Next Step --</option>
+                                  {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "ai_generate" && (
+                          <div className="space-y-2 p-3 bg-fuchsia-50/50 rounded-xl border border-fuchsia-100">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">AI Instructions (System Prompt)</label>
+                              <WAVariablePicker
+                                onInsert={(tag) => updateNodeConfig(idx, { system_prompt: (node.config.system_prompt || "") + " " + tag })}
+                                className="mb-2"
+                              />
+                              <textarea
+                                rows={3}
+                                value={node.config.system_prompt || ""}
+                                onChange={(e) => updateNodeConfig(idx, { system_prompt: e.target.value })}
+                                placeholder="You are a helpful support assistant for {company}. Answer briefly in the customer's language."
+                                className="w-full p-2.5 border rounded-xl text-xs bg-white resize-none outline-none focus:ring-2 focus:ring-fuchsia-400"
+                              />
+                              <p className="text-[9px] text-gray-500 mt-1">The customer's last message is sent as the user turn. Uses the AI model configured in WhatsApp AI Settings.</p>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                              >
+                                <option value="">-- Next Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "ai_intent" && (
+                          <div className="space-y-2 p-3 bg-purple-50/50 rounded-xl border border-purple-100">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Route Detected Intent → Step</label>
+                              <KeyMapEditor
+                                map={node.config.branches || {}}
+                                onChange={(next) => updateNodeConfig(idx, { branches: next })}
+                                keyPlaceholder="intent (e.g. booking)"
+                                valueOptions={availableNodeKeys}
+                                addLabel="+ Add intent"
+                              />
+                              <p className="text-[9px] text-gray-500 mt-1">The AI classifies the customer's message into exactly one of these intent names.</p>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Unrecognised Intent →</label>
+                              <select
+                                value={node.config.fallback_node || ""}
+                                onChange={(e) => updateNodeConfig(idx, { fallback_node: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
+                              >
+                                <option value="">-- Fallback Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "set_variable" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Variable Name</label>
+                              <input
+                                type="text"
+                                value={node.config.variable_name || ""}
+                                onChange={(e) => updateNodeConfig(idx, { variable_name: e.target.value })}
+                                placeholder="lead_status"
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Value (variables allowed)</label>
+                              <input
+                                type="text"
+                                value={node.config.variable_value || ""}
+                                onChange={(e) => updateNodeConfig(idx, { variable_value: e.target.value })}
+                                placeholder="Hot — {selected_option}"
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                              >
+                                <option value="">-- Next Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "set_tag" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Tag to Apply</label>
+                              <input
+                                type="text"
+                                value={node.config.tag || ""}
+                                onChange={(e) => updateNodeConfig(idx, { tag: e.target.value })}
+                                placeholder="Bot Qualified"
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                              >
+                                <option value="">-- Next Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "add_to_group" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Contact Group</label>
+                              {groups.length > 0 ? (
+                                <select
+                                  value={node.config.group_id || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { group_id: e.target.value })}
+                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-medium"
+                                >
+                                  <option value="">-- Choose Group --</option>
+                                  {groups.map((g) => (
+                                    <option key={g.id} value={g.id}>{g.name} ({g.contact_count || 0})</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={node.config.group_id || ""}
+                                  onChange={(e) => updateNodeConfig(idx, { group_id: e.target.value })}
+                                  placeholder="Group ID"
+                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                              >
+                                <option value="">-- Next Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {node.node_type === "jump_to_flow" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Hand Over To Flow</label>
+                              <select
+                                value={node.config.target_flow_id || ""}
+                                onChange={(e) => updateNodeConfig(idx, { target_flow_id: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-medium"
+                              >
+                                <option value="">-- Choose Flow --</option>
+                                {flows
+                                  .filter((f) => !editingFlow || f.id !== editingFlow.id)
+                                  .map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-500 font-bold uppercase">If Flow Missing →</label>
+                              <select
+                                value={node.config.next_node_key || ""}
+                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
+                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
+                              >
+                                <option value="">-- Fallback Step --</option>
+                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
+                              </select>
                             </div>
                           </div>
                         )}
@@ -1770,6 +2262,43 @@ export default function WhatsAppFlows() {
                 </button>
               </div>
 
+              {/* Real-world trigger check — does this message actually start the bot? */}
+              {simTrigger && (
+                <div
+                  className={`px-3.5 py-2 text-[10px] leading-relaxed border-b ${
+                    simTrigger.matched
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                  }`}
+                >
+                  {simTrigger.matched ? (
+                    <>
+                      <span className="font-bold">✓ Auto-starts on WhatsApp.</span>{" "}
+                      {simTrigger.type === "keyword"
+                        ? <>“{simTrigger.input}” matches this bot's trigger words.</>
+                        : <>This bot runs on <span className="font-bold">{simTrigger.type}</span> — no keyword needed.</>}
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-bold">⚠ Would NOT auto-start.</span>{" "}
+                      “{simTrigger.input}” does not match this bot's trigger words — the preview below is forced.
+                    </>
+                  )}
+                  {simTrigger.type === "keyword" && simTrigger.keywords.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {simTrigger.keywords.map((k) => (
+                        <span key={k} className="px-1.5 py-0.5 bg-slate-800/80 border border-slate-600 rounded text-slate-300 font-mono">
+                          {k}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {simTrigger.type === "keyword" && simTrigger.keywords.length === 0 && (
+                    <div className="mt-1 font-bold">No trigger words set — this bot can never start itself.</div>
+                  )}
+                </div>
+              )}
+
               {/* Chat Message Stream */}
               <div ref={simScrollRef} className="flex-1 p-4 overflow-y-auto space-y-3.5">
                 {simMessages.map((msg, i) => (
@@ -1787,11 +2316,37 @@ export default function WhatsAppFlows() {
                     {/* Bot Message Bubble */}
                     {msg.sender === "bot" && (
                       <div className="max-w-[88%] space-y-2">
+                        {/* Media / Document / Image Attachment */}
+                        {msg.type === "media" && (
+                          <div className="bg-[#202C33] rounded-2xl rounded-tl-none p-2 border border-emerald-500/20 shadow-sm">
+                            {msg.media_type === "image" && msg.media_url ? (
+                              <img
+                                src={msg.media_url}
+                                alt={msg.filename || "attachment"}
+                                className="rounded-xl max-h-44 w-full object-cover bg-slate-800"
+                                onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2 px-2 py-2.5 bg-[#111B21] rounded-xl border border-slate-700">
+                                <span className="text-lg">
+                                  {msg.media_type === "video" ? "🎥" : msg.media_type === "audio" ? "🎵" : "📄"}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-bold text-gray-100 truncate">{msg.filename || "attachment"}</div>
+                                  <div className="text-[9px] text-gray-400 uppercase">{msg.media_type || "document"}</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Text / Caption */}
-                        <div className="bg-[#202C33] text-gray-100 rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed border border-emerald-500/20 shadow-sm whitespace-pre-line">
-                          {msg.text}
-                          {msg.footer && <div className="text-[10px] text-gray-400 mt-1 italic border-t border-slate-700/50 pt-1">{msg.footer}</div>}
-                        </div>
+                        {(msg.text || msg.caption) && (
+                          <div className="bg-[#202C33] text-gray-100 rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed border border-emerald-500/20 shadow-sm whitespace-pre-line">
+                            {msg.text || msg.caption}
+                            {msg.footer && <div className="text-[10px] text-gray-400 mt-1 italic border-t border-slate-700/50 pt-1">{msg.footer}</div>}
+                          </div>
+                        )}
 
                         {/* Interactive Clickable Buttons */}
                         {msg.type === "buttons" && Array.isArray(msg.buttons) && (

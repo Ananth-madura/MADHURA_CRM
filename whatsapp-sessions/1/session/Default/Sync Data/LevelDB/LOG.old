@@ -1,2 +1,3 @@
-2026/08/22-10:53:45.991 6f40 Creating DB E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\Sync Data\LevelDB since it was missing.
-2026/08/22-10:53:46.022 6f40 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/08/22-11:28:25.861 8394 Reusing MANIFEST E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/08/22-11:28:25.866 8394 Recovering log #3
+2026/08/22-11:28:25.866 8394 Reusing old log E:\MADHURA_CRM\whatsapp-sessions\1\session\Default\Sync Data\LevelDB/000003.log 

@@ -6,8 +6,20 @@ import {
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
-import WAVariablePicker from "../components/WAVariablePicker";
+import WAVariablePicker, { VARIABLE_GROUPS } from "../components/WAVariablePicker";
 import { useNavigate } from "react-router-dom";
+
+const PLACEHOLDER_ITEMS = VARIABLE_GROUPS
+  .filter((g) => g.id !== "spintax")
+  .flatMap((g) =>
+    g.variables.map((v) => ({
+      key: v.tag,
+      label: v.label,
+      desc: g.label.replace(/^\S+\s/, ""),
+      example: v.sample,
+      color: g.color,
+    }))
+  );
 
 // Sample preview resolver for interactive phone preview
 function renderPreviewText(templateText) {

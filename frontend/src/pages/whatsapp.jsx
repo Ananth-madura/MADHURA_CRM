@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -34,6 +34,9 @@ import {
   Database,
   Key,
   Globe,
+  Mic,
+  Smile,
+  ChevronDown,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
@@ -71,6 +74,97 @@ function isFilename(str) {
   if (!str || typeof str !== "string") return false;
   return /\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|7z|tar|gz|json|png|jpg|jpeg|webp|gif|mp4|mov|mp3|ogg|wav)$/i.test(str.trim());
 }
+
+// Day divider label above the first message of each day, like WhatsApp's
+// sticky TODAY / YESTERDAY / date chips.
+function formatDayDivider(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp * 1000);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "TODAY";
+  if (date.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+
+  const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: "long" }).toUpperCase();
+  return date.toLocaleDateString([], { day: "2-digit", month: "long", year: "numeric" });
+}
+
+// A compact everyday set — enough to cover normal business chat without
+// pulling in a full emoji-picker dependency for a few hundred glyphs.
+const EMOJI_GROUPS = [
+  {
+    label: "Frequent",
+    emojis: ["👍", "🙏", "✅", "❤️", "😊", "😂", "🎉", "🔥", "👌", "💯", "🙌", "😍", "🤝", "⭐", "✨", "💪"],
+  },
+  {
+    label: "Smileys",
+    emojis: ["😀", "😃", "😄", "😁", "😅", "🤣", "🙂", "😉", "😇", "🥰", "😘", "😋", "😎", "🤩", "🥳", "🤔",
+             "😐", "😴", "😢", "😭", "😤", "😠", "😱", "🤗", "🤫", "😬", "🙄", "😌", "😷", "🤒", "🥺", "😳"],
+  },
+  {
+    label: "Gestures & People",
+    emojis: ["👋", "🤚", "✋", "👏", "🙋", "🤷", "🙇", "💁", "👇", "👉", "👈", "☝️", "✌️", "🤞", "👊", "🫰"],
+  },
+  {
+    label: "Business",
+    emojis: ["📅", "📆", "⏰", "📞", "📱", "💬", "📩", "📄", "📎", "📷", "📍", "🏠", "🏢", "🛠️", "⚡", "🧾",
+             "💳", "💰", "📊", "📈", "🚚", "🔧", "❄️", "🧯", "🔔", "🎁", "🚀", "🏆", "❌", "⚠️", "🆗", "🔴"],
+  },
+];
+
+function sameDay(a, b) {
+  if (!a || !b) return false;
+  return new Date(a * 1000).toDateString() === new Date(b * 1000).toDateString();
+}
+
+/**
+ * Real WhatsApp delivery ticks. The old UI hardcoded a blue ✓✓ on every
+ * outgoing message, so a queued or failed send still looked "read".
+ * pending → clock, sent → single ✓, delivered → grey ✓✓, read → blue ✓✓.
+ */
+function MessageTicks({ status, className = "" }) {
+  if (!status) return null;
+
+  if (status === "failed" || status === "error") {
+    return <span className={`text-red-400 font-bold ${className}`} title="Failed to send">!</span>;
+  }
+  if (status === "pending" || status === "queued" || status === "sending") {
+    return (
+      <svg viewBox="0 0 16 16" className={`w-3.5 h-3.5 ${className}`} fill="none" stroke="currentColor" strokeWidth="1.5" aria-label="Pending">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  const isRead = status === "read" || status === "played";
+  const isSingle = status === "sent";
+  const color = isRead ? "text-[#53bdeb]" : "text-slate-300/70";
+
+  return (
+    <svg
+      viewBox="0 0 18 12"
+      className={`w-4 h-3 ${color} ${className}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-label={isRead ? "Read" : isSingle ? "Sent" : "Delivered"}
+    >
+      <path d="M1 6.5 L4.2 9.7 L10.2 2.6" />
+      {!isSingle && <path d="M7 6.5 L10.2 9.7 L16.2 2.6" />}
+    </svg>
+  );
+}
+
+// WhatsApp's tiled doodle wallpaper, inlined as an SVG data URI so it needs no
+// asset request and survives any CSP.
+const CHAT_WALLPAPER =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.035' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M22 34c6-8 16-8 22 0M30 52v14M18 60h24'/%3E%3Ccircle cx='96' cy='30' r='9'/%3E%3Cpath d='M92 30l3 3 6-7'/%3E%3Cpath d='M150 22h26v18h-9l-5 6-4-6h-8z'/%3E%3Cpath d='M214 26c5 0 9 4 9 9s-4 9-9 9h-3l-5 5v-5c-4-1-7-4-7-9 0-5 4-9 9-9z'/%3E%3Cpath d='M34 108c0-7 5-12 12-12s12 5 12 12-5 12-12 12h-4l-6 5v-6c-1-2-2-6-2-11z'/%3E%3Cpath d='M104 100l8 14h-16z'/%3E%3Ccircle cx='170' cy='108' r='10'/%3E%3Cpath d='M166 108h8M170 104v8'/%3E%3Cpath d='M212 98h20v16h-20zM216 98v-4h12v4'/%3E%3Cpath d='M24 178c4-6 12-6 16 0M32 190v10'/%3E%3Cpath d='M84 172h22l-4 20H88z'/%3E%3Cpath d='M150 176c6-4 14 0 14 7 0 6-6 9-10 13l-4 4-4-4c-4-4-10-7-10-13 0-7 8-11 14-7z'/%3E%3Ccircle cx='218' cy='184' r='11'/%3E%3Cpath d='M213 184l4 4 7-8'/%3E%3Cpath d='M60 232h18v14H60zM64 232v-4h10v4'/%3E%3Cpath d='M126 236l7 12h-14z'/%3E%3Cpath d='M186 228c5-3 12 0 12 6 0 5-5 8-8 11l-4 3-3-3c-3-3-8-6-8-11 0-6 6-9 11-6z'/%3E%3C/g%3E%3C/svg%3E\")";
 
 // Mirrors the backend's describeLastMessage() — a live-pushed media/location
 // message has no body text, so give the sidebar preview a label instead of
@@ -338,6 +432,17 @@ export default function WhatsAppPage() {
   const [selectedDripId, setSelectedDripId] = useState("");
   const [enrollingDrip, setEnrollingDrip] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Voice note recording
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const recorderRef = useRef(null);
+  const recordTimerRef = useRef(null);
+  const recordCancelRef = useRef(false);
+
+  // "Jump to latest" affordance (showEmojiPicker is declared with the other UI state above)
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const threadRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -886,9 +991,9 @@ export default function WhatsAppPage() {
     fetchFlows();
   }, [fetchFlows]);
 
-  const handleAttachMedia = async (e, customMediaType = "document") => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+  // Shared upload+send path for anything file-shaped: attachments from the
+  // paperclip menu and recorded voice notes both route through here.
+  const sendFileToChat = async (file, customMediaType = "document") => {
     if (!file || !selectedChat) return;
     setMediaSending(true);
     setShowAttachMenu(false);
@@ -945,6 +1050,82 @@ export default function WhatsAppPage() {
     }
     setMediaSending(false);
   };
+
+  const handleAttachMedia = async (e, customMediaType = "document") => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    setShowAttachMenu(false);
+    await sendFileToChat(file, customMediaType);
+  };
+
+  // ── Voice notes ────────────────────────────────────────────────────────────
+  // Browsers record webm/opus; WhatsApp's native voice notes are ogg/opus, so
+  // this arrives as a playable audio attachment rather than a true PTT bubble.
+  // ponytail: transcode server-side to ogg/opus if a real waveform PTT matters.
+  const startRecording = async () => {
+    if (!selectedChat || recording) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Voice recording is not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = { recorder, stream, chunks };
+      recordCancelRef.current = false;
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(recordTimerRef.current);
+        setRecording(false);
+        setRecordSecs(0);
+        if (recordCancelRef.current || !chunks.length) return;
+
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const ext = (recorder.mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm";
+        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: blob.type });
+        await sendFileToChat(file, "audio");
+      };
+
+      recorder.start();
+      setRecording(true);
+      setRecordSecs(0);
+      recordTimerRef.current = setInterval(() => setRecordSecs((s) => s + 1), 1000);
+    } catch (err) {
+      setError("Microphone access denied or unavailable.");
+    }
+  };
+
+  const stopRecording = (cancel = false) => {
+    recordCancelRef.current = cancel;
+    const active = recorderRef.current;
+    if (active?.recorder && active.recorder.state !== "inactive") {
+      active.recorder.stop();
+    } else {
+      clearInterval(recordTimerRef.current);
+      setRecording(false);
+      setRecordSecs(0);
+    }
+  };
+
+  // Never leave the mic hot if the page unmounts mid-recording
+  useEffect(() => {
+    return () => {
+      clearInterval(recordTimerRef.current);
+      const active = recorderRef.current;
+      try {
+        if (active?.recorder && active.recorder.state !== "inactive") {
+          recordCancelRef.current = true;
+          active.recorder.stop();
+        }
+        active?.stream?.getTracks?.().forEach((t) => t.stop());
+      } catch (_) {}
+    };
+  }, []);
 
   const handleTriggerFlow = async (flowId) => {
     if (!selectedChat || !flowId) return;
@@ -1432,6 +1613,34 @@ export default function WhatsAppPage() {
     };
     socket.on("wa_chat_read", handleChatReadEvent);
 
+    // Delivery receipts — advance the tick marks in place (sent → delivered → read)
+    const handleMessageAck = (data) => {
+      const { message, phone } = data || {};
+      if (!message?.id && !message?.serializedId) return;
+      const status = message.status;
+      if (!status) return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === message.id || m.serializedId === message.serializedId
+            ? { ...m, status, ack: message.ack }
+            : m
+        )
+      );
+
+      const clean10 = (phone || "").replace(/\D/g, "").slice(-10);
+      if (clean10) {
+        setChats((prev) =>
+          prev.map((c) => {
+            const c10 = (c.id || c.phone || "").replace(/\D/g, "").slice(-10);
+            if (c10 !== clean10 || !c.lastMessage?.fromMe) return c;
+            return { ...c, lastMessage: { ...c.lastMessage, status } };
+          })
+        );
+      }
+    };
+    socket.on("wa_message_ack", handleMessageAck);
+
     // Check if user was navigated here with a phone parameter from Contacts / Groups / Templates
     const urlParams = new URLSearchParams(window.location.search);
     const phoneParam = urlParams.get("phone");
@@ -1457,6 +1666,7 @@ export default function WhatsAppPage() {
       socket.off("wa_contacts_synced", handleWaSynced);
       socket.off("wa_chats_synced", handleWaSynced);
       socket.off("wa_chat_read", handleChatReadEvent);
+      socket.off("wa_message_ack", handleMessageAck);
     };
   }, [fetchChats, fetchMessages, fetchStatus, fetchAccountDetails]);
 
@@ -1845,7 +2055,6 @@ export default function WhatsAppPage() {
                       phone={chat.id}
                       isGroup={chat.isGroup}
                       size="md"
-                      isOnline={!chat.isGroup}
                     />
 
                     <div className="flex-1 min-w-0">
@@ -1861,8 +2070,20 @@ export default function WhatsAppPage() {
                       <div className="flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1 min-w-0 text-xs text-slate-400 truncate">
                           {chat.lastMessage?.fromMe && (
-                            <span className="text-[#53bdeb] font-bold text-xs shrink-0">✓✓</span>
+                            <MessageTicks status={chat.lastMessage.status || "sent"} className="shrink-0" />
                           )}
+                          {(() => {
+                            const lm = chat.lastMessage || {};
+                            const t = lm.type;
+                            const icon =
+                              lm.location ? "📍" :
+                              t === "image" ? "📷" :
+                              t === "video" ? "🎥" :
+                              t === "audio" || t === "ptt" ? "🎤" :
+                              t === "sticker" ? "🩹" :
+                              (lm.hasMedia || t === "document") ? "📄" : null;
+                            return icon ? <span className="shrink-0">{icon}</span> : null;
+                          })()}
                           <span className="truncate">
                             {chat.lastMessage?.body || "Tap to open conversation"}
                           </span>
@@ -1956,7 +2177,6 @@ export default function WhatsAppPage() {
                       phone={selectedChat.id}
                       isGroup={selectedChat.isGroup}
                       size="md"
-                      isOnline={!selectedChat.isGroup}
                       clickable={true}
                     />
                   </div>
@@ -2110,7 +2330,15 @@ export default function WhatsAppPage() {
               </div>
 
               {/* Chat Thread Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#0b141a] bg-opacity-95">
+              <div
+                ref={threadRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  setIsScrolledUp(el.scrollHeight - el.scrollTop - el.clientHeight > 220);
+                }}
+                className="flex-1 overflow-y-auto p-4 bg-[#0b141a] relative"
+                style={{ backgroundImage: CHAT_WALLPAPER, backgroundRepeat: "repeat", backgroundSize: "260px 260px" }}
+              >
                 {messages.length >= msgLimit && (
                   <div className="flex justify-center mb-3">
                     <button
@@ -2134,10 +2362,26 @@ export default function WhatsAppPage() {
                     <p className="text-xs text-slate-400">Send a message below to start chatting with {selectedChat.name}</p>
                   </div>
                 ) : (
-                  [...messages].reverse().map((msg) => (
+                  [...messages].reverse().map((msg, mIdx, ordered) => {
+                    const prev = ordered[mIdx - 1];
+                    const next = ordered[mIdx + 1];
+                    // WhatsApp stacks a run of messages from the same sender:
+                    // the tail sits only on the first bubble, the rest tuck in tight.
+                    const startsRun = !prev || prev.isMe !== msg.isMe || !sameDay(prev.timestamp, msg.timestamp);
+                    const endsRun = !next || next.isMe !== msg.isMe || !sameDay(next.timestamp, msg.timestamp);
+                    const showDayDivider = !prev || !sameDay(prev.timestamp, msg.timestamp);
+
+                    return (
+                    <React.Fragment key={msg.id || msg.timestamp}>
+                    {showDayDivider && (
+                      <div className="flex justify-center my-3">
+                        <span className="px-3 py-1 bg-[#182229] text-[11px] font-semibold tracking-wide text-slate-300 rounded-lg shadow-sm uppercase">
+                          {formatDayDivider(msg.timestamp)}
+                        </span>
+                      </div>
+                    )}
                     <div
-                      key={msg.id || msg.timestamp}
-                      className={`flex ${msg.isMe ? "justify-end" : "justify-start"} group relative`}
+                      className={`flex ${msg.isMe ? "justify-end" : "justify-start"} group relative ${endsRun ? "mb-2.5" : "mb-0.5"}`}
                     >
                       {/* Hover action toolbar for reactions & quote reply */}
                       <div className="opacity-0 group-hover:opacity-100 transition flex items-center gap-1 bg-[#111b21] px-2 py-0.5 rounded-full shadow border border-slate-700/60 absolute -top-3 z-10 select-none">
@@ -2161,11 +2405,22 @@ export default function WhatsAppPage() {
                       </div>
 
                       <div
-                        className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm shadow-md relative ${msg.isMe
-                            ? "bg-[#005c4b] text-white rounded-tr-none"
-                            : "bg-[#202c33] text-white rounded-tl-none border border-slate-700/40"
+                        className={`max-w-[75%] md:max-w-[65%] px-2.5 py-1.5 rounded-lg text-sm shadow-sm relative ${msg.isMe
+                            ? `bg-[#005c4b] text-white ${startsRun ? "rounded-tr-none" : ""}`
+                            : `bg-[#202c33] text-white ${startsRun ? "rounded-tl-none" : ""}`
                           }`}
                       >
+                        {/* Bubble tail — only on the first message of a run */}
+                        {startsRun && (
+                          <span
+                            aria-hidden="true"
+                            className={`absolute top-0 w-2 h-3 ${msg.isMe ? "-right-2" : "-left-2"}`}
+                            style={{
+                              backgroundColor: msg.isMe ? "#005c4b" : "#202c33",
+                              clipPath: msg.isMe ? "polygon(0 0, 100% 0, 0 100%)" : "polygon(0 0, 100% 0, 100% 100%)",
+                            }}
+                          />
+                        )}
                         {/* Quoted Message Preview in bubble */}
                         {msg.quotedMsg && (
                           <div className="mb-2 p-1.5 bg-black/25 rounded-lg border-l-2 border-[#00a884] text-xs text-slate-300">
@@ -2241,7 +2496,7 @@ export default function WhatsAppPage() {
                           </div>
                         )}
 
-                        <div className="flex items-center justify-end gap-1 text-[11px] mt-1 text-slate-300/80 font-medium">
+                        <div className="flex items-center justify-end gap-1 text-[11px] -mt-0.5 -mb-0.5 text-slate-300/60 font-normal leading-none pt-1">
                           <span>
                             {msg.timestamp
                               ? new Date(msg.timestamp * 1000).toLocaleTimeString([], {
@@ -2250,16 +2505,28 @@ export default function WhatsAppPage() {
                               })
                               : ""}
                           </span>
-                          {msg.isMe && (
-                            <span className="text-[#53bdeb] font-bold text-xs">✓✓</span>
-                          )}
+                          {msg.isMe && <MessageTicks status={msg.status || "sent"} />}
                         </div>
                       </div>
                     </div>
-                  ))
+                    </React.Fragment>
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Jump to latest — appears once you scroll away from the bottom */}
+              {isScrolledUp && (
+                <button
+                  type="button"
+                  onClick={scrollToBottom}
+                  className="absolute bottom-24 right-6 z-20 w-10 h-10 rounded-full bg-[#202c33] border border-slate-700/70 text-slate-200 shadow-lg hover:bg-[#2a3942] transition flex items-center justify-center"
+                  title="Jump to latest messages"
+                >
+                  <ChevronDown size={20} />
+                </button>
+              )}
 
               {/* Quote Reply Banner above composer */}
               {replyingTo && (
@@ -2608,29 +2875,94 @@ export default function WhatsAppPage() {
                   <Zap size={18} />
                 </button>
 
-                {/* Message Input Box */}
-                <input
-                  type="text"
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={`Message ${selectedChat.name}... (Type / for quick replies)`}
-                  className="flex-1 px-4 py-2.5 bg-[#2a3942] text-slate-100 placeholder-slate-400 rounded-xl text-sm outline-none border border-transparent focus:border-[#00a884]"
-                  disabled={sending}
-                />
+                {/* Emoji Picker Button */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((v) => !v)}
+                    className={`p-2 rounded-full transition ${showEmojiPicker ? "text-[#00a884] bg-white/10" : "text-slate-400 hover:text-slate-200"}`}
+                    title="Emoji"
+                  >
+                    <Smile size={21} />
+                  </button>
 
-                {/* Send Button */}
-                <button
-                  onClick={handleSend}
-                  disabled={!messageInput.trim() || sending}
-                  className="p-2.5 bg-[#00a884] text-[#111b21] font-bold rounded-full hover:bg-[#008f70] transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
-                >
-                  {sending ? (
-                    <Loader2 size={18} className="animate-spin" />
-                  ) : (
-                    <Send size={18} />
+                  {showEmojiPicker && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setShowEmojiPicker(false)} />
+                      <div className="absolute bottom-12 left-0 z-40 w-72 max-h-56 overflow-y-auto bg-[#233138] border border-slate-700 rounded-2xl shadow-2xl p-2.5">
+                        {EMOJI_GROUPS.map((group) => (
+                          <div key={group.label} className="mb-2 last:mb-0">
+                            <div className="text-[10px] font-bold uppercase text-slate-400 px-1 mb-1">{group.label}</div>
+                            <div className="grid grid-cols-8 gap-0.5">
+                              {group.emojis.map((emo) => (
+                                <button
+                                  key={emo}
+                                  type="button"
+                                  onClick={() => setMessageInput((prev) => prev + emo)}
+                                  className="text-lg leading-none p-1 rounded hover:bg-white/10 active:scale-90 transition"
+                                >
+                                  {emo}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
-                </button>
+                </div>
+
+                {/* Message Input Box — replaced by the recording bar while recording */}
+                {recording ? (
+                  <div className="flex-1 flex items-center gap-3 px-4 py-2.5 bg-[#2a3942] rounded-xl">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                    <span className="text-sm font-mono text-slate-100 tabular-nums">
+                      {String(Math.floor(recordSecs / 60)).padStart(2, "0")}:{String(recordSecs % 60).padStart(2, "0")}
+                    </span>
+                    <span className="text-xs text-slate-400 truncate">Recording voice note…</span>
+                    <button
+                      type="button"
+                      onClick={() => stopRecording(true)}
+                      className="ml-auto text-xs font-bold text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-white/5 shrink-0"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={`Message ${selectedChat.name}... (Type / for quick replies)`}
+                    className="flex-1 px-4 py-2.5 bg-[#2a3942] text-slate-100 placeholder-slate-400 rounded-xl text-sm outline-none border border-transparent focus:border-[#00a884]"
+                    disabled={sending}
+                  />
+                )}
+
+                {/* Mic when there's nothing to send, Send arrow once you type — like WhatsApp */}
+                {messageInput.trim() || sending ? (
+                  <button
+                    onClick={handleSend}
+                    disabled={!messageInput.trim() || sending}
+                    className="p-2.5 bg-[#00a884] text-[#111b21] font-bold rounded-full hover:bg-[#008f70] transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
+                    title="Send"
+                  >
+                    {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => (recording ? stopRecording(false) : startRecording())}
+                    disabled={mediaSending}
+                    className={`p-2.5 rounded-full transition shadow disabled:opacity-50 ${recording
+                        ? "bg-red-500 text-white hover:bg-red-600"
+                        : "bg-[#00a884] text-[#111b21] hover:bg-[#008f70]"
+                      }`}
+                    title={recording ? "Send voice note" : "Record voice note"}
+                  >
+                    {mediaSending ? <Loader2 size={18} className="animate-spin" /> : recording ? <Send size={18} /> : <Mic size={18} />}
+                  </button>
+                )}
               </div>
             </>
           )}

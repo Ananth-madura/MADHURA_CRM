@@ -177,6 +177,10 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
       console.error("Opt-out handling error:", e.message);
     }
   } else {
+    const buttonReplyId = msg.interactive?.button_reply?.id;
+    const listReplyId = msg.interactive?.list_reply?.id;
+    const interactiveId = buttonReplyId || listReplyId || null;
+
     // 1. Check if inbound message resolves a pending 2-way interactive confirmation
     const waConfirmation = require("../services/waConfirmationService");
     const confirmationHandled = await waConfirmation.handleInboundConfirmation(phone, messageText, interactiveId).catch(() => false);
@@ -188,11 +192,23 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
     if (billHandled) return;
 
     const waFlowEngine = require("../services/waFlowEngine");
-    const buttonReplyId = msg.interactive?.button_reply?.id;
-    const listReplyId = msg.interactive?.list_reply?.id;
-    const interactiveId = buttonReplyId || listReplyId || null;
 
-    waFlowEngine.dispatchInbound(phone, messageText, interactiveId).then(async (flowHandled) => {
+    // Attachment descriptor — resolve() downloads lazily, only if a collect_input
+    // step actually wants the file.
+    const mediaId = ["image", "document", "video", "audio", "sticker"].includes(msg.type)
+      ? msg[msg.type]?.id
+      : null;
+    const inboundMedia = mediaId
+      ? {
+          hasMedia: true,
+          type: msg.type,
+          filename: msg[msg.type]?.filename || "",
+          caption: msg[msg.type]?.caption || "",
+          resolve: () => require("../services/whatsappCloudApi").downloadMedia(mediaId),
+        }
+      : null;
+
+    waFlowEngine.dispatchInbound(phone, messageText, interactiveId, null, inboundMedia).then(async (flowHandled) => {
       if (flowHandled) return;
 
       const waMenuHandler = require("../services/waMenuHandler");

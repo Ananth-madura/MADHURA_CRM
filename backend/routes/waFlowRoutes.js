@@ -237,7 +237,23 @@ router.post("/:id/test-simulate", auth, async (req, res) => {
     };
 
     const simResult = await waFlowEngine.simulateFlowStep(flow, input, state);
-    res.json({ success: true, ...simResult });
+
+    // Tell the tester whether this message would REALLY have started the flow on
+    // WhatsApp. The simulator always force-starts at the entry node, so without
+    // this a non-matching message looks like it works when it never would.
+    const triggerKeywords = waFlowEngine.getTriggerKeywords(flow);
+    const isKeywordFlow = flow.trigger_type === "keyword" || !flow.trigger_type;
+    const triggerMatched = isKeywordFlow
+      ? waFlowEngine.matchesTriggerKeywords(input, flow)
+      : true; // all_inbound / first_inbound / ai_intent fire without a keyword
+
+    res.json({
+      success: true,
+      ...simResult,
+      triggerType: flow.trigger_type || "keyword",
+      triggerKeywords,
+      triggerMatched,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

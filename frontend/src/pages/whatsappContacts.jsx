@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Users, Plus, Search, RefreshCw, UserCheck, UserX, ShieldOff, Shield,
   Download, Upload, X, Edit2, Phone, Tag, ChevronDown, Loader2, CheckCircle2,
-  AlertCircle, FileText, Check, MessageSquare, ArrowUpRight, Filter, Trash2
+  AlertCircle, FileText, Check, MessageSquare, ArrowUpRight, Filter, Trash2,
+  Sparkles
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
