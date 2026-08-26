@@ -514,9 +514,11 @@ async function updateWelcomeSettings(settings) {
   return getWelcomeSettings();
 }
 
-async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
-  const cleanPhone = cleanPhoneNumber(phone);
-  if (!cleanPhone) return false;
+async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) {
+  if (!targetPhoneOrJid) return false;
+  const rawTarget = String(targetPhoneOrJid).trim();
+  const cleanPhone = cleanPhoneNumber(rawTarget) || rawTarget.replace(/\D/g, "");
+  if (!cleanPhone && !rawTarget.includes("@")) return false;
 
   const settings = await getWelcomeSettings();
   if (!settings.enabled) return false;
@@ -525,19 +527,17 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
   if (settings.working_hours_only && settings.start_time && settings.end_time) {
     try {
       const now = new Date();
-      // Format server time in HH:MM
       const currentHours = now.getHours().toString().padStart(2, "0");
       const currentMinutes = now.getMinutes().toString().padStart(2, "0");
       const currentTime = `${currentHours}:${currentMinutes}`;
       if (currentTime < settings.start_time || currentTime > settings.end_time) {
         console.log(`⏰ [WA Welcome] Outside working hours (${currentTime} not in ${settings.start_time}-${settings.end_time}) for ${cleanPhone}`);
-        // Optionally send after-hours note if configured, or continue with standard welcome
       }
     } catch (_) {}
   }
 
   // 2. Check cooldown: Has an outbound welcome message or reply been sent to this phone within cooldown_hours?
-  const cooldownHours = settings.cooldown_hours || 24;
+  const cooldownHours = parseInt(settings.cooldown_hours != null ? settings.cooldown_hours : 24, 10);
   try {
     const [recentWelcomeLogs] = await db.promise().query(
       `SELECT id FROM wa_message_logs
@@ -557,7 +557,6 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
     );
 
     if (recentWelcomeLogs.length > 0 || recentAutoLogs.length > 0) {
-      // Cooldown in effect — skip duplicate welcome reply
       console.log(`⏳ [WA Welcome] Cooldown in effect for ${cleanPhone} (${cooldownHours}h)`);
       return false;
     }
@@ -567,38 +566,11 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
 
   // 3. Resolve CRM Contact Info
   const crmData = await lookupCrmDataByPhone(cleanPhone).catch(() => ({}));
-  const resolvedName = contactName || crmData.name || "there";
+  const resolvedName = contactName || crmData.name || crmData.customer_name || "Valued Customer";
 
-  // 4. Check if a rich rule exists in wa_automations for 'welcome_message'
-  try {
-    const [rules] = await db.promise().query(
-      `SELECT a.*, t.name as template_name, t.body as template_body,
-              ft.name as followup_template_name, ft.body as followup_template_body
-       FROM wa_automations a
-       LEFT JOIN wa_templates t ON a.template_id = t.id
-       LEFT JOIN wa_templates ft ON a.followup_template_id = ft.id
-       WHERE a.is_active = 1 AND a.trigger_type = 'welcome_message'
-       LIMIT 1`
-    );
-
-    if (rules.length > 0) {
-      const rule = rules[0];
-      const rawText = rule.message_text || rule.template_body || settings.welcome_text || "Hello {name}! Welcome to ACHME.";
-      const messageText = formatMessagePlaceholders(rawText, resolvedName, crmData);
-      await executeAutomationSend(rule, cleanPhone, resolvedName, messageText, crmData);
-      console.log(`👋 [WA Welcome] Executed rich Welcome Automation rule '${rule.name}' for ${cleanPhone}`);
-      return true;
-    }
-  } catch (ruleErr) {
-    console.warn("[WA Welcome] Error querying wa_automations for welcome_message:", ruleErr.message);
-  }
-
-  // 5. Default fallback to wa_welcome_settings
-  const messageText = formatMessagePlaceholders(
-    settings.welcome_text || "Hello {name}! Welcome to ACHME. Thank you for reaching out to us. How can we help you today?",
-    resolvedName,
-    crmData
-  );
+  // 4. Default fallback to wa_welcome_settings
+  const rawWelcome = settings.welcome_text || "Hello {name}! Welcome to ACHME Solutions. Thank you for reaching out to us. How can we help you today?";
+  const messageText = formatMessagePlaceholders(rawWelcome, resolvedName, crmData);
 
   const waLoadBalancer = require("./waLoadBalancer");
   try {
@@ -607,15 +579,15 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
       const [tmplRows] = await db.promise().query("SELECT * FROM wa_templates WHERE id = ? LIMIT 1", [settings.template_id]);
       if (tmplRows.length > 0) {
         const bodyComp = buildTemplateBodyComponent(tmplRows[0].body, resolvedName, crmData);
-        res = await waLoadBalancer.sendTemplateMessage(cleanPhone, tmplRows[0].name, tmplRows[0].language || "en", bodyComp ? [bodyComp] : [], sessionKey);
+        res = await waLoadBalancer.sendTemplateMessage(rawTarget, tmplRows[0].name, tmplRows[0].language || "en", bodyComp ? [bodyComp] : [], sessionKey);
       } else {
-        res = await waLoadBalancer.sendTextMessage(cleanPhone, messageText, sessionKey);
+        res = await waLoadBalancer.sendTextMessage(rawTarget, messageText, sessionKey);
       }
     } else {
-      res = await waLoadBalancer.sendTextMessage(cleanPhone, messageText, sessionKey);
+      res = await waLoadBalancer.sendTextMessage(rawTarget, messageText, sessionKey);
     }
 
-    console.log(`👋 [WA Welcome] Sent Welcome Auto-Reply to ${cleanPhone} via ${res?.engineUsed || "WA"}`);
+    console.log(`👋 [WA Welcome] Sent Welcome Auto-Reply to ${rawTarget} via ${res?.engineUsed || "WA"}`);
 
     // Log outbound welcome message in DB
     await db.promise().query(
@@ -631,7 +603,7 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
       if (io) {
         const livePayload = {
           phone: cleanPhone,
-          chatId: `${cleanPhone}@c.us`,
+          chatId: rawTarget.includes("@") ? rawTarget : `${cleanPhone}@c.us`,
           message: {
             id: "welcome_" + Date.now(),
             from: "me",
@@ -647,7 +619,7 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
 
     return true;
   } catch (err) {
-    console.error(`❌ [WA Welcome] Failed to send Welcome Auto-Reply to ${cleanPhone}:`, err.message);
+    console.error(`❌ [WA Welcome] Failed to send Welcome Auto-Reply to ${rawTarget}:`, err.message);
     return false;
   }
 }

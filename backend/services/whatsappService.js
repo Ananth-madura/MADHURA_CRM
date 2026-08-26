@@ -557,9 +557,9 @@ class WhatsAppService {
             if (!flowHandled) {
               const handled = await require("./waMenuHandler").handleMenuReply(cleanPhone, { text: msg.body, buttonReplyId: interactiveReplyId }, this.key).catch(() => false);
               if (!handled) {
-                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(cleanPhone, contactName, this.key).catch(() => false);
+                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(chatId || cleanPhone, contactName, this.key).catch(() => false);
                 if (!welcomeSent) {
-                  await require("./waAiReply").maybeAutoReply(cleanPhone, msg.body, null, this.key).catch(() => {});
+                  await require("./waAiReply").maybeAutoReply(chatId || cleanPhone, msg.body, contactName, this.key).catch(() => {});
                 }
               }
             }
