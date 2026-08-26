@@ -658,7 +658,7 @@ class WhatsAppService {
         sentResult = await this.enqueueSend(() =>
           this.withTimeout(
             this.client.sendMessage(formattedJid, message, sendOpts),
-            15000,
+            20000,
             "client.sendMessage direct"
           )
         ).catch(async (e) => {
@@ -666,19 +666,35 @@ class WhatsAppService {
           console.warn(`⚠️ Direct send to ${formattedJid} failed (${e.message}), attempting JID resolution...`);
           const targetJid = await this.resolveTargetJid(formattedJid).catch(() => null);
           const altJid = targetJid && targetJid !== formattedJid ? targetJid : formattedJid;
-          if (altJid !== formattedJid) {
-            return await this.enqueueSend(() =>
-              this.withTimeout(
-                this.client.sendMessage(altJid, message, sendOpts),
-                15000,
-                "client.sendMessage fallback"
-              )
-            ).catch((err2) => {
-              lastError = err2;
-              console.warn(`⚠️ Fallback send to ${altJid} failed:`, err2.message);
-              return null;
-            });
+          
+          // Try sending to resolved target JID
+          const res1 = await this.enqueueSend(() =>
+            this.withTimeout(
+              this.client.sendMessage(altJid, message, sendOpts),
+              20000,
+              "client.sendMessage fallback"
+            )
+          ).catch((err2) => {
+            lastError = err2;
+            console.warn(`⚠️ Fallback send to ${altJid} failed:`, err2.message);
+            return null;
+          });
+          if (res1) return res1;
+
+          // Try getChatById and chat.sendMessage
+          try {
+            const chat = await this.enqueue(() =>
+              this.withTimeout(this.client.getChatById(altJid), 10000, "getChatById fallback")
+            ).catch(() => null);
+            if (chat && typeof chat.sendMessage === "function") {
+              return await this.enqueueSend(() =>
+                this.withTimeout(chat.sendMessage(message, sendOpts), 20000, "chat.sendMessage")
+              );
+            }
+          } catch (chatErr) {
+            lastError = chatErr;
           }
+
           return null;
         });
       } catch (err) {
@@ -1025,10 +1041,14 @@ class WhatsAppService {
     const chatMap = new Map();
     const phoneToChatId = new Map();
 
-    // 1. Fetch live chats from WhatsApp Web if connected (fast 1500ms timeout)
+    // 1. Fetch live chats from WhatsApp Web if connected (allow up to 25s for initial/forced sync)
     if (this.ready && this.client) {
       try {
-        let chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), 1500, "WhatsApp Web getChats")).catch(() => []);
+        const fetchTimeout = forceRefresh ? 25000 : 12000;
+        let chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), fetchTimeout, "WhatsApp Web getChats")).catch((err) => {
+          console.warn("⚠️ [WhatsApp Web] getChats took too long or errored:", err?.message || err);
+          return [];
+        });
 
         (chats || []).forEach((c) => {
           const chatId = c.id?._serialized || String(c.id);
