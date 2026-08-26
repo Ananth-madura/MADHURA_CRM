@@ -548,14 +548,7 @@ class WaFlowEngine {
         if (numMatch) {
           const numVal = parseInt(numMatch[1], 10);
           if (numVal === 0) {
-            // "0" is universal Back
-            if (config.back_node_key) {
-              nextNodeKey = config.back_node_key;
-            } else if (vars._nav_history.length > 0) {
-              nextNodeKey = vars._nav_history.pop();
-            } else {
-              nextNodeKey = run.entry_node_key || "start";
-            }
+            nextNodeKey = config.back_node_key || (vars._nav_history.length > 0 ? vars._nav_history.pop() : (run.entry_node_key || "start"));
           } else {
             const numIdx = numVal - 1;
             if (numIdx >= 0 && numIdx < buttons.length) {
@@ -565,30 +558,46 @@ class WaFlowEngine {
         }
       }
 
-      // 4. Interactive Reply ID / Exact ID / Exact Title Match
+      // 4. Leading Number Match in user reply: "1. Services", "1 Services", "1 - Book", "2. Payment"
+      if (!nextNodeKey && !matchedBtn) {
+        const leadingNumMatch = rawText.match(/^(\d+)[\s.)-]+/);
+        if (leadingNumMatch) {
+          const leadIdx = parseInt(leadingNumMatch[1], 10) - 1;
+          if (leadIdx >= 0 && leadIdx < buttons.length) {
+            matchedBtn = buttons[leadIdx];
+          }
+        }
+      }
+
+      // 5. Interactive Reply ID / Exact ID / Exact Title Match
       if (!nextNodeKey && !matchedBtn && tappedId) {
+        const tapLower = String(tappedId).toLowerCase().trim();
         matchedBtn = buttons.find(b => 
-          (b.reply_id && String(b.reply_id).toLowerCase() === String(tappedId).toLowerCase()) ||
-          (b.id && String(b.id).toLowerCase() === String(tappedId).toLowerCase()) ||
-          (b.title && String(b.title).toLowerCase() === String(tappedId).toLowerCase())
+          (b.reply_id && String(b.reply_id).toLowerCase().trim() === tapLower) ||
+          (b.id && String(b.id).toLowerCase().trim() === tapLower) ||
+          (b.title && String(b.title).toLowerCase().trim() === tapLower)
         );
       }
 
-      // 5. Clean Title / Fuzzy Substring Match (ignoring leading numbers & emojis)
+      // 6. Clean Title / Fuzzy Substring Match (ignoring emojis, symbols, and leading digits)
       if (!nextNodeKey && !matchedBtn && rawText.length >= 2) {
-        const cleanInput = rawText.replace(/^[^\w\s]+/, "").toLowerCase().trim();
-        matchedBtn = buttons.find(b => {
-          if (!b.title) return false;
-          const cleanTitle = b.title.replace(/^\d+[\s.)-]+\s*/, "").replace(/^[^\w\s]+/, "").toLowerCase().trim();
-          return (
-            cleanTitle === cleanInput ||
-            cleanInput.includes(cleanTitle) ||
-            cleanTitle.includes(cleanInput)
-          );
-        });
+        const stripSymbols = (s) => (s || "").replace(/^\d+[\s.)-]+\s*/, "").replace(/[^\p{L}\p{N}\s]/gu, "").toLowerCase().trim();
+        const cleanInput = stripSymbols(rawText);
+        if (cleanInput) {
+          matchedBtn = buttons.find(b => {
+            if (!b.title) return false;
+            const cleanTitle = stripSymbols(b.title);
+            if (!cleanTitle) return false;
+            return (
+              cleanTitle === cleanInput ||
+              cleanInput.includes(cleanTitle) ||
+              cleanTitle.includes(cleanInput)
+            );
+          });
+        }
       }
 
-      // 6. Configured Button Keywords / Synonyms
+      // 7. Configured Button Keywords / Synonyms
       if (!nextNodeKey && !matchedBtn) {
         matchedBtn = buttons.find(b => {
           if (!b.keywords) return false;
@@ -597,16 +606,21 @@ class WaFlowEngine {
         });
       }
       
-      if (matchedBtn && (matchedBtn.next_node_key || matchedBtn.next_node)) {
-        // Record current node in navigation history stack for back button support
-        if (!vars._nav_history.includes(run.current_node_key)) {
-          vars._nav_history.push(run.current_node_key);
+      // 8. Resolve target next node key with flexible property name support
+      if (matchedBtn) {
+        const targetNext = matchedBtn.next_node_key || matchedBtn.next_node || matchedBtn.target_node || matchedBtn.next;
+        if (targetNext) {
+          if (!vars._nav_history.includes(run.current_node_key)) {
+            vars._nav_history.push(run.current_node_key);
+          }
+          nextNodeKey = targetNext;
+          vars.selected_option = matchedBtn.title;
+          vars.selected_option_id = matchedBtn.reply_id || matchedBtn.id;
         }
-        nextNodeKey = matchedBtn.next_node_key || matchedBtn.next_node;
-        vars.selected_option = matchedBtn.title;
-        vars.selected_option_id = matchedBtn.reply_id || matchedBtn.id;
-      } else if (!nextNodeKey) {
-        // If unrecognized reply, check if reprompting helps or proceed to fallback
+      }
+
+      if (!nextNodeKey) {
+        // If unrecognized reply, reprompt with clean numbered options
         const repromptCount = (run.reprompt_count || 0) + 1;
         if (repromptCount < 2 && config.fallback_node_key) {
           nextNodeKey = config.fallback_node_key;
@@ -614,13 +628,15 @@ class WaFlowEngine {
           await db.promise().query("UPDATE wa_flow_runs SET reprompt_count = ? WHERE id = ?", [repromptCount, runId]);
           let promptMsg = "Please choose one of the options below (reply with option number):\n\n";
           buttons.forEach((b, idx) => {
-            promptMsg += `*${idx + 1}.* ${b.title}\n`;
+            const cleanTitle = (b.title || `Option ${idx + 1}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+            promptMsg += `*${idx + 1}.* ${cleanTitle}\n`;
           });
-          promptMsg += "\n_Reply 0 or BACK for previous menu, or MENU for main menu._";
+          promptMsg += "\n_Reply with option number (1, 2, 3...) or MENU for main menu._";
           await this.sendFlowMessage(cleanPhone, promptMsg, sessionKey);
           return true;
         } else {
-          nextNodeKey = config.fallback_node_key || config.next_node_key || (buttons[0] && (buttons[0].next_node_key || buttons[0].next_node));
+          const firstBtn = buttons[0];
+          nextNodeKey = config.fallback_node_key || config.next_node_key || (firstBtn && (firstBtn.next_node_key || firstBtn.next_node || firstBtn.target_node));
         }
       }
     } else {
@@ -1653,9 +1669,11 @@ class WaFlowEngine {
     // Standardized numbered text menu for WhatsApp Web and fallback
     let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
     buttons.forEach((b, idx) => {
-      menuBody += `*${idx + 1}.* ${b.title}\n`;
+      const cleanTitle = (b.title || `Option ${idx + 1}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+      menuBody += `*${idx + 1}.* ${cleanTitle}\n`;
     });
     if (footerText) menuBody += `\n_${footerText}_`;
+    else menuBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
 
     // Record & broadcast interactive menu
     await this.recordAndEmitBotMessage(phone, menuBody, "interactive", {
@@ -1664,7 +1682,7 @@ class WaFlowEngine {
       footer: footerText,
       buttons,
       text
-    });
+    }, sessionKey);
 
     if (waCloud.isConfigured() && buttons.length) {
       // Cloud API reply-buttons cap at 3. Beyond that, render as a list so that
@@ -1695,7 +1713,10 @@ class WaFlowEngine {
       if (sent) return sent;
     }
 
-    return await waLoadBalancer.sendTextMessage(phone, menuBody, sessionKey).catch(() => null);
+    return await waLoadBalancer.sendTextMessage(phone, menuBody, sessionKey).catch((err) => {
+      console.warn("sendFlowButtons text fallback error:", err?.message || err);
+      return null;
+    });
   }
 
   async sendFlowList(phone, text, rows, buttonText = "View Options", title = null, sessionKey = null) {
@@ -1705,11 +1726,12 @@ class WaFlowEngine {
 
     let listBody = (title ? `*${title}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
     rows.forEach((r, idx) => {
-      listBody += `*${idx + 1}.* ${r.title}`;
+      const cleanTitle = (r.title || `Option ${idx + 1}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+      listBody += `*${idx + 1}.* ${cleanTitle}`;
       if (r.description) listBody += ` - _${r.description}_`;
       listBody += "\n";
     });
-    listBody += `\n_Reply with option number (1, 2, 3...)_`;
+    listBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
 
     await this.recordAndEmitBotMessage(phone, listBody, "interactive", {
       type: "list",
@@ -1717,7 +1739,7 @@ class WaFlowEngine {
       button_text: buttonText,
       rows,
       text
-    });
+    }, sessionKey);
 
     if (waCloud.isConfigured() && rows.length) {
       const formattedSections = [{
@@ -1732,7 +1754,10 @@ class WaFlowEngine {
       if (sent) return sent;
     }
 
-    return await waLoadBalancer.sendTextMessage(phone, listBody, sessionKey).catch(() => null);
+    return await waLoadBalancer.sendTextMessage(phone, listBody, sessionKey).catch((err) => {
+      console.warn("sendFlowList text fallback error:", err?.message || err);
+      return null;
+    });
   }
 
   interpolate(template, vars = {}) {

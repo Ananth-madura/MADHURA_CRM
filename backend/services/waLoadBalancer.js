@@ -117,13 +117,22 @@ class WALoadBalancer {
 
     // 2. If no pool engines found or no pool specified, construct user/session-level engines
     if (engines.length === 0) {
-      const waWeb = waService.get(sessionKey || 1);
+      let waWeb = null;
+      if (sessionKey) {
+        waWeb = waService.get(sessionKey);
+      }
+      if (!waWeb || !waWeb.ready) {
+        waWeb = waService.default();
+      }
+      if (!waWeb || !waWeb.ready) {
+        waWeb = waService.all().find((s) => s.ready);
+      }
       const hasWeb = waWeb && waWeb.ready;
       const hasCloud = waCloud.isConfigured();
 
       const webEngine = hasWeb
         ? {
-            id: `web_session_${sessionKey || "default"}`,
+            id: `web_session_${waWeb.key || sessionKey || "default"}`,
             name: `WhatsApp Web (+${waWeb.phone || "Active"})`,
             type: "web_session",
             phone: waWeb.phone || null,
