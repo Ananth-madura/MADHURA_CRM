@@ -132,7 +132,7 @@ router.get("/qr", async (req, res) => {
   try {
     const session = s(req);
     if (req.query.force === "true" || req.query.refresh === "true") {
-      await session.logout().catch(() => {});
+      await session.logout(true).catch(() => {});
       await session.init(true).catch(() => {});
     }
 
@@ -144,24 +144,31 @@ router.get("/qr", async (req, res) => {
       return res.json({ qr: null, initializing: false, connected: true });
     }
 
-    // Wait at most 12s so proxies (Nginx / Cloudflare / Vite) never hit 504 Gateway Timeout
-    const qr = await session.getQr(12000);
+    // Trigger background initialization if not already in flight
+    if (!session.client && !session.isInitializing) {
+      session.init(false).catch(() => {});
+    }
+
+    // Wait for up to 15s for the initial QR event to emit
+    const qr = await session.getQr(15000);
     res.json({
       qr: qr || session.qrCode || null,
-      initializing: session.isInitializing,
+      initializing: session.isInitializing || (!qr && !session.ready),
       connected: session.ready,
+      message: session.ready
+        ? "Connected"
+        : (qr || session.qrCode)
+        ? "QR Ready"
+        : "Initializing browser session in background...",
     });
   } catch (err) {
     const session = s(req);
-    if (session.isInitializing || !session.ready) {
-      return res.json({
-        qr: session.qrCode || null,
-        initializing: session.isInitializing,
-        connected: session.ready,
-        message: "QR code is initializing in background...",
-      });
-    }
-    res.status(500).json({ error: err.message || "Failed to generate QR code" });
+    res.json({
+      qr: session?.qrCode || null,
+      initializing: session?.isInitializing || true,
+      connected: session?.ready || false,
+      message: "Initializing WhatsApp engine in background...",
+    });
   }
 });
 

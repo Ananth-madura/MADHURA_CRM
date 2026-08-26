@@ -2,23 +2,41 @@ const { Client, LocalAuth, MessageMedia, Location } = require("whatsapp-web.js")
 const path = require("path");
 const fs = require("fs");
 
+const puppeteer = require("puppeteer");
+
 function getExecutablePath() {
   if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
     return process.env.CHROME_PATH;
   }
   const candidatePaths = [
+    // Google Chrome paths
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
+    // Microsoft Edge paths (pre-installed on all Windows 10/11)
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
     "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Microsoft\\Edge\\Application\\msedge.exe"),
+    path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Microsoft\\Edge\\Application\\msedge.exe"),
+    // Brave / Chromium paths
+    path.join(process.env.PROGRAMFILES || "C:\\Program Files", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"),
+    // Linux/Docker paths
     "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
     "/usr/bin/chromium-browser",
     "/usr/bin/chromium",
+    "/snap/bin/chromium",
   ];
   for (const p of candidatePaths) {
     if (p && fs.existsSync(p)) return p;
   }
+  try {
+    if (typeof puppeteer.executablePath === "function") {
+      const pPath = puppeteer.executablePath();
+      if (pPath && fs.existsSync(pPath)) return pPath;
+    }
+  } catch (_) {}
   return undefined;
 }
 
@@ -898,7 +916,7 @@ class WhatsAppService {
     });
   }
 
-  async getQr(timeout = 12000) {
+  async getQr(timeout = 20000) {
     if (this.qrCode) return this.qrCode;
     if (this.ready) return null; // already connected via a restored session — no QR needed
 
@@ -908,7 +926,7 @@ class WhatsAppService {
       });
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const checkTimer = setInterval(() => {
         if (this.qrCode) {
           clearInterval(checkTimer);
@@ -927,10 +945,7 @@ class WhatsAppService {
         clearInterval(checkTimer);
         const idx = this.qrCallbacks.indexOf(resolve);
         if (idx !== -1) this.qrCallbacks.splice(idx, 1);
-        if (this.isInitializing) {
-          return resolve(this.qrCode || null);
-        }
-        reject(new Error("QR code generation timed out. Please click Get QR Code to try again."));
+        resolve(this.qrCode || null);
       }, timeout);
 
       this.qrCallbacks.push((qr) => {

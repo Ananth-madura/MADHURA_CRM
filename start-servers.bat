@@ -199,6 +199,9 @@ if exist "%ROOT%\backend\node_modules" (
   echo         npm install complete.
 )
 
+:: Apply whatsapp-web.js stability and LID patches
+call npx patch-package >>"%LOGFILE%" 2>&1
+
 :: Create database user (tries common root passwords and hosts automatically)
 call node ensure_db_user.js >>"%LOGFILE%" 2>&1
 if errorlevel 1 (
