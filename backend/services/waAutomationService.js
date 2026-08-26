@@ -10,7 +10,11 @@ const db = require("../config/database");
 
 function cleanPhoneNumber(phone) {
   if (!phone) return null;
-  let clean = phone.replace(/\D/g, "");
+  const str = String(phone).trim();
+  if (str.includes("@g.us") || str.includes("@broadcast") || (str.replace(/\D/g, "").length >= 18 && str.replace(/\D/g, "").startsWith("120363"))) {
+    return null;
+  }
+  let clean = str.replace(/\D/g, "");
   if (clean.length === 10) clean = "91" + clean;
   return clean.length >= 10 ? clean : null;
 }
@@ -547,7 +551,7 @@ async function maybeSendWelcomeReply(phone, contactName, sessionKey) {
     const [recentAutoLogs] = await db.promise().query(
       `SELECT id FROM wa_automation_logs
        WHERE (phone LIKE ? OR phone LIKE ?)
-         AND created_at >= NOW() - INTERVAL ? HOUR
+         AND sent_at >= NOW() - INTERVAL ? HOUR
        LIMIT 1`,
       [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
     );

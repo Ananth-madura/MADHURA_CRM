@@ -577,8 +577,25 @@ router.post("/send-location", async (req, res) => {
 
 router.post("/logout", async (req, res) => {
   try {
-    await s(req).logout();
-    res.json({ success: true, message: "WhatsApp session disconnected successfully" });
+    const purge = req.query.purge === "true" || req.body?.purge === true;
+    const result = await s(req).logout(purge);
+    res.json({
+      success: true,
+      purged: purge,
+      message: purge
+        ? "WhatsApp session and profile files permanently deleted."
+        : "WhatsApp session disconnected. Inactive session files will automatically delete in 4 days.",
+      sessionExpiry: result,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/cleanup-expired-sessions", async (req, res) => {
+  try {
+    const cleaned = await mgr.cleanExpiredSessions();
+    res.json({ success: true, count: cleaned.length, cleaned });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -597,7 +614,7 @@ router.post("/reconnect", async (req, res) => {
 router.post("/reset-session", async (req, res) => {
   try {
     const session = s(req);
-    await session.logout().catch(() => {});
+    await session.logout(true).catch(() => {});
     await session.init(true).catch(() => {});
     res.json({ success: true, message: "Session reset and fresh QR initialization started", initializing: true });
   } catch (err) {

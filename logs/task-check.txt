@@ -1,8 +1,0 @@
-﻿
-TaskName                State
---------                -----
-ACHME_CRM_AutoBoot      Ready
-ACHME_CRM_Login_Startup Ready
-ACHME_CRM_Watchdog      Ready
-
-

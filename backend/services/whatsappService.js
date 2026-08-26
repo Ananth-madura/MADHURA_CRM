@@ -43,8 +43,13 @@ function describeLastMessage(msg) {
 
 function formatChatJid(chatId) {
   if (!chatId) return "";
-  if (chatId.includes("@c.us") || chatId.includes("@g.us") || chatId.includes("@broadcast")) return chatId;
-  let digits = chatId.replace(/\D/g, "");
+  const str = String(chatId).trim();
+  if (str.includes("@c.us") || str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
+    return str;
+  }
+  let digits = str.replace(/\D/g, "");
+  if (!digits) return str;
+  if (digits.length >= 18 && digits.startsWith("120363")) return `${digits}@g.us`;
   if (digits.length === 10) digits = "91" + digits;
   return `${digits}@c.us`;
 }
@@ -62,6 +67,8 @@ function withTimeout(promise, ms = 10000, label = "operation") {
 const SESSIONS_ROOT = path.join(__dirname, "../../whatsapp-sessions");
 // Pre-multi-session location. Migrated into SESSIONS_ROOT/<adminId> on first boot.
 const LEGACY_SESSION_PATH = path.join(__dirname, "../../whatsapp-session");
+
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000; // 96 hours (4 days)
 
 class WhatsAppService {
   constructor(key) {
@@ -88,6 +95,42 @@ class WhatsAppService {
 
   get sessionPath() {
     return path.join(SESSIONS_ROOT, this.key);
+  }
+
+  getSessionMeta() {
+    try {
+      const metaFile = path.join(this.sessionPath, "session_meta.json");
+      if (fs.existsSync(metaFile)) {
+        return JSON.parse(fs.readFileSync(metaFile, "utf8"));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  saveSessionMeta(meta) {
+    try {
+      if (!fs.existsSync(this.sessionPath)) {
+        fs.mkdirSync(this.sessionPath, { recursive: true });
+      }
+      const metaFile = path.join(this.sessionPath, "session_meta.json");
+      fs.writeFileSync(metaFile, JSON.stringify({ ...meta, updatedAt: Date.now() }, null, 2), "utf8");
+    } catch (_) {}
+  }
+
+  markLoggedOut(reason = "USER_LOGOUT") {
+    const now = Date.now();
+    const expiresAt = now + FOUR_DAYS_MS;
+    const meta = {
+      sessionKey: this.key,
+      phone: this.phone,
+      status: "logged_out",
+      reason: reason,
+      loggedOutAt: now,
+      expiresAt: expiresAt,
+      autoDeleteDays: 4,
+    };
+    this.saveSessionMeta(meta);
+    return meta;
   }
 
   // WhatsApp bans on the *aggregate* send rate of a number, not per campaign.
@@ -322,6 +365,14 @@ class WhatsAppService {
           );
         } catch (_) {}
 
+        this.saveSessionMeta({
+          sessionKey: this.key,
+          phone: this.phone,
+          status: "active",
+          connectedAt: Date.now(),
+          lastActiveAt: Date.now(),
+        });
+
         this.emitWaEvent("wa_ready", null, this.phone, { connected: true, phone: this.phone });
 
         (async () => {
@@ -350,11 +401,18 @@ class WhatsAppService {
         this.ready = false;
         this.qrCode = null;
         this.pairingCode = null;
+        this.markLoggedOut(reason || "DISCONNECTED");
+        console.log(`ℹ️ WhatsApp session ${this.key} disconnected (${reason}). 4-day auto-cleanup timer active.`);
       });
 
       const handleLiveMessage = (msg) => {
         const chatId = msg.fromMe ? msg.to : msg.from;
         if (!chatId) return;
+
+        // Skip status broadcast updates
+        if (chatId === "status@broadcast" || chatId.includes("@broadcast")) return;
+
+        const isGroup = chatId.includes("@g.us") || Boolean(msg.isGroup);
         const cleanPhone = chatId.replace(/\D/g, "");
         const rawFilename = msg._data?.filename || (/\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|png|jpg|jpeg|webp|mp4|mp3|ogg|wav)$/i.test(msg.body || "") ? msg.body : "");
         const isMedia = Boolean(msg.hasMedia || msg.type === "document" || msg.type === "image" || msg.type === "video" || msg.type === "audio" || rawFilename);
@@ -400,7 +458,7 @@ class WhatsAppService {
                VALUES (?, ?, ?, ?, ?, ?, 'delivered', FROM_UNIXTIME(?))`,
               [
                 this.key,
-                cleanPhone,
+                cleanPhone || chatId,
                 msg.fromMe ? "outbound" : "inbound",
                 liveMsg.type,
                 liveMsg.body,
@@ -409,23 +467,26 @@ class WhatsAppService {
               ]
             );
 
-            // Update contact last message in CRM
-            await db.promise().query(
-              `INSERT INTO wa_contacts (name, phone, country_code, source, opt_in_status, last_message_text, last_message_at, unread_count)
-               VALUES (?, ?, '91', 'WhatsApp Chat', 1, ?, NOW(), ?)
-               ON DUPLICATE KEY UPDATE
-                 last_message_text = VALUES(last_message_text),
-                 last_message_at = NOW()`,
-              [
-                msg.fromMe ? "Me" : (msg._data?.notifyName || `+${cleanPhone}`),
-                cleanPhone,
-                liveMsg.body,
-                msg.fromMe ? 0 : 1
-              ]
-            ).catch(() => {});
+            // Update contact last message in CRM for non-group chats
+            if (!isGroup && cleanPhone) {
+              await db.promise().query(
+                `INSERT INTO wa_contacts (name, phone, country_code, source, opt_in_status, last_message_text, last_message_at, unread_count)
+                 VALUES (?, ?, '91', 'WhatsApp Chat', 1, ?, NOW(), ?)
+                 ON DUPLICATE KEY UPDATE
+                   last_message_text = VALUES(last_message_text),
+                   last_message_at = NOW()`,
+                [
+                  msg.fromMe ? "Me" : (msg._data?.notifyName || `+${cleanPhone}`),
+                  cleanPhone,
+                  liveMsg.body,
+                  msg.fromMe ? 0 : 1
+                ]
+              ).catch(() => {});
+            }
           } catch (_) {}
 
-          if (!msg.fromMe) {
+          // Bot automations only run on inbound 1-to-1 chats, never on groups
+          if (!msg.fromMe && !isGroup && cleanPhone) {
             const bodyTrimmed = (msg.body || "").trim().toLowerCase();
             const OPT_OUT_WORDS = ["stop", "unsubscribe", "optout", "opt out", "stop promo", "cancel", "don't message", "dont message"];
             const isOptOut = OPT_OUT_WORDS.some((kw) => bodyTrimmed === kw || bodyTrimmed.startsWith(kw));
@@ -446,7 +507,7 @@ class WhatsAppService {
                   [cleanPhone]
                 );
                 // Send polite unsubscribe confirmation
-                await this.sendMessage(cleanPhone, "✅ You have been successfully unsubscribed. You will no longer receive promotional messages from us. Reply START anytime to re-subscribe.");
+                await this.sendMessage(chatId, "✅ You have been successfully unsubscribed. You will no longer receive promotional messages from us. Reply START anytime to re-subscribe.");
                 return;
               } catch (_) {}
             }
@@ -555,15 +616,19 @@ class WhatsAppService {
 
   async sendMessage(chatId, message, options = {}) {
     const waCloud = require("./whatsappCloudApi");
-    let cleanPhone = chatId.replace(/\D/g, "");
+    if (!chatId) throw new Error("chatId is required");
+
+    let cleanPhone = String(chatId).replace(/\D/g, "");
     if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
     message = require("./mdToWa").toWhatsApp(message);
-    const formattedJid = chatId.includes("@") ? chatId : `${cleanPhone}@c.us`;
+    const formattedJid = formatChatJid(chatId);
     let msgId = "sent_" + Date.now();
     const quotedId = options?.quotedMessageId || options?.replyToMessageId || null;
 
     let sentResult = null;
+    let lastError = null;
+
     if (this.ready && this.client) {
       try {
         await this._paceSend();
@@ -579,18 +644,27 @@ class WhatsAppService {
             "client.sendMessage direct"
           )
         ).catch(async (e) => {
-          console.warn("⚠️ Direct send failed, attempting fallback to target JID:", e.message);
-          const targetJid = await this.resolveTargetJid(cleanPhone).catch(() => null);
-          const altJid = targetJid && targetJid !== formattedJid ? targetJid : `${cleanPhone.slice(-10)}@c.us`;
-          return await this.enqueueSend(() =>
-            this.withTimeout(
-              this.client.sendMessage(altJid, message, sendOpts),
-              12000,
-              "client.sendMessage fallback"
-            )
-          ).catch(() => null);
+          lastError = e;
+          console.warn(`⚠️ Direct send to ${formattedJid} failed (${e.message}), attempting JID resolution...`);
+          const targetJid = await this.resolveTargetJid(formattedJid).catch(() => null);
+          const altJid = targetJid && targetJid !== formattedJid ? targetJid : formattedJid;
+          if (altJid !== formattedJid) {
+            return await this.enqueueSend(() =>
+              this.withTimeout(
+                this.client.sendMessage(altJid, message, sendOpts),
+                15000,
+                "client.sendMessage fallback"
+              )
+            ).catch((err2) => {
+              lastError = err2;
+              console.warn(`⚠️ Fallback send to ${altJid} failed:`, err2.message);
+              return null;
+            });
+          }
+          return null;
         });
       } catch (err) {
+        lastError = err;
         console.warn("⚠️ WhatsApp Web send error:", err.message);
       }
     }
@@ -609,9 +683,10 @@ class WhatsAppService {
       }
     } else {
       if (!this.ready || !this.client) {
-        throw new Error("WhatsApp is not connected. Please configure Meta Cloud API or scan QR Code.");
+        throw new Error("WhatsApp is not connected. Please scan QR Code or configure Meta Cloud API.");
       }
-      throw new Error("Failed to deliver message via WhatsApp. Please check device internet connection.");
+      const specificErr = lastError?.message || "Failed to deliver message via WhatsApp";
+      throw new Error(specificErr);
     }
 
     const newMsg = {
@@ -682,12 +757,25 @@ class WhatsAppService {
       } catch (_) {}
     }
 
+    const sessionMeta = this.getSessionMeta();
+    let sessionExpiry = null;
+    if (sessionMeta && sessionMeta.status === "logged_out" && sessionMeta.expiresAt) {
+      const msLeft = Math.max(0, sessionMeta.expiresAt - Date.now());
+      sessionExpiry = {
+        loggedOutAt: sessionMeta.loggedOutAt,
+        expiresAt: sessionMeta.expiresAt,
+        hoursRemaining: Math.round(msLeft / (60 * 60 * 1000)),
+        daysRemaining: +(msLeft / (24 * 60 * 60 * 1000)).toFixed(1),
+      };
+    }
+
     return {
       connected: this.ready,
       phone: this.phone || null,
       initializing: this.isInitializing,
       hasQr: !!this.qrCode,
       qr: this.qrCode || null,
+      sessionExpiry,
     };
   }
 
@@ -1411,18 +1499,25 @@ class WhatsAppService {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
-  async resolveTargetJid(cleanPhone) {
-    if (!cleanPhone) return "";
-    const digits = cleanPhone.replace(/\D/g, "");
-    const formattedJid = digits.length === 10 ? `91${digits}@c.us` : `${digits}@c.us`;
+  async resolveTargetJid(cleanPhoneOrJid) {
+    if (!cleanPhoneOrJid) return "";
+    const str = String(cleanPhoneOrJid).trim();
+    if (str.includes("@c.us") || str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
+      return str;
+    }
+    let digits = str.replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length >= 18 && digits.startsWith("120363")) return `${digits}@g.us`;
+    if (digits.length === 10) digits = "91" + digits;
+    const formattedJid = `${digits}@c.us`;
 
     if (!this.ready || !this.client) return formattedJid;
     try {
       const contact = await this.enqueue(() =>
-        this.withTimeout(this.client.getNumberId(digits), 3000, "WhatsApp getNumberId")
+        this.withTimeout(this.client.getNumberId(digits), 4000, "WhatsApp getNumberId")
       ).catch(() => null);
-      if (contact && contact._serialized) {
-        return contact._serialized;
+      if (contact && (contact._serialized || contact.$1)) {
+        return contact._serialized || contact.$1;
       }
     } catch (_) {}
     return formattedJid;
@@ -1517,15 +1612,17 @@ class WhatsAppService {
 
   async sendMediaMessage(chatId, mediaUrl, mediaType = "document", caption = "", filename = "") {
     const waCloud = require("./whatsappCloudApi");
-    let cleanPhone = chatId.replace(/\D/g, "");
+    if (!chatId) throw new Error("chatId is required");
+
+    let cleanPhone = String(chatId).replace(/\D/g, "");
     if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
-    let targetJid = `${cleanPhone}@c.us`;
+    const targetJid = formatChatJid(chatId);
     let msgId = "sent_" + Date.now();
 
     if (this.ready && this.client) {
       try {
         await this._paceSend();
-        targetJid = await this.resolveTargetJid(cleanPhone);
+        const resolvedJid = await this.resolveTargetJid(targetJid);
         const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true, filename: filename || undefined });
         if (filename && !media.filename) {
           media.filename = filename;
@@ -1542,7 +1639,7 @@ class WhatsAppService {
         }
 
         const sent = await this.enqueue(() => this.withTimeout(
-          this.client.sendMessage(targetJid, media, sendOpts),
+          this.client.sendMessage(resolvedJid, media, sendOpts),
           30000,
           "WhatsApp Web send media"
         ));
@@ -1553,7 +1650,7 @@ class WhatsAppService {
           const sent = await waCloud.sendMedia(cleanPhone, mediaType, mediaUrl, caption, filename);
           msgId = sent?.messages?.[0]?.id || msgId;
         } else if (e.message && (e.message.includes("No LID") || e.message.includes("LID"))) {
-          throw new Error(`Phone number +${cleanPhone} is not registered on WhatsApp or requires Meta Cloud API.`);
+          throw new Error(`Recipient is not reachable on WhatsApp or requires Meta Cloud API.`);
         } else {
           throw new Error(`WhatsApp Web error: ${e.message}`);
         }
@@ -1600,18 +1697,20 @@ class WhatsAppService {
 
   async sendLocationMessage(chatId, lat, lng, name = "") {
     const waCloud = require("./whatsappCloudApi");
-    let cleanPhone = chatId.replace(/\D/g, "");
+    if (!chatId) throw new Error("chatId is required");
+
+    let cleanPhone = String(chatId).replace(/\D/g, "");
     if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
-    let targetJid = `${cleanPhone}@c.us`;
+    const targetJid = formatChatJid(chatId);
     let msgId = "sent_" + Date.now();
 
     if (this.ready && this.client) {
       try {
         await this._paceSend();
-        targetJid = await this.resolveTargetJid(cleanPhone);
+        const resolvedJid = await this.resolveTargetJid(targetJid);
         const location = new Location(lat, lng, { name });
         const sent = await this.enqueue(() => this.withTimeout(
-          this.client.sendMessage(targetJid, location),
+          this.client.sendMessage(resolvedJid, location),
           25000,
           "WhatsApp Web send location"
         ));
@@ -1622,7 +1721,7 @@ class WhatsAppService {
           const sent = await waCloud.sendLocation(cleanPhone, lat, lng, name);
           msgId = sent?.messages?.[0]?.id || msgId;
         } else if (e.message && (e.message.includes("No LID") || e.message.includes("LID"))) {
-          throw new Error(`Phone number +${cleanPhone} is not registered on WhatsApp or requires Meta Cloud API.`);
+          throw new Error(`Recipient is not reachable on WhatsApp or requires Meta Cloud API.`);
         } else {
           throw new Error(`WhatsApp Web error: ${e.message}`);
         }
@@ -1820,11 +1919,11 @@ class WhatsAppService {
     return this.sendMessage(`${cleanPhone}@c.us`, text);
   }
 
-  logout() {
-    return this.lifecycle(() => this._doLogout());
+  logout(purgeImmediately = false) {
+    return this.lifecycle(() => this._doLogout(purgeImmediately));
   }
 
-  async _doLogout() {
+  async _doLogout(purgeImmediately = false) {
     try {
       if (this.client) {
         await this.client.destroy();
@@ -1840,9 +1939,28 @@ class WhatsAppService {
     this.messagesFetchCache = {};
     this.lastChatsFetch = 0;
 
+    // Update database account status
     try {
-      fs.rmSync(this.sessionPath, { recursive: true, force: true });
+      const db = require("../config/database");
+      await db.promise().query(
+        "UPDATE wa_accounts SET is_active = 0, updated_at = NOW() WHERE account_name LIKE ? OR phone_number LIKE ?",
+        [`%${this.key}%`, `%${this.key}%`]
+      ).catch(() => {});
     } catch (_) {}
+
+    if (purgeImmediately) {
+      try {
+        if (fs.existsSync(this.sessionPath)) {
+          fs.rmSync(this.sessionPath, { recursive: true, force: true });
+        }
+      } catch (_) {}
+      return { success: true, purged: true, message: "Session permanently deleted from disk." };
+    } else {
+      // 4-day auto-delete lifecycle (real WhatsApp Web expiration)
+      const meta = this.markLoggedOut("USER_LOGOUT");
+      console.log(`🔒 WhatsApp session ${this.key} logged out. Will auto-delete in 4 days if not reconnected.`);
+      return { success: true, purged: false, ...meta };
+    }
   }
 }
 
@@ -1897,11 +2015,91 @@ async function migrateLegacySession(adminKey) {
   }
 }
 
-// Called once at boot. Restores every saved session; launches nothing when
-// none exist. Without this, `ready` was false after every restart and all
-// outbound sends threw until someone opened the QR page by hand.
+// ── 4-Day Session Auto-Cleanup Worker ─────────────────────────────────────────
+// Automatically deletes logged-out or abandoned WhatsApp session folders older than 4 days
+async function cleanExpiredSessions() {
+  const now = Date.now();
+  const cleaned = [];
+  if (!fs.existsSync(SESSIONS_ROOT)) return cleaned;
+
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(SESSIONS_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch (_) {
+    return cleaned;
+  }
+
+  for (const sessionKey of dirs) {
+    const dir = path.join(SESSIONS_ROOT, sessionKey);
+    const metaFile = path.join(dir, "session_meta.json");
+    let shouldDelete = false;
+    let deleteReason = "";
+
+    if (fs.existsSync(metaFile)) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+        if (meta.status === "logged_out") {
+          const loggedOutAt = meta.loggedOutAt || 0;
+          const expiresAt = meta.expiresAt || (loggedOutAt + FOUR_DAYS_MS);
+          if (now >= expiresAt || (now - loggedOutAt >= FOUR_DAYS_MS)) {
+            shouldDelete = true;
+            deleteReason = `Logged out for > 4 days (expired at ${new Date(expiresAt).toISOString()})`;
+          }
+        }
+      } catch (_) {}
+    } else {
+      try {
+        const stats = fs.statSync(dir);
+        const ageMs = now - stats.mtimeMs;
+        if (!hasSavedProfile(dir) && ageMs > FOUR_DAYS_MS) {
+          shouldDelete = true;
+          deleteReason = `Abandoned incomplete session folder older than 4 days`;
+        }
+      } catch (_) {}
+    }
+
+    if (shouldDelete) {
+      try {
+        const instance = sessions.get(sessionKey);
+        if (instance && instance.client) {
+          await instance.client.destroy().catch(() => {});
+          instance.client = null;
+          instance.ready = false;
+        }
+        sessions.delete(sessionKey);
+        fs.rmSync(dir, { recursive: true, force: true });
+        cleaned.push({ sessionKey, reason: deleteReason });
+        console.log(`🗑️ [WhatsApp Session Expiry] Auto-deleted 4-day expired session: ${sessionKey} (${deleteReason})`);
+      } catch (err) {
+        console.warn(`⚠️ Could not auto-delete expired session ${sessionKey}:`, err.message);
+      }
+    }
+  }
+
+  return cleaned;
+}
+
+let cleanupInterval = null;
+function startSessionCleanupScheduler() {
+  if (cleanupInterval) return;
+  // Run every 6 hours
+  cleanupInterval = setInterval(() => {
+    cleanExpiredSessions().catch((err) => {
+      console.warn("⚠️ WhatsApp session cleanup scheduler error:", err.message);
+    });
+  }, 6 * 60 * 60 * 1000);
+}
+
+// Called once at boot. Restores every active saved session; launches nothing when
+// none exist. Automatically purges sessions expired past 4 days.
 async function restoreExisting() {
   const db = require("../config/database");
+
+  // 1. Purge any 4-day expired sessions and start the recurring cleanup worker
+  await cleanExpiredSessions().catch(() => []);
+  startSessionCleanupScheduler();
 
   if (!process.env.WA_DEFAULT_USER) {
     try {
@@ -1921,6 +2119,9 @@ async function restoreExisting() {
 
   let dirs = [];
   try {
+    if (!fs.existsSync(SESSIONS_ROOT)) {
+      fs.mkdirSync(SESSIONS_ROOT, { recursive: true });
+    }
     dirs = fs.readdirSync(SESSIONS_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   } catch (_) {
     return { restored: 0 };
@@ -1933,6 +2134,19 @@ async function restoreExisting() {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
       continue;
     }
+
+    // Skip auto-launching sessions that the user explicitly logged out from
+    const metaFile = path.join(dir, "session_meta.json");
+    if (fs.existsSync(metaFile)) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+        if (meta.status === "logged_out") {
+          console.log(`ℹ️ WhatsApp session ${key} is logged out (auto-deletes in 4 days). Skipping auto-restore.`);
+          continue;
+        }
+      } catch (_) {}
+    }
+
     // Staggered and unawaited — N cold Chrome launches at once would stall boot.
     setTimeout(() => {
       console.log(`♻️ Restoring saved WhatsApp session for user ${key}...`);
@@ -1941,7 +2155,7 @@ async function restoreExisting() {
     restored++;
   }
 
-  console.log(restored ? `📱 ${restored} saved WhatsApp session(s) queued for restore` : "ℹ️ No saved WhatsApp sessions — none started");
+  console.log(restored ? `📱 ${restored} saved WhatsApp session(s) queued for restore` : "ℹ️ No active saved WhatsApp sessions — none started");
   return { restored };
 }
 
@@ -1950,6 +2164,8 @@ module.exports = {
   all,
   default: getDefault,
   restoreExisting,
+  cleanExpiredSessions,
+  startSessionCleanupScheduler,
   get defaultKey() { return defaultKey; },
   SESSIONS_ROOT,
 };

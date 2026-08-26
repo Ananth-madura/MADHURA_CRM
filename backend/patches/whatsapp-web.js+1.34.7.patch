@@ -4615,14 +4615,16 @@ index 0000000..540078a
 +        const lidUser = getMaybeMeLidUser();
 +        const meUser = getMaybeMePnUser();
 +        const newId = await window.require('WAWebMsgKey').newId();
-+        let from = chat.id.isLid() ? lidUser : meUser;
++        let from = (chat.id && typeof chat.id.isLid === 'function' && chat.id.isLid() && lidUser)
++            ? lidUser
++            : (meUser || lidUser);
 +        let participant;
 +
 +        if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
 +            from =
-+                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
++                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode && lidUser
 +                    ? lidUser
-+                    : meUser;
++                    : (meUser || lidUser);
 +            participant = window
 +                .require('WAWebWidFactory')
 +                .asUserWidOrThrow(from);

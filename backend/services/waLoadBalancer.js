@@ -96,9 +96,7 @@ class WALoadBalancer {
                 sentToday,
                 sentThisHour,
                 sendText: async (phone, text) => {
-                  let clean = phone.replace(/\D/g, "");
-                  if (clean.length === 10) clean = "91" + clean;
-                  return waWeb.sendMessage(`${clean}@c.us`, text);
+                  return waWeb.sendMessage(phone, text);
                 },
                 sendTemplate: async (phone, tmplName, lang, components) => {
                   let clean = phone.replace(/\D/g, "");
@@ -106,9 +104,7 @@ class WALoadBalancer {
                   return waWeb.sendTemplateMessage(clean, tmplName, components);
                 },
                 sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => {
-                  let clean = phone.replace(/\D/g, "");
-                  if (clean.length === 10) clean = "91" + clean;
-                  return waWeb.sendMediaMessage(`${clean}@c.us`, mediaUrl, mediaType, caption, filename);
+                  return waWeb.sendMediaMessage(phone, mediaUrl, mediaType, caption, filename);
                 },
               });
             }
@@ -135,9 +131,7 @@ class WALoadBalancer {
             sentToday: 0,
             sentThisHour: 0,
             sendText: async (phone, text) => {
-              let clean = phone.replace(/\D/g, "");
-              if (clean.length === 10) clean = "91" + clean;
-              return waWeb.sendMessage(`${clean}@c.us`, text);
+              return waWeb.sendMessage(phone, text);
             },
             sendTemplate: async (phone, tmplName, lang, components) => {
               let clean = phone.replace(/\D/g, "");
@@ -145,9 +139,7 @@ class WALoadBalancer {
               return waWeb.sendTemplateMessage(clean, tmplName, components);
             },
             sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => {
-              let clean = phone.replace(/\D/g, "");
-              if (clean.length === 10) clean = "91" + clean;
-              return waWeb.sendMediaMessage(`${clean}@c.us`, mediaUrl, mediaType, caption, filename);
+              return waWeb.sendMediaMessage(phone, mediaUrl, mediaType, caption, filename);
             },
           }
         : null;

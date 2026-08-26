@@ -152,6 +152,21 @@ app.use("/api/wa/payments", require("./routes/waPaymentsRoutes"));
 app.use("/api/wa/drip", require("./routes/waDripRoutes"));
 app.use("/api/wa/reminders", require("./routes/waReminderRoutes"));
 
+// ── Ensure Runtime Directories Exist ──────────────────────────────────────────
+// Ensures application runs cleanly on fresh setups/clones where folders are gitignored
+const fs = require("fs");
+const runtimeDirs = [
+  path.join(__dirname, "uploads"),
+  path.join(__dirname, "uploads", "wa-media"),
+  path.join(__dirname, "..", "whatsapp-sessions"),
+  path.join(__dirname, "..", "logs"),
+];
+runtimeDirs.forEach((dir) => {
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (_) {}
+});
+
 // Absolute path: express.static("uploads") resolves against process.cwd(), so
 // uploaded media 404'd whenever the server was started from anywhere but backend/.
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
