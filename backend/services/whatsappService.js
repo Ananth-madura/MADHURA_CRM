@@ -62,7 +62,7 @@ function describeLastMessage(msg) {
 function formatChatJid(chatId) {
   if (!chatId) return "";
   const str = String(chatId).trim();
-  if (str.includes("@c.us") || str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
+  if (str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
     return str;
   }
   let digits = str.replace(/\D/g, "");
@@ -200,6 +200,7 @@ class WhatsAppService {
       const io = app.get && app.get("io");
       if (io) {
         io.to(`user:${this.key}`).emit(event, { phone, chatId, message, sessionKey: this.key });
+        io.to("whatsapp").emit(event, { phone, chatId, message, sessionKey: this.key });
         io.emit(event, { phone, chatId, message, sessionKey: this.key });
       }
     } catch (_) {}
@@ -1537,7 +1538,7 @@ class WhatsAppService {
   async resolveTargetJid(cleanPhoneOrJid) {
     if (!cleanPhoneOrJid) return "";
     const str = String(cleanPhoneOrJid).trim();
-    if (str.includes("@c.us") || str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
+    if (str.includes("@g.us") || str.includes("@broadcast") || str.includes("@lid") || str.includes("@newsletter")) {
       return str;
     }
     let digits = str.replace(/\D/g, "");
@@ -1658,9 +1659,78 @@ class WhatsAppService {
       try {
         await this._paceSend();
         const resolvedJid = await this.resolveTargetJid(targetJid);
-        const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true, filename: filename || undefined });
-        if (filename && !media.filename) {
-          media.filename = filename;
+
+        // Fast-path: Check if mediaUrl refers to a local file on disk to avoid network loopback & 504 timeouts
+        let localFilePath = null;
+        if (typeof mediaUrl === "string") {
+          if (fs.existsSync(mediaUrl)) {
+            localFilePath = mediaUrl;
+          } else if (mediaUrl.includes("/uploads/")) {
+            const relPath = mediaUrl.substring(mediaUrl.indexOf("/uploads/"));
+            const candidates = [
+              path.join(__dirname, "..", relPath),
+              path.join(__dirname, "..", "uploads", "wa-media", path.basename(mediaUrl)),
+              path.join(__dirname, "..", "uploads", path.basename(mediaUrl)),
+              path.join(__dirname, "../../", relPath),
+            ];
+            for (const cand of candidates) {
+              if (fs.existsSync(cand)) {
+                localFilePath = cand;
+                break;
+              }
+            }
+          } else if (!mediaUrl.startsWith("http://") && !mediaUrl.startsWith("https://") && !mediaUrl.startsWith("data:")) {
+            const cand = path.join(__dirname, "..", "uploads", "wa-media", path.basename(mediaUrl));
+            if (fs.existsSync(cand)) localFilePath = cand;
+          }
+        }
+
+        let media = null;
+        if (localFilePath && fs.existsSync(localFilePath)) {
+          try {
+            if (typeof MessageMedia.fromFilePath === "function") {
+              media = MessageMedia.fromFilePath(localFilePath);
+            }
+          } catch (_) {}
+          if (!media) {
+            const ext = path.extname(localFilePath).toLowerCase();
+            const mimeMap = {
+              ".jpg": "image/jpeg",
+              ".jpeg": "image/jpeg",
+              ".png": "image/png",
+              ".webp": "image/webp",
+              ".gif": "image/gif",
+              ".pdf": "application/pdf",
+              ".doc": "application/msword",
+              ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              ".xls": "application/vnd.ms-excel",
+              ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ".csv": "text/csv",
+              ".txt": "text/plain",
+              ".mp4": "video/mp4",
+              ".mp3": "audio/mpeg",
+              ".ogg": "audio/ogg",
+              ".wav": "audio/wav",
+              ".m4a": "audio/mp4",
+              ".zip": "application/zip",
+              ".rar": "application/x-rar-compressed",
+            };
+            const mimeType = mimeMap[ext] || "application/octet-stream";
+            const fileData = fs.readFileSync(localFilePath, { encoding: "base64" });
+            media = new MessageMedia(mimeType, fileData, filename || path.basename(localFilePath));
+          }
+          if (filename && media) {
+            media.filename = filename;
+          }
+        } else {
+          media = await this.withTimeout(
+            MessageMedia.fromUrl(mediaUrl, { unsafeMime: true, filename: filename || undefined }),
+            25000,
+            "MessageMedia.fromUrl"
+          );
+          if (filename && !media.filename) {
+            media.filename = filename;
+          }
         }
 
         let sendOpts = {};
@@ -1675,7 +1745,7 @@ class WhatsAppService {
 
         const sent = await this.enqueue(() => this.withTimeout(
           this.client.sendMessage(resolvedJid, media, sendOpts),
-          30000,
+          35000,
           "WhatsApp Web send media"
         ));
         msgId = sent?.id?.id || msgId;

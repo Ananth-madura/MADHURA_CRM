@@ -424,31 +424,32 @@ echo         location / {
 echo             try_files $uri $uri/ /index.html;
 echo         }
 echo.
-echo         # API Proxy to Node.js backend
-echo         location /api/ {
+echo         location ^~ /api/ {
 echo             proxy_pass http://achme_backend/api/;
 echo             proxy_http_version 1.1;
 echo             proxy_set_header Host              $host;
 echo             proxy_set_header X-Real-IP         $remote_addr;
 echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 echo             proxy_set_header X-Forwarded-Proto $scheme;
-echo             proxy_connect_timeout  180s;
-echo             proxy_send_timeout     180s;
-echo             proxy_read_timeout     180s;
-echo             client_max_body_size   50M;
+echo             proxy_connect_timeout  300s;
+echo             proxy_send_timeout     300s;
+echo             proxy_read_timeout     300s;
+echo             client_max_body_size   100M;
 echo         }
 echo.
-echo         location /uploads/ {
+echo         location ^~ /uploads/ {
 echo             proxy_pass http://achme_backend/uploads/;
 echo             proxy_http_version 1.1;
 echo             proxy_set_header Host              $host;
 echo             proxy_set_header X-Real-IP         $remote_addr;
 echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-echo             proxy_read_timeout     120s;
+echo             proxy_connect_timeout  300s;
+echo             proxy_send_timeout     300s;
+echo             proxy_read_timeout     300s;
+echo             client_max_body_size   100M;
 echo         }
 echo.
-echo         # Socket.IO WebSocket proxy (chat + notifications)
-echo         location /socket.io/ {
+echo         location ^~ /socket.io/ {
 echo             proxy_pass http://achme_backend/socket.io/;
 echo             proxy_http_version 1.1;
 echo             proxy_set_header Upgrade    $http_upgrade;
@@ -456,9 +457,10 @@ echo             proxy_set_header Connection "upgrade";
 echo             proxy_set_header Host              $host;
 echo             proxy_set_header X-Real-IP         $remote_addr;
 echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-echo             proxy_connect_timeout  60s;
-echo             proxy_send_timeout     60s;
+echo             proxy_connect_timeout  120s;
+echo             proxy_send_timeout     3600s;
 echo             proxy_read_timeout     3600s;
+echo             proxy_buffering        off;
 echo         }
 echo.
 echo         # Health check endpoint

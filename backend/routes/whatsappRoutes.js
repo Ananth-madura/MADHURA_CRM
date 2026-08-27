@@ -225,8 +225,7 @@ router.post("/chat/:chatId/read", async (req, res) => {
 
     // 3. Emit real-time socket event
     try {
-      const { getIO } = require("../sockets/chatSocket");
-      const io = getIO();
+      const io = req.app.get("io");
       if (io) {
         io.emit("wa_chat_read", { chatId: rawChatId, phone: clean10 });
       }

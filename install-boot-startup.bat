@@ -110,6 +110,7 @@ if exist "%NGINX_DIR%\nginx.exe" (
   echo     default_type  application/octet-stream;
   echo     sendfile        on;
   echo     keepalive_timeout 65;
+  echo     client_max_body_size 100M;
   echo     access_log  logs/achme_access.log;
   echo     error_log   logs/achme_error.log;
   echo.
@@ -134,20 +135,32 @@ if exist "%NGINX_DIR%\nginx.exe" (
   echo             expires -1;
   echo         }
   echo.
-  echo         location /api/ {
+  echo         location ^^~ /api/ {
   echo             proxy_pass http://achme_backend/api/;
   echo             proxy_http_version 1.1;
   echo             proxy_set_header Host              $host;
   echo             proxy_set_header X-Real-IP         $remote_addr;
   echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
   echo             proxy_set_header X-Forwarded-Proto $scheme;
-  echo             proxy_connect_timeout  120s;
-  echo             proxy_send_timeout     120s;
-  echo             proxy_read_timeout     120s;
-  echo             client_max_body_size   50M;
+  echo             proxy_connect_timeout  300s;
+  echo             proxy_send_timeout     300s;
+  echo             proxy_read_timeout     300s;
+  echo             client_max_body_size   100M;
   echo         }
   echo.
-  echo         location /socket.io/ {
+  echo         location ^^~ /uploads/ {
+  echo             proxy_pass http://achme_backend/uploads/;
+  echo             proxy_http_version 1.1;
+  echo             proxy_set_header Host              $host;
+  echo             proxy_set_header X-Real-IP         $remote_addr;
+  echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+  echo             proxy_connect_timeout  300s;
+  echo             proxy_send_timeout     300s;
+  echo             proxy_read_timeout     300s;
+  echo             client_max_body_size   100M;
+  echo         }
+  echo.
+  echo         location ^^~ /socket.io/ {
   echo             proxy_pass http://achme_backend/socket.io/;
   echo             proxy_http_version 1.1;
   echo             proxy_set_header Upgrade    $http_upgrade;
@@ -155,9 +168,10 @@ if exist "%NGINX_DIR%\nginx.exe" (
   echo             proxy_set_header Host              $host;
   echo             proxy_set_header X-Real-IP         $remote_addr;
   echo             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-  echo             proxy_connect_timeout  60s;
-  echo             proxy_send_timeout     60s;
+  echo             proxy_connect_timeout  120s;
+  echo             proxy_send_timeout     3600s;
   echo             proxy_read_timeout     3600s;
+  echo             proxy_buffering        off;
   echo         }
   echo.
   echo         location /nginx-health {

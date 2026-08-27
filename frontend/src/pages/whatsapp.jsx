@@ -240,7 +240,7 @@ function MediaBubble({ chatId, messageId, filename = "", mediaUrl = null, mimety
   };
 
   const src = media?.url
-    ? (media.url.startsWith("http") || media.url.startsWith("blob:") ? media.url : `${API}${media.url}`)
+    ? (media.url.startsWith("http") || media.url.startsWith("blob:") ? media.url : `${API || ""}${media.url.startsWith("/") ? "" : "/"}${media.url}`)
     : (media?.data ? `data:${media.mimetype || "application/octet-stream"};base64,${media.data}` : null);
 
   if (media && src) {
@@ -315,6 +315,10 @@ function MediaBubble({ chatId, messageId, filename = "", mediaUrl = null, mimety
               Download ⬇️
             </a>
           </>
+        ) : error ? (
+          <button onClick={load} className="text-amber-400 hover:underline flex items-center gap-1">
+            ⚠️ Retry Loading
+          </button>
         ) : (
           <>
             <button onClick={load} disabled={loading} className="hover:underline flex items-center gap-1">
@@ -1028,24 +1032,45 @@ export default function WhatsAppPage() {
       
       let uploaded = null;
       try {
-        const resUp = await axios.post(`${API}/api/whatsapp/upload-media`, formData, { headers });
+        const resUp = await axios.post(`${API}/api/whatsapp/upload-media`, formData, { headers, timeout: 60000 });
         uploaded = resUp.data;
       } catch (_) {
-        const resFallback = await axios.post(`${API}/api/wa/campaigns/upload-media`, formData, { headers });
-        uploaded = resFallback.data;
+        try {
+          const resFallback = await axios.post(`${API}/api/wa/campaigns/upload-media`, formData, { headers, timeout: 60000 });
+          uploaded = resFallback.data;
+        } catch (_) {
+          const resRel = await axios.post(`/api/whatsapp/upload-media`, formData, { headers, timeout: 60000 });
+          uploaded = resRel.data;
+        }
+      }
+
+      if (!uploaded || !uploaded.url) {
+        throw new Error("File upload failed. Please verify network connection or try a smaller file.");
       }
 
       const mediaType = uploaded.media_type || customMediaType || "document";
-      const res = await axios.post(`${API}/api/whatsapp/send-media`, {
-        chatId: selectedChat.id,
-        mediaUrl: uploaded.url,
-        mediaType,
-        filename: uploaded.filename || file.name,
-      }, { headers });
+      let res;
+      try {
+        res = await axios.post(`${API}/api/whatsapp/send-media`, {
+          chatId: selectedChat.id,
+          mediaUrl: uploaded.url,
+          mediaType,
+          filename: uploaded.filename || file.name,
+        }, { headers, timeout: 60000 });
+      } catch (e1) {
+        res = await axios.post(`/api/whatsapp/send-media`, {
+          chatId: selectedChat.id,
+          mediaUrl: uploaded.url,
+          mediaType,
+          filename: uploaded.filename || file.name,
+        }, { headers, timeout: 60000 });
+      }
+
       const realId = res.data?.id || tempId;
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: realId, mediaUrl: uploaded.url, status: "sent" } : m)));
     } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to send attachment");
+      const errMsg = err.response?.data?.error || err.message || "Failed to send attachment";
+      setError(`Attachment error: ${errMsg}`);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m)));
     }
     setMediaSending(false);
