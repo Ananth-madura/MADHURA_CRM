@@ -717,4 +717,66 @@ router.post("/accounts/switch-default", async (req, res) => {
   }
 });
 
+// ── Real-time Seen, React, Delete & Typing Indicators ──────────────────────
+router.post("/seen", async (req, res) => {
+  try {
+    const chatId = req.body?.chatId || req.query?.chatId;
+    if (!chatId) return res.json({ success: false });
+    const result = await s(req).sendSeen(chatId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/chat/:chatId/seen", async (req, res) => {
+  try {
+    const result = await s(req).sendSeen(req.params.chatId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/chat/:chatId/react", async (req, res) => {
+  try {
+    const { messageId, reaction } = req.body;
+    const result = await s(req).sendReaction(req.params.chatId, messageId, reaction);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/chat/:chatId/delete-message", async (req, res) => {
+  try {
+    const { messageId, everyone = true } = req.body;
+    const result = await s(req).deleteMessage(req.params.chatId, messageId, everyone);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/chat/:chatId/typing", async (req, res) => {
+  try {
+    const { isTyping = true } = req.body;
+    const result = await s(req).sendTypingState(req.params.chatId, isTyping);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/unread-count", async (req, res) => {
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT COALESCE(SUM(unread_count), 0) as totalUnread FROM wa_contacts WHERE is_blocked = 0"
+    );
+    res.json({ totalUnread: rows[0]?.totalUnread || 0 });
+  } catch (err) {
+    res.json({ totalUnread: 0 });
+  }
+});
+
 module.exports = router;

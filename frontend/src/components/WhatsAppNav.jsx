@@ -20,9 +20,10 @@ import {
   RefreshCw,
   LogOut,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { API } from "../config/api";
+import socket from "../socket/socket";
 import WAConfigPrompt from "./WAConfigPrompt";
 
 export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout, isSyncing, statusPhone }) {
@@ -31,6 +32,7 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
   const [showConfig, setShowConfig] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
   const [status, setStatus] = useState(null);
+  const [totalUnread, setTotalUnread] = useState(0);
   const [testPhone, setTestPhone] = useState("");
   const [testMessage, setTestMessage] = useState("Hello! This is a test message from ACHME Communication CRM.");
   const [testLoading, setTestLoading] = useState(false);
@@ -38,7 +40,16 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
   const [stopping, setStopping] = useState(false);
   const [stopResult, setStopResult] = useState(null);
 
-  const fetchStatus = async () => {
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await axios.get(`${API}/api/whatsapp/unread-count`, { headers });
+      setTotalUnread(Number(data?.totalUnread || 0));
+    } catch {}
+  }, []);
+
+  const fetchStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -50,13 +61,36 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
       }
       setStatus(res.data);
     } catch {}
-  };
+  }, []);
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    fetchUnreadCount();
+    const interval = setInterval(() => {
+      fetchStatus();
+      fetchUnreadCount();
+    }, 10000);
+
+    const handleRealtime = () => {
+      fetchUnreadCount();
+      fetchStatus();
+    };
+
+    socket.on("wa_message_received", handleRealtime);
+    socket.on("wa_message", handleRealtime);
+    socket.on("wa_chat_read", handleRealtime);
+    socket.on("wa_ready", handleRealtime);
+    socket.on("wa_disconnected", handleRealtime);
+
+    return () => {
+      clearInterval(interval);
+      socket.off("wa_message_received", handleRealtime);
+      socket.off("wa_message", handleRealtime);
+      socket.off("wa_chat_read", handleRealtime);
+      socket.off("wa_ready", handleRealtime);
+      socket.off("wa_disconnected", handleRealtime);
+    };
+  }, [fetchStatus, fetchUnreadCount]);
 
   const handleTestSend = async (e) => {
     e.preventDefault();
@@ -196,6 +230,13 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
               >
                 <Icon size={18} className={active ? "text-white" : "text-gray-500"} />
                 <span>{tab.label}</span>
+                {tab.id === "chats" && totalUnread > 0 && (
+                  <span className={`ml-1.5 px-2 py-0.5 text-xs font-extrabold rounded-full animate-pulse shadow-sm ${
+                    active ? "bg-white text-[#25D366]" : "bg-rose-500 text-white"
+                  }`}>
+                    {totalUnread > 99 ? "99+" : totalUnread}
+                  </span>
+                )}
               </button>
             );
           })}

@@ -334,6 +334,26 @@ function MediaBubble({ chatId, messageId, filename = "", mediaUrl = null, mimety
   );
 }
 
+// Synthesize a pleasant, crystal-clear WhatsApp notification chime using Web Audio API
+const playNotificationSound = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (_) {}
+};
+
 export default function WhatsAppPage() {
   // Stale-While-Revalidate Instant Initialization (0ms Startup)
   const [status, setStatus] = useState(() => {
@@ -1524,6 +1544,11 @@ export default function WhatsAppPage() {
         isMe: Boolean(data?.isMe),
       };
 
+      // Play pleasant audio chime on inbound messages
+      if (!msgObj.isMe) {
+        playNotificationSound();
+      }
+
       if (isCurrentChat && msgObj) {
         setMessages((prev) => {
           if (prev.some((m) => m.id === msgObj.id || (m.serializedId && m.serializedId === msgObj.serializedId))) {
@@ -1582,9 +1607,37 @@ export default function WhatsAppPage() {
       }
     };
 
+    const handleReaction = (data) => {
+      const { id, serializedId, reaction } = data || {};
+      if (!id && !serializedId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === id || m.serializedId === serializedId) {
+            return { ...m, reactionEmoji: reaction };
+          }
+          return m;
+        })
+      );
+    };
+
+    const handleRevoked = (data) => {
+      const { id, serializedId } = data || {};
+      if (!id && !serializedId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === id || m.serializedId === serializedId) {
+            return { ...m, body: "🚫 This message was deleted", hasMedia: false, isDeleted: true };
+          }
+          return m;
+        })
+      );
+    };
+
     socket.on("wa_message_received", handleRealtimeUpdate);
     socket.on("wa_message_sent", handleRealtimeUpdate);
     socket.on("wa_message", handleRealtimeUpdate);
+    socket.on("wa_message_reaction", handleReaction);
+    socket.on("wa_message_revoked", handleRevoked);
     socket.on("wa_chat_history_updated", handleChatHistoryUpdated);
 
     const handleHandoffAlert = (data) => {
@@ -1688,6 +1741,8 @@ export default function WhatsAppPage() {
       socket.off("wa_message_received", handleRealtimeUpdate);
       socket.off("wa_message_sent", handleRealtimeUpdate);
       socket.off("wa_message", handleRealtimeUpdate);
+      socket.off("wa_message_reaction", handleReaction);
+      socket.off("wa_message_revoked", handleRevoked);
       socket.off("wa_chat_history_updated", handleChatHistoryUpdated);
       socket.off("wa_agent_handoff", handleHandoffAlert);
       socket.off("wa_qr", handleWaQr);

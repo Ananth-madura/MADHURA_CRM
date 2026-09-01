@@ -598,6 +598,41 @@ class WhatsAppService {
         if (!msg.fromMe) safeHandleLiveMessage(msg);
       });
 
+      // Real-time message emoji reactions
+      this.client.on("message_reaction", (reaction) => {
+        try {
+          const chatId = reaction.msgId?.remote || (reaction.id?.fromMe ? reaction.id.to : reaction.id?.from);
+          if (!chatId) return;
+          const cleanPhone = (chatId || "").replace(/\D/g, "");
+          const reactionData = {
+            id: reaction.msgId?.id,
+            serializedId: reaction.msgId?._serialized,
+            reaction: reaction.reaction,
+            senderId: reaction.senderId,
+            timestamp: reaction.timestamp || Math.floor(Date.now() / 1000),
+          };
+          this.emitWaEvent("wa_message_reaction", chatId, cleanPhone, reactionData);
+        } catch (_) {}
+      });
+
+      // Real-time message revoke / delete for everyone
+      this.client.on("message_revoke_everyone", (after, before) => {
+        try {
+          const msg = before || after;
+          const chatId = msg?.fromMe ? msg.to : msg?.from;
+          if (!chatId) return;
+          const cleanPhone = (chatId || "").replace(/\D/g, "");
+          const msgId = msg?.id?.id;
+          const serializedId = msg?.id?._serialized;
+          this.emitWaEvent("wa_message_revoked", chatId, cleanPhone, { id: msgId, serializedId, revoked: true });
+          const db = require("../config/database");
+          db.promise().query(
+            "UPDATE wa_message_logs SET message_text = '🚫 This message was deleted' WHERE wa_message_id = ? OR wa_message_id = ?",
+            [msgId, serializedId || msgId]
+          ).catch(() => {});
+        } catch (_) {}
+      });
+
       // Delivery receipts: keeps the tick marks honest (sent -> delivered -> read)
       // instead of the UI always claiming blue double-ticks.
       this.client.on("message_ack", (msg, ack) => {
@@ -1417,10 +1452,11 @@ class WhatsAppService {
         const formattedChatId = formatChatJid(chatId);
         const chat = await this.client.getChatById(formattedChatId).catch(() => null);
         if (chat) {
-          const msgs = await chat.fetchMessages({ limit: 20 }).catch(() => []);
+          const msgs = await chat.fetchMessages({ limit: 50 }).catch(() => []);
           const target = msgs.find((m) => m.id?.id === messageId || m.id?._serialized === messageId);
           if (target && target.react) {
             await target.react(emoji);
+            this.emitWaEvent("wa_message_reaction", chatId, chatId.replace(/\D/g, ""), { id: messageId, reaction: emoji });
             return { success: true };
           }
         }
@@ -1428,6 +1464,54 @@ class WhatsAppService {
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
+    }
+  }
+
+  async deleteMessage(chatId, messageId, everyone = true) {
+    if (!chatId || !messageId) return { success: false };
+    try {
+      if (this.ready && this.client) {
+        const formattedChatId = formatChatJid(chatId);
+        const chat = await this.client.getChatById(formattedChatId).catch(() => null);
+        if (chat) {
+          const msgs = await chat.fetchMessages({ limit: 50 }).catch(() => []);
+          const target = msgs.find((m) => m.id?.id === messageId || m.id?._serialized === messageId);
+          if (target && target.delete) {
+            await target.delete(everyone);
+            this.emitWaEvent("wa_message_revoked", chatId, chatId.replace(/\D/g, ""), { id: messageId, revoked: true });
+            const db = require("../config/database");
+            await db.promise().query(
+              "UPDATE wa_message_logs SET message_text = '🚫 This message was deleted' WHERE wa_message_id = ? OR wa_message_id = ?",
+              [messageId, messageId]
+            ).catch(() => {});
+            return { success: true };
+          }
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  async sendTypingState(chatId, isTyping = true) {
+    if (!chatId) return { success: false };
+    try {
+      if (this.ready && this.client) {
+        const formattedChatId = formatChatJid(chatId);
+        const chat = await this.client.getChatById(formattedChatId).catch(() => null);
+        if (chat) {
+          if (isTyping && chat.sendStateTyping) {
+            await chat.sendStateTyping().catch(() => {});
+          } else if (chat.clearState) {
+            await chat.clearState().catch(() => {});
+          }
+          return { success: true };
+        }
+      }
+      return { success: true };
+    } catch (_) {
+      return { success: false };
     }
   }
 
