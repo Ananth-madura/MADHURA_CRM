@@ -29,29 +29,11 @@ module.exports = app;
 // the process as Node intends, so real bugs aren't masked.
 function isRecoverableWaError(err) {
   const text = `${(err && err.message) || err} ${(err && err.stack) || ""}`;
-  return /puppeteer|whatsapp-web\.js|Execution context was destroyed|Protocol error|Session closed|Target closed/i.test(text);
+  return /puppeteer|whatsapp-web\.js|Execution context was destroyed|Protocol error|Session closed|Target closed|detached Frame|Navigation timeout|Page\.navigate/i.test(text);
 }
 function handleFatal(label, err) {
   if (isRecoverableWaError(err)) {
-    console.error(`⚠️ Recovered from WhatsApp Web session error (${label}):`, err?.message || err);
-    // whatsapp-web.js throws plenty of these (page-navigation races, etc.) while
-    // the session is still perfectly linked. forceReset() destroys the client
-    // and forces a fresh QR scan — calling it unconditionally on every one of
-    // these was logging people out of a healthy WhatsApp session for no reason.
-    // Only reset when the session is already down; a real disconnect is caught
-    // by the client's own "disconnected" handler, which calls forceReset itself.
-    //
-    // getStatus() is async: `!wa.getStatus().connected` read `.connected` off a
-    // Promise, got undefined, and so force-reset on EVERY one of these benign
-    // errors — the exact behaviour the paragraph above says it avoids. That is
-    // what kept unlinking healthy sessions and breaking outbound sends.
-    // `ready` is a plain boolean and handleFatal is sync, so check that.
-    try {
-      const wa = require("./services/whatsappService");
-      wa.all().forEach((s) => {
-        if (!s.ready) s.forceReset(label);
-      });
-    } catch (_) {}
+    console.warn(`⚠️ [WhatsApp Web Guard] Handled transient Puppeteer warning (${label}):`, err?.message || err);
     return;
   }
   console.error(`❌ ${label}:`, err);

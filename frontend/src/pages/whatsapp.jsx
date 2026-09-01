@@ -1595,6 +1595,10 @@ export default function WhatsAppPage() {
     socket.on("wa_agent_handoff", handleHandoffAlert);
 
     const handleWaReady = () => {
+      setQrCode(null);
+      setQrLoading(false);
+      setError(null);
+      setStatus((s) => ({ ...s, connected: true, isWeb: true, initializing: false, hasQr: false }));
       fetchStatus();
       fetchAccountDetails();
       fetchChats(true);
@@ -1610,10 +1614,11 @@ export default function WhatsAppPage() {
         setQrCode(qrVal);
         setQrLoading(false);
         setError(null);
-        setStatus((s) => ({ ...s, hasQr: true }));
+        setStatus((s) => ({ ...s, hasQr: true, connected: false }));
       }
     };
-    const handleWaDisconnected = () => {
+    const handleWaDisconnected = (data) => {
+      console.log("ℹ️ WhatsApp disconnected event received:", data);
       setStatus((s) => ({ ...s, connected: false, isWeb: false }));
       fetchStatus();
     };

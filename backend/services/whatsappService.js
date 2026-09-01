@@ -291,6 +291,10 @@ class WhatsAppService {
         console.log(`ℹ️ WhatsApp Puppeteer using browser at: ${execPath}`);
       }
 
+      const defaultUserAgent =
+        process.env.WA_USER_AGENT ||
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
       const puppeteerOptions = {
         headless: true,
         args: [
@@ -301,45 +305,27 @@ class WhatsAppService {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
-          // Memory/bandwidth trims — this is a headless automation profile,
-          // none of these features are ever used.
+          "--disable-blink-features=AutomationControlled",
           "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-background-timer-throttling",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-breakpad",
-          "--disable-component-update",
           "--disable-default-apps",
-          "--disable-sync",
-          "--disable-translate",
-          "--metrics-recording-only",
           "--mute-audio",
           "--no-default-browser-check",
-          // NOTE: deliberately no --max-old-space-size cap here. WhatsApp Web's
-          // own JS bundle is large; the previous 256MB old-space cap could OOM
-          // the renderer mid-session, which surfaces as the
-          // "Attempted to use detached Frame" crash seen in the logs.
+          `--user-agent=${defaultUserAgent}`,
         ],
       };
       if (execPath) puppeteerOptions.executablePath = execPath;
 
-      // Pinned to a known-good pre-breakage WhatsApp Web build. Recent live
-      // builds (2026-06-20 "ready never fires on session restore" and the
-      // 2026-07-15 id._serialized -> id.$1 rename) broke whatsapp-web.js;
-      // pinning avoids both instead of racing WhatsApp's frontend rollouts.
-      //
-      // ponytail: the pin is a calibration knob, not a constant — WhatsApp
-      // unlinks a device right after a successful scan ("disconnected: LOGOUT")
-      // when it decides the web build is too old, and with strict:true this pin
-      // can never age out on its own. Override without a code edit:
-      //   WA_WEB_VERSION=latest        -> let whatsapp-web.js negotiate the live build
-      //   WA_WEB_VERSION=<build-id>    -> pin a different specific build
       const pinnedWebVersion = process.env.WA_WEB_VERSION || "latest";
       const clientOptions = {
         authStrategy: new LocalAuth({
           dataPath: sessionPath,
         }),
         puppeteer: puppeteerOptions,
+        userAgent: defaultUserAgent,
+        takeoverOnConflict: true,
+        takeoverTimeoutMs: 0,
+        authTimeoutMs: 60000,
+        qrMaxRetries: 15,
       };
       if (pinnedWebVersion !== "latest") {
         clientOptions.webVersion = pinnedWebVersion;
@@ -408,20 +394,47 @@ class WhatsAppService {
 
       this.client.on("authenticated", () => {
         this.qrCode = null;
+        console.log(`🔐 WhatsApp session ${this.key} authenticated successfully.`);
       });
 
-      this.client.on("auth_failure", () => {
+      this.client.on("auth_failure", (msg) => {
+        console.warn(`⚠️ WhatsApp session ${this.key} auth failure:`, msg);
         this.ready = false;
         this.qrCode = null;
         this.pairingCode = null;
+        this.isInitializing = false;
+        this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "AUTH_FAILURE", message: msg });
       });
 
       this.client.on("disconnected", (reason) => {
+        const reasonStr = String(reason || "DISCONNECTED");
+        console.log(`ℹ️ WhatsApp session ${this.key} disconnected (${reasonStr}).`);
         this.ready = false;
         this.qrCode = null;
         this.pairingCode = null;
-        this.markLoggedOut(reason || "DISCONNECTED");
-        console.log(`ℹ️ WhatsApp session ${this.key} disconnected (${reason}). 4-day auto-cleanup timer active.`);
+        this.isInitializing = false;
+
+        this.emitWaEvent("wa_disconnected", null, this.phone, { reason: reasonStr });
+
+        // Only mark logged_out if it was an explicit LOGOUT from phone / user
+        if (reasonStr.toUpperCase().includes("LOGOUT")) {
+          this.markLoggedOut(reasonStr);
+          console.log(`🔒 WhatsApp session ${this.key} logged out from phone. Auto-cleanup timer active.`);
+        } else {
+          // Transient network drop, NAVIGATION, or browser crash -> schedule automatic reconnect
+          console.log(`🔄 Transient disconnect (${reasonStr}) — scheduling auto-reconnect for session ${this.key}...`);
+          if (!this._reconnectScheduled) {
+            this._reconnectScheduled = true;
+            setTimeout(() => {
+              this._reconnectScheduled = false;
+              if (!this.ready && !this.isInitializing) {
+                this.init(false).catch((err) => {
+                  console.warn(`⚠️ Auto-reconnect failed for ${this.key}:`, err?.message || err);
+                });
+              }
+            }, 5000);
+          }
+        }
       });
 
       const handleLiveMessage = (msg) => {
@@ -2090,6 +2103,8 @@ function all() {
 // The session CRM-side senders use when there is no user in context:
 // schedulers, Cloud API webhooks, invoice/payment automations, the queue worker.
 function getDefault() {
+  const readySession = all().find((s) => s.ready);
+  if (readySession) return readySession;
   return get(defaultKey);
 }
 

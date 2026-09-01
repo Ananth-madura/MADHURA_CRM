@@ -16,14 +16,20 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-// Every route here resolves the caller's own WhatsApp session, or falls back to the active connected session
+// Resolves the caller's specific session, or falls back to an active connected session for read/send
 const s = (req) => {
   const reqKey = req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id;
-  const target = mgr.get(reqKey);
+  const target = reqKey ? mgr.get(reqKey) : null;
   if (target && target.ready) return target;
   const readySession = mgr.all().find((ses) => ses.ready);
   if (readySession) return readySession;
   return target || mgr.default();
+};
+
+// Specifically for auth/lifecycle routes (QR, pairing, logout, reset) - isolated per user
+const userSession = (req) => {
+  const reqKey = req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id || mgr.defaultKey;
+  return mgr.get(reqKey);
 };
 
 const { configureForUser } = require("../services/waConfigHelper");
@@ -130,7 +136,7 @@ router.post("/test-send", async (req, res) => {
 
 router.get("/qr", async (req, res) => {
   try {
-    const session = s(req);
+    const session = userSession(req);
     if (req.query.force === "true" || req.query.refresh === "true") {
       await session.logout(true).catch(() => {});
       await session.init(true).catch(() => {});
@@ -162,7 +168,7 @@ router.get("/qr", async (req, res) => {
         : "Initializing browser session in background...",
     });
   } catch (err) {
-    const session = s(req);
+    const session = userSession(req);
     res.json({
       qr: session?.qrCode || null,
       initializing: session?.isInitializing || true,
@@ -176,7 +182,7 @@ router.get("/pairing-code", async (req, res) => {
   try {
     const phone = req.query.phone;
     if (!phone) return res.status(400).json({ error: "phone query parameter is required (e.g. ?phone=919876543210)" });
-    const code = await s(req).getPairingCode(phone);
+    const code = await userSession(req).getPairingCode(phone);
     res.json({ code });
   } catch (err) {
     res.status(500).json({ error: err.message || "Failed to generate pairing code" });
@@ -584,7 +590,8 @@ router.post("/send-location", async (req, res) => {
 router.post("/logout", async (req, res) => {
   try {
     const purge = req.query.purge === "true" || req.body?.purge === true;
-    const result = await s(req).logout(purge);
+    const session = userSession(req);
+    const result = await session.logout(purge);
     res.json({
       success: true,
       purged: purge,
@@ -609,7 +616,7 @@ router.post("/cleanup-expired-sessions", async (req, res) => {
 
 router.post("/reconnect", async (req, res) => {
   try {
-    const session = s(req);
+    const session = userSession(req);
     await session.init(false);
     res.json({ success: true, message: "Reconnection triggered in background", initializing: session.isInitializing });
   } catch (err) {
@@ -619,7 +626,7 @@ router.post("/reconnect", async (req, res) => {
 
 router.post("/reset-session", async (req, res) => {
   try {
-    const session = s(req);
+    const session = userSession(req);
     await session.logout(true).catch(() => {});
     await session.init(true).catch(() => {});
     res.json({ success: true, message: "Session reset and fresh QR initialization started", initializing: true });
