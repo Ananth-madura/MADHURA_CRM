@@ -567,7 +567,7 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Place Name</label>
-                      <input value={locName} onChange={e => setLocName(e.target.value)} placeholder="e.g. ACHME Office"
+                      <input value={locName} onChange={e => setLocName(e.target.value)} placeholder="e.g. Madhura Tech Office"
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#25D366]" />
                     </div>
                     <div>

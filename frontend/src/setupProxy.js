@@ -1,6 +1,6 @@
 const { createProxyMiddleware } = require("http-proxy-middleware");
 
-const BACKEND = process.env.REACT_APP_API_PROXY || "http://localhost:5000";
+const BACKEND = process.env.REACT_APP_API_PROXY || "http://127.0.0.1:5000";
 
 module.exports = function (app) {
   // Proxy all /api requests to the backend
@@ -10,6 +10,12 @@ module.exports = function (app) {
       target: BACKEND,
       changeOrigin: true,
       logLevel: "warn",
+      onError: (err, req, res) => {
+        console.warn(`[Proxy Error] ${req.method} ${req.url} -> ${err.message}`);
+        if (!res.headersSent) {
+          res.status(502).json({ error: `Backend proxy error (${err.message})` });
+        }
+      },
     })
   );
 

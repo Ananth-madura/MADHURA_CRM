@@ -181,11 +181,11 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     client_name: rawName,
     
     // 🏢 Business & Company
-    company: data.company || data.company_name || data.business_name || "",
-    company_name: data.company || data.company_name || data.business_name || "",
-    brand_name: "MADHURA CRM",
-    sender_company: "MADHURA CRM",
-    my_company: "MADHURA CRM",
+    company: data.company || data.company_name || data.business_name || "Madhura Tech",
+    company_name: data.company || data.company_name || data.business_name || "Madhura Tech",
+    brand_name: "Madhura Tech",
+    sender_company: "Madhura Tech",
+    my_company: "Madhura Tech",
 
     // 📞 Phone & Email
     phone: data.phone || data.mobile || data.mobile_number || "",
@@ -463,17 +463,20 @@ async function getWelcomeSettings() {
     const [rows] = await db.promise().query("SELECT * FROM wa_welcome_settings WHERE id = 1");
     if (!rows.length) {
       return {
-        enabled: true,
+        enabled: false,
         welcome_type: "text",
-        welcome_text: "Hello {name}! Welcome to ACHME. Thank you for reaching out to us. How can we help you today?",
+        welcome_text: "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
         template_id: null,
         cooldown_hours: 24,
+        working_hours_only: false,
+        start_time: "09:00",
+        end_time: "21:00",
       };
     }
     return {
-      enabled: !!rows[0].enabled,
+      enabled: Boolean(rows[0].enabled),
       welcome_type: rows[0].welcome_type || "text",
-      welcome_text: rows[0].welcome_text || "Hello {name}! Welcome to ACHME.",
+      welcome_text: rows[0].welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
       template_id: rows[0].template_id || null,
       cooldown_hours: rows[0].cooldown_hours != null ? rows[0].cooldown_hours : 24,
       working_hours_only: !!rows[0].working_hours_only,
@@ -503,9 +506,9 @@ async function updateWelcomeSettings(settings) {
     [
       enabled ? 1 : 0,
       welcome_type || "text",
-      welcome_text || "Hello {name}! Welcome to ACHME.",
+      welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
       template_id || null,
-      parseInt(cooldown_hours || 24, 10),
+      parseInt(cooldown_hours != null ? cooldown_hours : 24, 10),
       working_hours_only ? 1 : 0,
       start_time || "09:00",
       end_time || "21:00",
@@ -517,11 +520,15 @@ async function updateWelcomeSettings(settings) {
 async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) {
   if (!targetPhoneOrJid) return false;
   const rawTarget = String(targetPhoneOrJid).trim();
+  if (rawTarget.includes("@g.us") || rawTarget.includes("@broadcast") || rawTarget.startsWith("status@")) {
+    return false; // Skip groups, broadcast lists, and status updates
+  }
+
   const cleanPhone = cleanPhoneNumber(rawTarget) || rawTarget.replace(/\D/g, "");
   if (!cleanPhone && !rawTarget.includes("@")) return false;
 
   const settings = await getWelcomeSettings();
-  if (!settings.enabled) return false;
+  if (!settings.enabled) return false; // Safe default: strictly requires user to enable it
 
   // 1. Check working hours if enabled
   if (settings.working_hours_only && settings.start_time && settings.end_time) {
@@ -532,32 +539,39 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
       const currentTime = `${currentHours}:${currentMinutes}`;
       if (currentTime < settings.start_time || currentTime > settings.end_time) {
         console.log(`⏰ [WA Welcome] Outside working hours (${currentTime} not in ${settings.start_time}-${settings.end_time}) for ${cleanPhone}`);
+        return false;
       }
     } catch (_) {}
   }
 
-  // 2. Check cooldown: Has an outbound welcome message or reply been sent to this phone within cooldown_hours?
+  // 2. Check cooldown / deduplication: One-time welcome reply per contact
   const cooldownHours = parseInt(settings.cooldown_hours != null ? settings.cooldown_hours : 24, 10);
   try {
+    const timeClause = cooldownHours > 0 ? "AND created_at >= NOW() - INTERVAL ? HOUR" : "";
+    const autoTimeClause = cooldownHours > 0 ? "AND sent_at >= NOW() - INTERVAL ? HOUR" : "";
+    const params = cooldownHours > 0
+      ? [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
+      : [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`];
+
     const [recentWelcomeLogs] = await db.promise().query(
       `SELECT id FROM wa_message_logs
        WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'outbound'
          AND (message_type = 'welcome' OR message_text LIKE '%Welcome%' OR message_text LIKE '%Thank you for reaching out%')
-         AND created_at >= NOW() - INTERVAL ? HOUR
+         ${timeClause}
        LIMIT 1`,
-      [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
+      params
     );
 
     const [recentAutoLogs] = await db.promise().query(
       `SELECT id FROM wa_automation_logs
        WHERE (phone LIKE ? OR phone LIKE ?)
-         AND sent_at >= NOW() - INTERVAL ? HOUR
+         ${autoTimeClause}
        LIMIT 1`,
-      [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`, cooldownHours]
+      params
     );
 
     if (recentWelcomeLogs.length > 0 || recentAutoLogs.length > 0) {
-      console.log(`⏳ [WA Welcome] Cooldown in effect for ${cleanPhone} (${cooldownHours}h)`);
+      console.log(`⏳ [WA Welcome] Welcome already sent previously to ${cleanPhone} (cooldown: ${cooldownHours}h)`);
       return false;
     }
   } catch (e) {
@@ -569,7 +583,7 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
   const resolvedName = contactName || crmData.name || crmData.customer_name || "Valued Customer";
 
   // 4. Default fallback to wa_welcome_settings
-  const rawWelcome = settings.welcome_text || "Hello {name}! Welcome to ACHME Solutions. Thank you for reaching out to us. How can we help you today?";
+  const rawWelcome = settings.welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?";
   const messageText = formatMessagePlaceholders(rawWelcome, resolvedName, crmData);
 
   const waLoadBalancer = require("./waLoadBalancer");

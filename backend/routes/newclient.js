@@ -664,14 +664,16 @@ router.post("/", verifyToken, (req, res) => {
       nearest_landmark || null
     ];
     db.query(sql, values, (err, result) => {
-      try {
-        const { triggerAutomation } = require("../services/waAutomationService");
-        triggerAutomation("welcome_message", {
-          phone: phone,
-          contactName: name,
-          data: { name, company_name, email, service, city }
-        }).catch(e => console.error("WA Automation trigger error:", e.message));
-      } catch (_) {}
+      if (req.body.send_welcome) {
+        try {
+          const { triggerAutomation } = require("../services/waAutomationService");
+          triggerAutomation("welcome_message", {
+            phone: phone,
+            contactName: name,
+            data: { name, company_name, email, service, city }
+          }).catch(e => console.error("WA Automation trigger error:", e.message));
+        } catch (_) {}
+      }
 
       res.json({ message: "Client created successfully", id: result.insertId });
     });

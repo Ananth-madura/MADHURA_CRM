@@ -884,7 +884,14 @@ export default function WhatsAppPage() {
 
   const extractQuickReplies = (msg) => {
     if (!msg) return [];
-    // 1. From interactive payload
+    // 1. From direct buttons / rows arrays
+    if (msg.buttons && Array.isArray(msg.buttons)) {
+      return msg.buttons.map((b) => b.title || b.text || b.id).filter(Boolean);
+    }
+    if (msg.rows && Array.isArray(msg.rows)) {
+      return msg.rows.map((r) => r.title || r.id).filter(Boolean);
+    }
+    // 2. From interactive payload
     if (msg.interactive?.buttons && Array.isArray(msg.interactive.buttons)) {
       return msg.interactive.buttons.map((b) => b.title || b.text || b.id).filter(Boolean);
     }
@@ -898,7 +905,7 @@ export default function WhatsAppPage() {
         if (payload.rows && Array.isArray(payload.rows)) return payload.rows.map((r) => r.title || r.id).filter(Boolean);
       } catch (_) {}
     }
-    // 2. Parse numbered / bullet options from message body text:
+    // 3. Parse numbered / bullet options from message body text:
     const body = msg.body || "";
     if (body.includes("\n")) {
       const lines = body.split("\n");
@@ -908,12 +915,12 @@ export default function WhatsAppPage() {
         const match = trimmed.match(/^(?:\*|•|-)?\s*(?:\d+[\s.)-]+)\s*\*?(.*?)\*?$/);
         if (match && match[1]) {
           const clean = match[1].trim().replace(/\*+/g, "");
-          if (clean.length >= 2 && !clean.toLowerCase().startsWith("reply with") && !clean.toLowerCase().startsWith("or reply")) {
+          if (clean.length >= 2 && !clean.toLowerCase().startsWith("reply with") && !clean.toLowerCase().startsWith("or reply") && !clean.toLowerCase().startsWith("reply 0")) {
             options.push(clean);
           }
         }
       }
-      if (options.length >= 2 && options.length <= 8) {
+      if (options.length >= 2 && options.length <= 10) {
         return options;
       }
     }
@@ -1985,7 +1992,7 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col h-screen min-h-screen bg-[#0b141a] text-slate-100 p-2 md:p-3 overflow-hidden shadow-2xl">
+    <div className="w-full flex-1 flex flex-col h-[calc(100vh-68px)] min-h-[500px] bg-[#0b141a] text-slate-100 p-1.5 md:p-2.5 overflow-hidden rounded-2xl shadow-2xl">
       <WhatsAppNav
         onAccountBalance={fetchAccountBalance}
         onSyncWhatsApp={handleSyncWhatsApp}
@@ -1995,7 +2002,7 @@ export default function WhatsAppPage() {
       />
 
       {error && (
-        <div className="p-3 bg-red-950/80 border-b border-red-800 text-red-200 text-xs font-semibold flex items-center justify-between">
+        <div className="p-3 bg-red-950/80 border-b border-red-800 text-red-200 text-xs font-semibold flex items-center justify-between shrink-0">
           <span>{error}</span>
           <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200">
             <X size={14} />
@@ -2004,12 +2011,12 @@ export default function WhatsAppPage() {
       )}
 
       {/* Main WhatsApp App Canvas */}
-      <div className="flex-1 flex overflow-hidden w-full">
+      <div className="flex-1 min-h-0 flex overflow-hidden w-full">
 
         {/* Chats Sidebar Column */}
-        <div className={`w-full md:w-96 lg:w-[420px] bg-[#111b21] border-r border-[#222d34] flex flex-col shrink-0 ${showMobileChat ? "hidden md:flex" : "flex"}`}>
+        <div className={`w-full md:w-96 lg:w-[420px] bg-[#111b21] border-r border-[#222d34] flex flex-col h-full min-h-0 shrink-0 ${showMobileChat ? "hidden md:flex" : "flex"}`}>
           {/* Search Bar & Action Buttons */}
-          <div className="p-3 border-b border-[#222d34] flex items-center gap-2">
+          <div className="p-3 border-b border-[#222d34] flex items-center gap-2 shrink-0">
             <div className="relative flex-1">
               <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
               <input
@@ -2087,7 +2094,7 @@ export default function WhatsAppPage() {
           </div>
 
           {/* Chat List Items */}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#222d34]/60">
+          <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-[#222d34]/60 overscroll-contain">
             {chatsLoading && chats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 space-y-2 text-slate-400">
                 <Loader2 size={28} className="animate-spin text-[#00a884]" />
@@ -2193,7 +2200,7 @@ export default function WhatsAppPage() {
         </div>
 
         {/* Main Conversation Window / Empty State */}
-        <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${!showMobileChat ? "hidden md:flex" : "flex"}`}>
+        <div className={`flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[#0b141a] relative ${!showMobileChat ? "hidden md:flex" : "flex"}`}>
           {!selectedChat ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#111b21] text-slate-400 select-none">
               <div className="max-w-md w-full text-center space-y-6">
@@ -2203,7 +2210,7 @@ export default function WhatsAppPage() {
                 <div>
                   <h2 className="text-xl font-extrabold text-slate-100 tracking-wide">WhatsApp Desktop & CRM Live</h2>
                   <p className="text-xs text-slate-400 mt-1">
-                    Send and receive live messages without keeping your phone online. Connected with ACHME CRM.
+                    Send and receive live messages without keeping your phone online. Connected with Madhura Tech CRM.
                   </p>
                 </div>
 
@@ -2421,7 +2428,7 @@ export default function WhatsAppPage() {
                   const el = e.currentTarget;
                   setIsScrolledUp(el.scrollHeight - el.scrollTop - el.clientHeight > 220);
                 }}
-                className="flex-1 overflow-y-auto p-4 bg-[#0b141a] relative"
+                className="flex-1 min-h-0 overflow-y-auto p-4 bg-[#0b141a] relative overscroll-contain"
                 style={{ backgroundImage: CHAT_WALLPAPER, backgroundRepeat: "repeat", backgroundSize: "260px 260px" }}
               >
                 {messages.length >= msgLimit && (
@@ -3103,7 +3110,7 @@ export default function WhatsAppPage() {
                 <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">First Message (Optional)</label>
                 <textarea
                   rows={3}
-                  placeholder="Hello! Welcome to ACHME..."
+                  placeholder="Hello! Welcome to Madhura Tech..."
                   value={newChatMessage}
                   onChange={(e) => setNewChatMessage(e.target.value)}
                   className="w-full px-3.5 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none"
@@ -3439,7 +3446,7 @@ export default function WhatsAppPage() {
                   type="text"
                   value={optionsMenuTitle}
                   onChange={(e) => setOptionsMenuTitle(e.target.value)}
-                  placeholder="e.g. Welcome to ACHME. How can we help you?"
+                  placeholder="e.g. Welcome to Madhura Tech. How can we help you?"
                   className="w-full px-3.5 py-2.5 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-white outline-none focus:border-[#00a884]"
                 />
               </div>

@@ -1126,7 +1126,7 @@ class WaFlowEngine {
         return { intent };
       } else {
         // ai_generate
-        const systemPrompt = this.interpolate(config.system_prompt || "You are a helpful customer support assistant for ACHME Solutions.", vars);
+        const systemPrompt = this.interpolate(config.system_prompt || "You are a helpful customer support assistant for Madhura Tech.", vars);
         const res = await axios.post(
           "https://openrouter.ai/api/v1/chat/completions",
           {
@@ -1192,8 +1192,8 @@ class WaFlowEngine {
     let vars = currentRunState?.vars ? { ...currentRunState.vars } : {
       name: "Rahul Sharma",
       customer_name: "Rahul Sharma",
-      company: "ACHME Solutions",
-      company_name: "ACHME Solutions",
+      company: "Madhura Tech",
+      company_name: "Madhura Tech",
       city: "Bangalore",
       service: "AC AMC Maintenance",
       amount: "14,500",
@@ -1275,6 +1275,7 @@ class WaFlowEngine {
 
           let matched = null;
 
+          // 1. Single Number Match: "1", "2", "3", "1.", "#1", "opt 1", "choice 1"
           if (!nextNodeKey) {
             const numMatch = rawTrimmed.match(/^(?:option\s*|opt\s*|choice\s*|select\s*|#\s*)?(\d+)[.)]?$/i);
             if (numMatch) {
@@ -1294,24 +1295,50 @@ class WaFlowEngine {
             }
           }
 
+          // 2. Leading Number Match in user reply: "1. Services", "1 Services", "1 - Book", "2. Payment"
+          if (!nextNodeKey && !matched) {
+            const leadingNumMatch = rawTrimmed.match(/^(\d+)[\s.)-]+/);
+            if (leadingNumMatch) {
+              const leadIdx = parseInt(leadingNumMatch[1], 10) - 1;
+              if (leadIdx >= 0 && leadIdx < buttons.length) {
+                matched = buttons[leadIdx];
+              }
+            }
+          }
+
+          // 3. Exact ID / Reply ID / Exact Title Match
           if (!nextNodeKey && !matched) {
             matched = buttons.find(b => 
-              (b.reply_id && String(b.reply_id).toLowerCase() === lowerText) ||
-              (b.id && String(b.id).toLowerCase() === lowerText) ||
-              (b.title && String(b.title).toLowerCase() === lowerText)
+              (b.reply_id && String(b.reply_id).toLowerCase().trim() === lowerText) ||
+              (b.id && String(b.id).toLowerCase().trim() === lowerText) ||
+              (b.title && String(b.title).toLowerCase().trim() === lowerText)
             );
           }
 
+          // 4. Clean Title / Fuzzy Substring Match (ignoring emojis, symbols, and leading digits)
           if (!nextNodeKey && !matched && rawTrimmed.length >= 2) {
-            const cleanInput = rawTrimmed.replace(/^[^\w\s]+/, "").toLowerCase().trim();
+            const stripSymbols = (s) => (s || "").replace(/^\d+[\s.)-]+\s*/, "").replace(/[^\p{L}\p{N}\s]/gu, "").toLowerCase().trim();
+            const cleanInput = stripSymbols(rawTrimmed);
+            if (cleanInput) {
+              matched = buttons.find(b => {
+                if (!b.title) return false;
+                const cleanTitle = stripSymbols(b.title);
+                if (!cleanTitle) return false;
+                return (
+                  cleanTitle === cleanInput ||
+                  cleanInput.includes(cleanTitle) ||
+                  cleanTitle.includes(cleanInput)
+                );
+              });
+            }
+          }
+
+          // 5. Configured Button Keywords / Synonyms
+          if (!nextNodeKey && !matched) {
             matched = buttons.find(b => {
-              if (!b.title) return false;
-              const cleanTitle = b.title.replace(/^\d+[\s.)-]+\s*/, "").replace(/^[^\w\s]+/, "").toLowerCase().trim();
-              return (
-                cleanTitle === cleanInput ||
-                cleanInput.includes(cleanTitle) ||
-                cleanTitle.includes(cleanInput)
-              );
+              if (!b.keywords) return false;
+              const kws = Array.isArray(b.keywords) ? b.keywords : String(b.keywords).split(",");
+              return kws.some(k => k.trim() && lowerText.includes(k.trim().toLowerCase()));
             });
           }
 
@@ -1322,7 +1349,7 @@ class WaFlowEngine {
             vars.selected_option = matched.title;
             vars.selected_option_id = matched.reply_id || matched.id;
             vars._reprompt_count = 0;
-            nextNodeKey = matched.next_node_key || matched.next_node;
+            nextNodeKey = matched.next_node_key || matched.next_node || matched.target_node || matched.next;
           } else if (!nextNodeKey) {
             // Mirror the live bot: re-show the numbered menu once before falling
             // through, instead of silently selecting option 1.
@@ -1557,8 +1584,8 @@ class WaFlowEngine {
     return {
       name: crmData.name || crmData.customer_name || "Valued Customer",
       customer_name: crmData.name || crmData.customer_name || "Valued Customer",
-      company: crmData.company || crmData.company_name || "ACHME Solutions",
-      company_name: crmData.company || crmData.company_name || "ACHME Solutions",
+      company: crmData.company || crmData.company_name || "Madhura Tech",
+      company_name: crmData.company || crmData.company_name || "Madhura Tech",
       city: crmData.city || crmData.location_city || "our city",
       email: crmData.email || "",
       is_existing_customer: !!(crmData.name || crmData.company),

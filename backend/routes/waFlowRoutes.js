@@ -71,7 +71,7 @@ router.post("/", auth, async (req, res) => {
     const nodesToInsert = nodes.length > 0 ? nodes : [
       { node_key: "start", node_type: "start", config: { next_node_key: "welcome_menu" }, position_x: 100, position_y: 100 },
       { node_key: "welcome_menu", node_type: "send_buttons", config: { 
-          text: "Hello {name}! Welcome to ACHME. How can we assist you today?",
+          text: "Hello {name}! Welcome to Madhura Tech. How can we assist you today?",
           buttons: [
             { reply_id: "btn_services", title: "1. 🛠️ Services", next_node_key: "services_msg" },
             { reply_id: "btn_support", title: "2. 👤 Live Support", next_node_key: "support_handoff" }
@@ -311,7 +311,7 @@ router.post("/seed", auth, async (req, res) => {
             node_type: "send_buttons",
             config: {
               text: "👋 {Hi|Hello|Greetings} {name}! Welcome to {company}.\nHow can we help you today? Please choose an option or reply with the number:",
-              footer_text: "ACHME Smart Assistant • Reply MENU anytime",
+              footer_text: "Madhura Tech Smart Assistant • Reply MENU anytime",
               buttons: [
                 { reply_id: "opt_services", title: "1. 🛠️ Our Services", next_node_key: "services_menu" },
                 { reply_id: "opt_booking", title: "2. 📅 Book Service", next_node_key: "ask_booking_date" },
@@ -336,7 +336,7 @@ router.post("/seed", auth, async (req, res) => {
             node_key: "send_brochure_pdf",
             node_type: "send_message",
             config: {
-              text: "📄 Here is our complete Service & AMC Catalog for {company}:\nhttps://achme.in/brochure.pdf\n\nReply MENU anytime to return to the main menu.",
+              text: "📄 Here is our complete Service & AMC Catalog for {company}:\nhttps://madhuratech.com/catalog.pdf\n\nReply MENU anytime to return to the main menu.",
               next_node_key: "end"
             }
           },
@@ -451,7 +451,7 @@ router.post("/seed", auth, async (req, res) => {
             node_key: "send_pay_link",
             node_type: "send_message",
             config: {
-              text: "💳 You can securely pay invoice *{invoice_no}* ({amount}) online via UPI, NetBanking or Cards:\nhttps://achme.in/pay/{invoice_no}\n\nOnce paid, your payment receipt will be generated instantly!",
+              text: "💳 You can securely pay invoice *{invoice_no}* ({amount}) online via UPI, NetBanking or Cards:\nhttps://pay.madhuratech.in/{invoice_no}\n\nOnce paid, your payment receipt will be generated instantly!",
               next_node_key: "end"
             }
           },
@@ -459,7 +459,7 @@ router.post("/seed", auth, async (req, res) => {
             node_key: "send_invoice_pdf",
             node_type: "send_message",
             config: {
-              text: "📥 Here is your official invoice copy:\nhttps://achme.in/invoices/{invoice_no}.pdf\n\nThank you for your business with {company}!",
+              text: "📥 Here is your official invoice copy:\nhttps://madhuratech.com/invoices/{invoice_no}.pdf\n\nThank you for your business with {company}!",
               next_node_key: "end"
             }
           },
@@ -701,7 +701,7 @@ router.post("/seed", auth, async (req, res) => {
             node_key: "rating_5_branch",
             node_type: "send_message",
             config: {
-              text: "🎉 We are thrilled to hear that, {name}! Could you take 30 seconds to share your review on Google? It helps us tremendously:\n👉 https://g.page/r/achme/review\n\nThank you for choosing {company}!",
+              text: "🎉 We are thrilled to hear that, {name}! Could you take 30 seconds to share your review on Google? It helps us tremendously:\n👉 https://g.page/r/madhuratech/review\n\nThank you for choosing {company}!",
               next_node_key: "end"
             }
           },

@@ -50,8 +50,8 @@ router.post("/create-link", auth, async (req, res) => {
     const txId = "TXN_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
 
     // Dynamic payment link / UPI intent URL
-    const upiLink = `upi://pay?pa=achme@upi&pn=ACHME&am=${safeAmount}&cu=INR&tn=${encodeURIComponent(description)}`;
-    const paymentLink = `https://pay.achme.in/checkout?txn=${txId}&amount=${safeAmount}&desc=${encodeURIComponent(description)}`;
+    const upiLink = `upi://pay?pa=madhuratech@upi&pn=Madhura%20Tech&am=${safeAmount}&cu=INR&tn=${encodeURIComponent(description)}`;
+    const paymentLink = `https://pay.madhuratech.in/checkout?txn=${txId}&amount=${safeAmount}&desc=${encodeURIComponent(description)}`;
 
     const [result] = await db.promise().query(
       `INSERT INTO wa_payments (phone, contact_name, amount, currency, description, payment_link, provider, status, transaction_id, invoice_id, quotation_id, created_by)
@@ -77,7 +77,7 @@ router.post("/create-link", auth, async (req, res) => {
     if (send_to_whatsapp) {
       try {
         const waService = require("../services/whatsappService").get(req.user?.id || 1);
-        const formattedMsg = `💳 *Payment Request from ACHME*\n\n` +
+        const formattedMsg = `💳 *Payment Request from Madhura Tech*\n\n` +
           `• *Description:* ${description}\n` +
           `• *Amount Due:* ₹${parseFloat(safeAmount).toLocaleString()}\n` +
           `• *Transaction Ref:* \`${txId}\`\n\n` +
@@ -138,7 +138,7 @@ router.post("/:id/mark-paid", auth, async (req, res) => {
           `• *Txn ID:* \`${p.transaction_id}\`\n` +
           `• *Date & Time:* ${new Date().toLocaleString()}\n` +
           `• *Status:* Successful (0% Fee Direct)\n\n` +
-          `Thank you for doing business with ACHME!`;
+          `Thank you for doing business with Madhura Tech!`;
 
         await waService.sendMessage(`${p.phone}@c.us`, receiptMsg);
       } catch (waErr) {

@@ -37,7 +37,7 @@ function renderPreviewText(templateText) {
   result = result
     .replace(/\{\{?\s*name\s*\}?\}/gi, "Rajesh Kumar")
     .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rajesh")
-    .replace(/\{\{?\s*company\s*\}?\}/gi, "ACHME Solutions")
+    .replace(/\{\{?\s*company\s*\}?\}/gi, "Madhura Tech")
     .replace(/\{\{?\s*phone\s*\}?\}/gi, "+91 98765 43210")
     .replace(/\{\{?\s*address\s*\}?\}/gi, "12, Mount Road, Guindy")
     .replace(/\{\{?\s*city\s*\}?\}/gi, "Chennai")
@@ -106,7 +106,7 @@ export default function WATemplates() {
       header_type: "",
       header_value: "",
       body: "Hello {name}! Thank you for choosing {company}. We are delighted to assist you with {service}. Our working hours in {city} are {start_time} to {end_time}.",
-      footer: "ACHME Customer Support",
+      footer: "Madhura Tech Customer Support",
       button_type: "",
       buttons: "",
     });
@@ -601,10 +601,10 @@ export default function WATemplates() {
                   <div className="flex items-center justify-between px-2 py-2 border-b border-slate-800 text-white mb-3">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-[#25D366] flex items-center justify-center text-white font-bold text-xs">
-                        AC
+                        MT
                       </div>
                       <div>
-                        <p className="text-xs font-bold leading-tight">ACHME Customer Care</p>
+                        <p className="text-xs font-bold leading-tight">Madhura Tech Customer Care</p>
                         <p className="text-[10px] text-emerald-400">Official Business Account</p>
                       </div>
                     </div>

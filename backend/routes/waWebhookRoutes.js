@@ -13,11 +13,22 @@ router.get("/", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  const result = wa.verifyWebhook(mode, token, challenge);
-  if (result) {
-    return res.status(200).send(result);
+  // If Meta Cloud API verification request
+  if (mode || token || challenge) {
+    const result = wa.verifyWebhook(mode, token, challenge);
+    if (result) {
+      return res.status(200).send(result);
+    }
+    return res.status(403).send("Forbidden: Invalid verification token");
   }
-  res.sendStatus(403);
+
+  // Friendly status for browser/health probes
+  res.status(200).json({
+    ok: true,
+    service: "Madhura Tech WhatsApp Cloud API Webhook",
+    status: "active",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 function isValidSignature(req) {

@@ -125,10 +125,10 @@ async function validateApiKey(provider, apiKey, model, customUrl) {
     Authorization: `Bearer ${cleanKey}`,
     "Content-Type": "application/json",
   };
-  if (apiUrl.includes("openrouter.ai")) {
-    headers["HTTP-Referer"] = "https://achmecrm.com";
-    headers["X-Title"] = "MADHURA WhatsApp CRM";
-  }
+    if (apiUrl.includes("openrouter.ai")) {
+      headers["HTTP-Referer"] = "https://madhuratech.com";
+      headers["X-Title"] = "Madhura Tech WhatsApp CRM";
+    }
 
   const payload = {
     model: modelToUse,
@@ -325,8 +325,8 @@ ${require("./waAiTools").TOOLS_DESCRIPTION}`;
       "Content-Type": "application/json",
     };
     if (apiUrl.includes("openrouter.ai")) {
-      headers["HTTP-Referer"] = "https://achmecrm.com";
-      headers["X-Title"] = "MADHURA WhatsApp CRM";
+      headers["HTTP-Referer"] = "https://madhuratech.com";
+      headers["X-Title"] = "Madhura Tech WhatsApp CRM";
     }
 
     const payload = {

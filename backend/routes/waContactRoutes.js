@@ -68,15 +68,17 @@ router.post("/", auth, async (req, res) => {
     );
     const [row] = await db.promise().query("SELECT * FROM wa_contacts WHERE id=?", [result.insertId]);
 
-    // Auto-trigger welcome_message automation
-    try {
-      const { triggerAutomation } = require("../services/waAutomationService");
-      triggerAutomation("welcome_message", {
-        phone: cleanPhone,
-        contactName: name,
-        data: { name, email, source, notes }
-      }).catch(e => console.error("WA Automation error:", e.message));
-    } catch (_) {}
+    // Optional: Only trigger welcome_message automation if explicitly requested by user in request payload
+    if (req.body.send_welcome) {
+      try {
+        const { triggerAutomation } = require("../services/waAutomationService");
+        triggerAutomation("welcome_message", {
+          phone: cleanPhone,
+          contactName: name,
+          data: { name, email, source, notes }
+        }).catch(e => console.error("WA Automation error:", e.message));
+      } catch (_) {}
+    }
 
     res.status(201).json(row[0]);
   } catch (err) {

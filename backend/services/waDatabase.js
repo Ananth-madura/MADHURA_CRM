@@ -847,16 +847,16 @@ async function ensureWATables() {
     const templatesCount = await queryAsync("SELECT COUNT(*) as count FROM wa_templates");
     if (templatesCount[0].count === 0) {
       const defaultTemplates = [
-        ["welcome_greeting", "UTILITY", "en", "Welcome to ACHME", "Hello {name}! Welcome to ACHME. We are delighted to assist you. Feel free to reply anytime!", "Thank you, Team ACHME", "APPROVED"],
-        ["new_lead_acknowledgement", "MARKETING", "en", "Inquiry Received", "Hi {name}, thank you for reaching out to us! Our team received your inquiry for {service}. We will connect with you shortly.", "ACHME Sales Team", "APPROVED"],
-        ["invoice_generated_notice", "UTILITY", "en", "Invoice Notice", "Hello {name}, your invoice {invoice_no} for amount {amount} has been generated. Due date: {due_date}. Thank you for choosing ACHME!", "ACHME Billing", "APPROVED"],
-        ["payment_received_receipt", "UTILITY", "en", "Payment Received", "Dear {name}, we received your payment of {amount} for invoice {invoice_no} on {date}. Thank you for your prompt payment!", "ACHME Accounts", "APPROVED"],
-        ["payment_due_reminder_notice", "UTILITY", "en", "Payment Due Reminder", "Hi {name}, gentle reminder that payment for invoice {invoice_no} (amount {amount}) is due on {due_date}. Please reply if you need help.", "ACHME Accounts", "APPROVED"],
-        ["quotation_proposal_notice", "MARKETING", "en", "Proposal & Quotation", "Hello {name}, here is your quotation for {service} with total estimate {amount}. Let us know if you have any questions!", "ACHME Business", "APPROVED"],
-        ["amc_service_due_reminder", "UTILITY", "en", "AMC Service Due", "Hi {name}, your AMC service for {service} is due on {date}. Our technical team will visit your location shortly.", "ACHME Support", "APPROVED"],
-        ["walkin_appointment_reminder", "UTILITY", "en", "Appointment Reminder", "Hi {name}, reminder for your upcoming visit/appointment with ACHME on {date}. Reply CONFIRM to confirm or RESCHEDULE.", "ACHME Desk", "APPROVED"],
-        ["birthday_wishes_discount", "MARKETING", "en", "Happy Birthday!", "🎉 Happy Birthday {name}! Wishing you a wonderful year ahead. Enjoy 15% off on your next service with ACHME!", "Special Gift", "APPROVED"],
-        ["service_ticket_feedback", "UTILITY", "en", "Support Feedback", "Hello {name}, your support request for {service} has been resolved. We would love your feedback!", "ACHME Care", "APPROVED"],
+        ["welcome_greeting", "UTILITY", "en", "Welcome to Madhura Tech", "Hello {name}! Welcome to Madhura Tech. We are delighted to assist you. Feel free to reply anytime!", "Thank you, Team Madhura Tech", "APPROVED"],
+        ["new_lead_acknowledgement", "MARKETING", "en", "Inquiry Received", "Hi {name}, thank you for reaching out to us! Our team received your inquiry for {service}. We will connect with you shortly.", "Madhura Tech Sales", "APPROVED"],
+        ["invoice_generated_notice", "UTILITY", "en", "Invoice Notice", "Hello {name}, your invoice {invoice_no} for amount {amount} has been generated. Due date: {due_date}. Thank you for choosing Madhura Tech!", "Madhura Tech Billing", "APPROVED"],
+        ["payment_received_receipt", "UTILITY", "en", "Payment Received", "Dear {name}, we received your payment of {amount} for invoice {invoice_no} on {date}. Thank you for your prompt payment!", "Madhura Tech Accounts", "APPROVED"],
+        ["payment_due_reminder_notice", "UTILITY", "en", "Payment Due Reminder", "Hi {name}, gentle reminder that payment for invoice {invoice_no} (amount {amount}) is due on {due_date}. Please reply if you need help.", "Madhura Tech Accounts", "APPROVED"],
+        ["quotation_proposal_notice", "MARKETING", "en", "Proposal & Quotation", "Hello {name}, here is your quotation for {service} with total estimate {amount}. Let us know if you have any questions!", "Madhura Tech Business", "APPROVED"],
+        ["amc_service_due_reminder", "UTILITY", "en", "AMC Service Due", "Hi {name}, your AMC service for {service} is due on {date}. Our technical team will visit your location shortly.", "Madhura Tech Support", "APPROVED"],
+        ["walkin_appointment_reminder", "UTILITY", "en", "Appointment Reminder", "Hi {name}, reminder for your upcoming visit/appointment with Madhura Tech on {date}. Reply CONFIRM to confirm or RESCHEDULE.", "Madhura Tech Desk", "APPROVED"],
+        ["birthday_wishes_discount", "MARKETING", "en", "Happy Birthday!", "🎉 Happy Birthday {name}! Wishing you a wonderful year ahead. Enjoy 15% off on your next service with Madhura Tech!", "Special Gift", "APPROVED"],
+        ["service_ticket_feedback", "UTILITY", "en", "Support Feedback", "Hello {name}, your support request for {service} has been resolved. We would love your feedback!", "Madhura Tech Care", "APPROVED"],
       ];
 
       for (const t of defaultTemplates) {
@@ -871,12 +871,12 @@ async function ensureWATables() {
     const automationsCount = await queryAsync("SELECT COUNT(*) as count FROM wa_automations");
     if (automationsCount[0].count === 0) {
       const defaultAutomations = [
-        ["Auto Welcome New Leads", "new_lead", "Hi {name}! Thank you for your inquiry regarding {service}. Our representative will contact you shortly!", 0, 1],
-        ["Instant Invoice WhatsApp Notice", "invoice_created", "Hello {name}, your invoice {invoice_no} for {amount} has been generated. Due Date: {due_date}. Thank you!", 0, 1],
-        ["Payment Receipt Acknowledgement", "payment_received", "Dear {name}, thank you! We received your payment of {amount} for invoice {invoice_no} on {date}.", 0, 1],
-        ["New Client Welcome Onboarding", "welcome_message", "Welcome to ACHME, {name}! We are excited to work with {company}. Let us know if you have any questions.", 0, 1],
-        ["Payment Due 1-Day Reminder", "payment_due", "Hi {name}, friendly reminder that payment for invoice {invoice_no} ({amount}) is due on {due_date}.", 0, 1],
-        ["Lead Follow-Up Nudge", "lead_followup", "Hi {name}, following up regarding your interest in {service}. Let us know if you'd like a quick demo or call!", 0, 1],
+        ["Auto Welcome New Leads", "new_lead", "Hi {name}! Thank you for your inquiry regarding {service}. Our representative will contact you shortly!", 0, 0],
+        ["Instant Invoice WhatsApp Notice", "invoice_created", "Hello {name}, your invoice {invoice_no} for {amount} has been generated. Due Date: {due_date}. Thank you!", 0, 0],
+        ["Payment Receipt Acknowledgement", "payment_received", "Dear {name}, thank you! We received your payment of {amount} for invoice {invoice_no} on {date}.", 0, 0],
+        ["New Client Welcome Onboarding", "welcome_message", "Welcome to Madhura Tech, {name}! We are excited to work with {company}. Let us know if you have any questions.", 0, 0],
+        ["Payment Due 1-Day Reminder", "payment_due", "Hi {name}, friendly reminder that payment for invoice {invoice_no} ({amount}) is due on {due_date}.", 0, 0],
+        ["Lead Follow-Up Nudge", "lead_followup", "Hi {name}, following up regarding your interest in {service}. Let us know if you'd like a quick demo or call!", 0, 0],
       ];
 
       for (const a of defaultAutomations) {
@@ -885,16 +885,42 @@ async function ensureWATables() {
           a
         );
       }
-      console.log("✅ Seeded 6 prebuilt WhatsApp automation rules");
+      console.log("✅ Seeded 6 prebuilt WhatsApp automation rules (disabled by default for user safety)");
     }
 
     const welcomeSettingsCount = await queryAsync("SELECT COUNT(*) as count FROM wa_welcome_settings");
     if (welcomeSettingsCount[0].count === 0) {
       await queryAsync(
         `INSERT INTO wa_welcome_settings (id, enabled, welcome_type, welcome_text, cooldown_hours)
-         VALUES (1, 1, 'text', 'Hello {name}! Welcome to ACHME. Thank you for reaching out to us. How can we help you today?', 24)`
+         VALUES (1, 0, 'text', 'Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?', 24)`
       );
-      console.log("✅ Seeded default Welcome Auto-Reply settings (enabled)");
+      console.log("✅ Seeded default Welcome Auto-Reply settings (disabled by default)");
+    }
+
+    // ── Safe Rebranding Data Migration: Update any existing rows containing 'ACHME' / 'Achme' ──
+    try {
+      await queryAsync(
+        `UPDATE wa_welcome_settings
+         SET welcome_text = REPLACE(REPLACE(welcome_text, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech')
+         WHERE welcome_text LIKE '%ACHME%' OR welcome_text LIKE '%Achme%'`
+      );
+      await queryAsync(
+        `UPDATE wa_templates
+         SET header_value = REPLACE(REPLACE(header_value, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech'),
+             body = REPLACE(REPLACE(body, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech'),
+             footer = REPLACE(REPLACE(footer, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech')
+         WHERE header_value LIKE '%ACHME%' OR body LIKE '%ACHME%' OR footer LIKE '%ACHME%'
+            OR header_value LIKE '%Achme%' OR body LIKE '%Achme%' OR footer LIKE '%Achme%'`
+      );
+      await queryAsync(
+        `UPDATE wa_automations
+         SET message_text = REPLACE(REPLACE(message_text, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech'),
+             followup_message_text = REPLACE(REPLACE(followup_message_text, 'ACHME', 'Madhura Tech'), 'Achme', 'Madhura Tech')
+         WHERE message_text LIKE '%ACHME%' OR followup_message_text LIKE '%ACHME%'
+            OR message_text LIKE '%Achme%' OR followup_message_text LIKE '%Achme%'`
+      );
+    } catch (migErr) {
+      console.warn("⚠️ WhatsApp rebranding data migration note:", migErr.message);
     }
 
     const aiSettingsCount = await queryAsync("SELECT COUNT(*) as count FROM wa_ai_settings");

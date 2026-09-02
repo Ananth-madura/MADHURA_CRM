@@ -34,7 +34,7 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
   const [status, setStatus] = useState(null);
   const [totalUnread, setTotalUnread] = useState(0);
   const [testPhone, setTestPhone] = useState("");
-  const [testMessage, setTestMessage] = useState("Hello! This is a test message from ACHME Communication CRM.");
+  const [testMessage, setTestMessage] = useState("Hello! This is a test message from Madhura Tech WhatsApp CRM.");
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [stopping, setStopping] = useState(false);

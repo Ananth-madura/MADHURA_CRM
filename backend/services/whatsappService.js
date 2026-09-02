@@ -931,7 +931,7 @@ class WhatsAppService {
     };
   }
 
-  async sendTestMessage(targetPhone, text = "Hello! This is a test message from ACHME CRM WhatsApp Engine.", enginePreference = null) {
+  async sendTestMessage(targetPhone, text = "Hello! This is a test message from Madhura Tech WhatsApp Engine.", enginePreference = null) {
     const waCloud = require("./whatsappCloudApi");
     const formattedPhone = targetPhone.replace(/\D/g, "");
     if (!formattedPhone) throw new Error("Valid phone number required");

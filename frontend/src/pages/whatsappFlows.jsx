@@ -7,8 +7,8 @@ import {
   Bot, Plus, Play, Edit2, Trash2, Loader2, GitFork, Send, X,
   Sparkles, PhoneCall, ArrowRight, Smartphone, Database, Globe,
   CheckCircle2, Clock, UserCheck, ShieldAlert, Cpu, ListOrdered,
-  Layers, BarChart2, RefreshCw, HelpCircle, FileText, ChevronRight,
-  MoveUp, MoveDown, Tag, UserPlus, Zap
+  Layers, BarChart2, RefreshCw, HelpCircle, FileText,
+  MoveUp, MoveDown, Zap
 } from "lucide-react";
 
 const PLACEHOLDERS = [
@@ -216,9 +216,16 @@ export default function WhatsAppFlows() {
 
   useEffect(() => {
     if (simScrollRef.current) {
-      simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
+      const scrollIt = () => {
+        if (simScrollRef.current) {
+          simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
+        }
+      };
+      scrollIt();
+      const t = setTimeout(scrollIt, 60);
+      return () => clearTimeout(t);
     }
-  }, [simMessages, simLoading]);
+  }, [simMessages, simLoading, showSimulator]);
 
   const handleSeedPrebuilt = async () => {
     setSeeding(true);
@@ -253,7 +260,7 @@ export default function WhatsAppFlows() {
         node_type: "send_buttons",
         config: {
           text: "👋 {Hi|Hello|Greetings} {name}! Welcome to {company}.\nHow can we assist you today? Please choose an option:",
-          footer_text: "ACHME Smart Assistant • 24/7 Support",
+          footer_text: "Madhura Tech Smart Assistant • 24/7 Support",
           buttons: [
             { reply_id: "opt_services", title: "1. 🛠️ Services", next_node_key: "services_info" },
             { reply_id: "opt_booking", title: "2. 📅 Book Service", next_node_key: "ask_booking_date" },
@@ -446,7 +453,7 @@ export default function WhatsAppFlows() {
     let defaultCfg = {};
 
     if (type === "send_message") defaultCfg = { text: "Hello {name}! How can we assist you with {service} today?", next_node_key: "end_flow" };
-    if (type === "send_media") defaultCfg = { media_type: "image", media_url: "https://achme.in/brochure.pdf", caption: "Check out our latest catalog for {company}!", next_node_key: "end_flow" };
+    if (type === "send_media") defaultCfg = { media_type: "image", media_url: "https://madhuratech.com/catalog.pdf", caption: "Check out our latest catalog for {company}!", next_node_key: "end_flow" };
     if (type === "delay") defaultCfg = { delay_seconds: 5, next_node_key: "end_flow" };
     if (type === "send_buttons") defaultCfg = {
       text: "Please choose an option:",
@@ -459,7 +466,7 @@ export default function WhatsAppFlows() {
     if (type === "send_list") defaultCfg = {
       text: "Explore our solutions:",
       button_text: "View Solutions",
-      title: "ACHME Catalog",
+      title: "Madhura Tech Catalog",
       rows: [
         { id: "row_1", title: "HVAC Maintenance", description: "Preventive AC maintenance & AMC", next_node_key: "end_flow" },
         { id: "row_2", title: "Electrical Safety", description: "Audit & compliance inspections", next_node_key: "end_flow" }
@@ -981,9 +988,9 @@ export default function WhatsAppFlows() {
       {/* ── MODAL: Visual Flow Builder & Step Designer ── */}
       {showEditor && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3" onClick={() => setShowEditor(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[94vh] flex flex-col border border-gray-100 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-3xl w-full max-w-5xl h-[90vh] max-h-[850px] min-h-[500px] flex flex-col border border-gray-100 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b flex items-center justify-between bg-gray-50/90">
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-gray-50/90 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
                   <GitFork size={18} />
@@ -1001,7 +1008,7 @@ export default function WhatsAppFlows() {
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleSaveFlow} className="p-6 overflow-y-auto space-y-6 flex-1">
+            <form onSubmit={handleSaveFlow} className="p-6 overflow-y-auto space-y-6 flex-1 min-h-0">
               {/* Trigger & Settings Card */}
               <div className="p-4 bg-gray-50/90 rounded-2xl border border-gray-200 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2233,11 +2240,11 @@ export default function WhatsAppFlows() {
 
       {/* ── MODAL: WhatsApp Interactive Phone Simulator ── */}
       {showSimulator && simFlow && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-3" onClick={() => setShowSimulator(false)}>
-          <div className="bg-slate-950 rounded-3xl w-full max-w-3xl h-[620px] grid grid-cols-1 md:grid-cols-12 shadow-2xl border-4 border-slate-800 overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden" onClick={() => setShowSimulator(false)}>
+          <div className="bg-slate-950 rounded-3xl w-full max-w-4xl h-[86vh] max-h-[580px] min-h-[400px] flex flex-col md:flex-row shadow-2xl border border-slate-800 overflow-hidden" onClick={e => e.stopPropagation()}>
             
-            {/* Phone Screen Left Column (7 Cols) */}
-            <div className="md:col-span-7 flex flex-col h-full border-r border-slate-800 bg-[#0B141A]">
+            {/* Phone Screen Left Column (58% Width) */}
+            <div className="w-full md:w-[58%] flex flex-col h-full min-h-0 border-r border-slate-800 bg-[#0B141A] overflow-hidden shrink-0">
               {/* WhatsApp Screen Header */}
               <div className="bg-[#202C33] px-4 py-3 flex items-center justify-between text-white border-b border-slate-700/60 shrink-0">
                 <div className="flex items-center gap-2.5">
@@ -2265,7 +2272,7 @@ export default function WhatsAppFlows() {
               {/* Real-world trigger check — does this message actually start the bot? */}
               {simTrigger && (
                 <div
-                  className={`px-3.5 py-2 text-[10px] leading-relaxed border-b ${
+                  className={`px-3.5 py-2 text-[10px] leading-relaxed border-b shrink-0 ${
                     simTrigger.matched
                       ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                       : "bg-amber-500/10 border-amber-500/30 text-amber-300"
@@ -2300,7 +2307,7 @@ export default function WhatsAppFlows() {
               )}
 
               {/* Chat Message Stream */}
-              <div ref={simScrollRef} className="flex-1 p-4 overflow-y-auto space-y-3.5">
+              <div ref={simScrollRef} className="flex-1 min-h-0 p-3.5 sm:p-4 overflow-y-auto space-y-3.5 overscroll-contain scroll-smooth">
                 {simMessages.map((msg, i) => (
                   <div
                     key={i}
@@ -2458,8 +2465,8 @@ export default function WhatsAppFlows() {
               </form>
             </div>
 
-            {/* Inspector Right Column (5 Cols) */}
-            <div className="hidden md:flex md:col-span-5 bg-slate-950 p-5 flex-col justify-between text-slate-300 text-xs overflow-y-auto">
+            {/* Inspector Right Column (42% Width) */}
+            <div className="hidden md:flex md:w-[42%] bg-slate-950 p-4 sm:p-5 flex-col h-full min-h-0 justify-between text-slate-300 text-xs overflow-y-auto overscroll-contain">
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                   <span className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -2514,7 +2521,7 @@ export default function WhatsAppFlows() {
               </div>
 
               <div className="text-[10px] text-slate-500 text-center border-t border-slate-800 pt-2.5">
-                ACHME State Machine Simulator
+                Madhura Tech State Machine Simulator
               </div>
             </div>
           </div>

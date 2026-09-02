@@ -95,11 +95,11 @@ export default function WhatsAppAutomations() {
   const [simResult, setSimResult] = useState(null);
   const [showExplainer, setShowExplainer] = useState(true);
 
-  // Welcome Auto-Reply Settings
+  // Welcome Auto-Reply Settings (Disabled by default for safety)
   const [welcomeSettings, setWelcomeSettings] = useState({
-    enabled: true,
+    enabled: false,
     welcome_type: "text",
-    welcome_text: "Hello {name}! Welcome to ACHME. Thank you for reaching out to us. How can we help you today?",
+    welcome_text: "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
     cooldown_hours: 24,
     working_hours_only: false,
     start_time: "09:00",
@@ -764,20 +764,32 @@ export default function WhatsAppAutomations() {
       {/* ── TAB 2: Welcome Auto-Reply Settings ── */}
       {activeTab === "welcome" && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm max-w-3xl mx-auto space-y-6">
+          <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-start gap-3">
+            <Info className="text-amber-700 mt-0.5 shrink-0" size={18} />
+            <div className="text-xs text-amber-900 space-y-1">
+              <p className="font-bold">One-Time Live Inbound Welcome Auto-Reply</p>
+              <p className="text-amber-800 leading-relaxed">
+                When enabled, your WhatsApp number will automatically send a single personalized welcome greeting <strong>only</strong> when a new customer sends a real-time incoming message. It will never send unsolicited messages to imported contacts or CRM leads without your consent.
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between border-b pb-4">
             <div>
               <h2 className="text-base font-bold text-gray-900">Welcome Auto-Reply & Cooldown Manager</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Greets new customers on their first message without spamming repeat messages</p>
+              <p className="text-xs text-gray-500 mt-0.5">Greets new contacts on their first inbound message with strict one-time cooldown protection</p>
             </div>
 
             <button
               onClick={() => setWelcomeSettings((s) => ({ ...s, enabled: !s.enabled }))}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                welcomeSettings.enabled ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-gray-100 text-gray-500"
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                welcomeSettings.enabled
+                  ? "bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm"
+                  : "bg-gray-100 text-gray-600 border border-gray-300"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${welcomeSettings.enabled ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
-              <span>{welcomeSettings.enabled ? "Enabled" : "Disabled"}</span>
+              <span className={`w-2.5 h-2.5 rounded-full ${welcomeSettings.enabled ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
+              <span>{welcomeSettings.enabled ? "Active (Auto-Reply ON)" : "Disabled (Safe Mode)"}</span>
             </button>
           </div>
 
@@ -789,7 +801,7 @@ export default function WhatsAppAutomations() {
                 value={welcomeSettings.welcome_text || ""}
                 onChange={(e) => setWelcomeSettings((s) => ({ ...s, welcome_text: e.target.value }))}
                 className="w-full p-3 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
-                placeholder="Hello {name}! Welcome to ACHME..."
+                placeholder="Hello {name}! Welcome to Madhura Tech..."
               />
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {PLACEHOLDERS.slice(0, 4).map((p) => (
@@ -808,17 +820,22 @@ export default function WhatsAppAutomations() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                  Cooldown Period: {welcomeSettings.cooldown_hours || 24} Hours
+                  Cooldown Period: {welcomeSettings.cooldown_hours === 0 ? "Only Once (Lifetime)" : `${welcomeSettings.cooldown_hours || 24} Hours`}
                 </label>
                 <input
                   type="range"
-                  min={1}
+                  min={0}
                   max={72}
-                  value={welcomeSettings.cooldown_hours || 24}
+                  step={6}
+                  value={welcomeSettings.cooldown_hours != null ? welcomeSettings.cooldown_hours : 24}
                   onChange={(e) => setWelcomeSettings((s) => ({ ...s, cooldown_hours: parseInt(e.target.value, 10) }))}
                   className="w-full accent-amber-600"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">Prevents sending duplicate welcome messages to the same customer within this window.</p>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {welcomeSettings.cooldown_hours === 0
+                    ? "Lifetime protection: Customer will receive the welcome greeting only once in their lifetime."
+                    : `Prevents sending duplicate welcome messages to the same customer within ${welcomeSettings.cooldown_hours || 24} hours.`}
+                </p>
               </div>
 
               <div>
@@ -831,7 +848,7 @@ export default function WhatsAppAutomations() {
                     onChange={(e) => setWelcomeSettings((s) => ({ ...s, working_hours_only: e.target.checked }))}
                     className="w-4 h-4 accent-amber-600 rounded"
                   />
-                  <label htmlFor="wh_only" className="text-xs text-gray-700 font-medium">Restricted to working hours</label>
+                  <label htmlFor="wh_only" className="text-xs text-gray-700 font-medium">Restricted to working hours only</label>
                 </div>
                 {welcomeSettings.working_hours_only && (
                   <div className="flex items-center gap-2 mt-2">
@@ -857,9 +874,9 @@ export default function WhatsAppAutomations() {
             <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
               <span className="text-[11px] font-bold uppercase text-emerald-800 tracking-wider">Live Customer Preview</span>
               <p className="text-xs text-emerald-950 mt-1 whitespace-pre-line leading-relaxed font-sans bg-white p-3 rounded-xl border border-emerald-100 shadow-sm">
-                {(welcomeSettings.welcome_text || "Hello {name}! Welcome to ACHME.")
+                {(welcomeSettings.welcome_text || "Hello {name}! Welcome to Madhura Tech.")
                   .replace(/\{name\}/g, "Rahul Sharma")
-                  .replace(/\{company\}/g, "Madhura Facilities")
+                  .replace(/\{company\}/g, "Madhura Tech")
                   .replace(/\{service\}/g, "HVAC & Electrical AMC")
                   .replace(/\{city\}/g, "Bangalore")}
               </p>
@@ -1124,7 +1141,7 @@ export default function WhatsAppAutomations() {
                           type="text"
                           value={form.media_url || ""}
                           onChange={(e) => setForm((f) => ({ ...f, media_url: e.target.value }))}
-                          placeholder="https://achme.in/brochure.pdf"
+                          placeholder="https://madhuratech.com/catalog.pdf"
                           className="w-full p-2 border rounded-xl text-xs font-mono bg-white"
                         />
                       </div>
