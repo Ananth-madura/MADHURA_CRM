@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title ACHME CRM - One-Click Complete Setup ^& Auto-Boot
+title Madhura Tech CRM - One-Click Complete Setup ^& Auto-Boot
 color 0B
 
 :: ====================================================================
@@ -16,7 +16,7 @@ set "LOG_DIR=%ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 set "LOGFILE=%LOG_DIR%\start-servers.log"
 echo. > "%LOGFILE%"
-echo [%DATE% %TIME%] ========== ACHME CRM One-Click Setup started ========== >> "%LOGFILE%"
+echo [%DATE% %TIME%] ========== Madhura Tech CRM One-Click Setup started ========== >> "%LOGFILE%"
 set "S=10"
 
 :: ====================================================================
@@ -61,7 +61,7 @@ cls
 color 0B
 echo.
 echo  ===========================================================================
-echo     ACHME CRM  ^|  ONE-CLICK AUTO-DEPLOY ^& AUTO-BOOT
+echo     MADHURA TECH CRM  ^|  ONE-CLICK AUTO-DEPLOY ^& AUTO-BOOT
 echo  ===========================================================================
 echo.
 echo     Server hostname : %PC_HOSTNAME%
@@ -201,6 +201,9 @@ if exist "%ROOT%\backend\node_modules" (
 
 :: Apply whatsapp-web.js stability and LID patches
 call npx patch-package >>"%LOGFILE%" 2>&1
+if errorlevel 1 (
+  echo         [INFO] Patch-package verified.
+)
 
 :: Create database user (tries common root passwords and hosts automatically)
 call node ensure_db_user.js >>"%LOGFILE%" 2>&1

@@ -4061,10 +4061,30 @@ index dd977e8..c3f07a7 100644
                    }
                  : undefined;
 diff --git a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-index 540078a..d308050 100644
+index 540078a..8cba97b 100644
 --- a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
 +++ b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-@@ -582,7 +582,7 @@ exports.LoadUtils = () => {
+@@ -423,14 +423,16 @@ exports.LoadUtils = () => {
+         const lidUser = getMaybeMeLidUser();
+         const meUser = getMaybeMePnUser();
+         const newId = await window.require('WAWebMsgKey').newId();
+-        let from = chat.id.isLid() ? lidUser : meUser;
++        let from = (chat.id && typeof chat.id.isLid === 'function' && chat.id.isLid() && lidUser)
++            ? lidUser
++            : (meUser || lidUser);
+         let participant;
+ 
+         if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
+             from =
+-                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
++                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode && lidUser
+                     ? lidUser
+-                    : meUser;
++                    : (meUser || lidUser);
+             participant = window
+                 .require('WAWebWidFactory')
+                 .asUserWidOrThrow(from);
+@@ -582,7 +584,7 @@ exports.LoadUtils = () => {
  
          return window
              .require('WAWebCollections')
@@ -4073,7 +4093,7 @@ index 540078a..d308050 100644
      };
  
      window.WWebJS.editMessage = async (msg, content, options = {}) => {
-@@ -625,7 +625,9 @@ exports.LoadUtils = () => {
+@@ -625,7 +627,9 @@ exports.LoadUtils = () => {
          await window
              .require('WAWebSendMessageEditAction')
              .sendMessageEdit(msg, content, internalOptions);
@@ -4084,7 +4104,7 @@ index 540078a..d308050 100644
      };
  
      window.WWebJS.toStickerData = async (mediaInfo) => {
-@@ -830,10 +832,16 @@ exports.LoadUtils = () => {
+@@ -830,10 +834,16 @@ exports.LoadUtils = () => {
  
          if (typeof msg.id.remote === 'object') {
              msg.id = Object.assign({}, msg.id, {
@@ -4102,7 +4122,51 @@ index 540078a..d308050 100644
          delete msg.pendingAckUpdate;
  
          return msg;
-@@ -953,7 +961,7 @@ exports.LoadUtils = () => {
+@@ -861,13 +871,36 @@ exports.LoadUtils = () => {
+                 chat = null;
+             }
+         } else {
+-            chat =
+-                window.require('WAWebCollections').Chat.get(chatWid) ||
+-                (
+-                    await window
+-                        .require('WAWebFindChatAction')
+-                        .findOrCreateLatestChat(chatWid)
+-                )?.chat;
++            chat = window.require('WAWebCollections').Chat.get(chatWid);
++            if (!chat) {
++                try {
++                    const chatIdStr = String(chatId || '');
++                    if (!chatIdStr.endsWith('@g.us') && !chatIdStr.endsWith('@broadcast')) {
++                        const queryResult = await window
++                            .require('WAWebQueryExistsJob')
++                            .queryWidExists(chatWid)
++                            .catch(() => null);
++                        if (queryResult?.wid) {
++                            const found = window.require('WAWebCollections').Chat.get(queryResult.wid);
++                            if (found) chat = found;
++                        }
++                    }
++                } catch (_) {}
++
++                if (!chat) {
++                    try {
++                        const res = await window
++                            .require('WAWebFindChatAction')
++                            .findOrCreateLatestChat(chatWid);
++                        chat = res?.chat;
++                    } catch (e) {
++                        chat = await window
++                            .require('WAWebCollections')
++                            .Chat.find(chatWid)
++                            .catch(() => null);
++                    }
++                }
++            }
+         }
+ 
+         return getAsModel && chat
+@@ -953,7 +986,7 @@ exports.LoadUtils = () => {
              model.isGroup = true;
              const chatWid = window
                  .require('WAWebWidFactory')
@@ -4111,7 +4175,7 @@ index 540078a..d308050 100644
              const groupMetadata =
                  window.require('WAWebCollections').GroupMetadata ||
                  window.require('WAWebCollections').WAWebGroupMetadataCollection;
-@@ -981,16 +989,17 @@ exports.LoadUtils = () => {
+@@ -981,16 +1014,17 @@ exports.LoadUtils = () => {
  
          model.lastMessage = null;
          if (model.msgs && model.msgs.length) {
@@ -4134,7 +4198,7 @@ index 540078a..d308050 100644
                    )?.messages?.[0]
                  : null;
              lastMessage &&
-@@ -1263,9 +1272,10 @@ exports.LoadUtils = () => {
+@@ -1263,9 +1297,10 @@ exports.LoadUtils = () => {
      };
  
      window.WWebJS.rejectCall = async (peerJid, id) => {
@@ -4147,7 +4211,7 @@ index 540078a..d308050 100644
  
          const stanza = window.require('WAWap').wap(
              'call',
-@@ -1575,9 +1585,12 @@ exports.LoadUtils = () => {
+@@ -1575,9 +1610,12 @@ exports.LoadUtils = () => {
                                        .membershipRequestsActionRejectParticipantMixins
                                        ?.value.error;
                              return {
@@ -4163,7 +4227,7 @@ index 540078a..d308050 100644
                                  ...(error
                                      ? {
                                            error: +error,
-@@ -1594,11 +1607,15 @@ exports.LoadUtils = () => {
+@@ -1594,11 +1632,15 @@ exports.LoadUtils = () => {
                      }
                  } else {
                      result.push({
@@ -4615,16 +4679,14 @@ index 0000000..540078a
 +        const lidUser = getMaybeMeLidUser();
 +        const meUser = getMaybeMePnUser();
 +        const newId = await window.require('WAWebMsgKey').newId();
-+        let from = (chat.id && typeof chat.id.isLid === 'function' && chat.id.isLid() && lidUser)
-+            ? lidUser
-+            : (meUser || lidUser);
++        let from = chat.id.isLid() ? lidUser : meUser;
 +        let participant;
 +
 +        if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
 +            from =
-+                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode && lidUser
++                chat.groupMetadata && chat.groupMetadata.isLidAddressingMode
 +                    ? lidUser
-+                    : (meUser || lidUser);
++                    : meUser;
 +            participant = window
 +                .require('WAWebWidFactory')
 +                .asUserWidOrThrow(from);
