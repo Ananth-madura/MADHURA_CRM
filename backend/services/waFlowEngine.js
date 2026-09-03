@@ -510,11 +510,33 @@ class WaFlowEngine {
       vars.last_input = inputVal;
       nextNodeKey = config.next_node_key;
 
-    } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list") {
+    } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list" || currentNode.node_type === "interactive_menu") {
       const rawText = (messageText || "").trim();
       const tappedId = interactiveReplyId || rawText;
       const lowerRaw = rawText.toLowerCase();
-      const buttons = config.buttons || config.rows || [];
+      
+      let buttons = [];
+      if (Array.isArray(config.sections) && config.sections.length > 0) {
+        config.sections.forEach(sec => {
+          (sec.buttons || sec.options || sec.rows || []).forEach(b => {
+            buttons.push({
+              ...b,
+              id: b.id || b.reply_id,
+              reply_id: b.reply_id || b.id,
+              title: b.label || b.title || "",
+              next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+            });
+          });
+        });
+      } else {
+        buttons = (config.buttons || config.rows || config.options || []).map(b => ({
+          ...b,
+          id: b.id || b.reply_id,
+          reply_id: b.reply_id || b.id,
+          title: b.label || b.title || "",
+          next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+        }));
+      }
       
       if (!Array.isArray(vars._nav_history)) vars._nav_history = [];
 
@@ -735,6 +757,46 @@ class WaFlowEngine {
           await new Promise((r) => setTimeout(r, delaySec * 1000));
           nodeKey = config.next_node_key;
           break;
+        }
+
+        case "interactive_menu": {
+          const renderedText = this.interpolate(config.text || config.message?.text || "", vars);
+          const renderedHeader = config.header_text ? this.interpolate(config.header_text, vars) : null;
+          const renderedFooter = config.footer_text ? this.interpolate(config.footer_text, vars) : null;
+          
+          let sections = [];
+          if (Array.isArray(config.sections) && config.sections.length > 0) {
+            sections = config.sections.map(sec => ({
+              title: sec.title ? this.interpolate(sec.title, vars) : null,
+              buttons: (sec.buttons || sec.options || sec.rows || []).map(b => ({
+                ...b,
+                id: b.id || b.reply_id,
+                label: this.interpolate(b.label || b.title || "", vars),
+                title: this.interpolate(b.label || b.title || "", vars),
+                description: b.description ? this.interpolate(b.description, vars) : undefined,
+                nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+              }))
+            }));
+          } else {
+            const flatBtns = (config.buttons || config.options || []).map(b => ({
+              ...b,
+              id: b.id || b.reply_id,
+              label: this.interpolate(b.label || b.title || "", vars),
+              title: this.interpolate(b.label || b.title || "", vars),
+              description: b.description ? this.interpolate(b.description, vars) : undefined,
+              nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+            }));
+            sections = [{ title: null, buttons: flatBtns }];
+          }
+
+          await this.sendFlowInteractiveMenu(cleanPhone, renderedText, sections, renderedHeader, renderedFooter, sessionKey);
+          
+          // Suspends execution — wait for user reply
+          await db.promise().query(
+            "UPDATE wa_flow_runs SET current_node_key = ?, vars = ? WHERE id = ?",
+            [nodeKey, JSON.stringify(vars), runId]
+          );
+          return true;
         }
 
         case "send_buttons": {
@@ -1248,8 +1310,29 @@ class WaFlowEngine {
           vars[varKey] = rawTrimmed;
           vars.last_input = rawTrimmed;
           nextNodeKey = currentNode.config?.next_node_key;
-        } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list") {
-          const buttons = currentNode.config?.buttons || currentNode.config?.rows || [];
+        } else if (currentNode.node_type === "send_buttons" || currentNode.node_type === "send_list" || currentNode.node_type === "interactive_menu") {
+          let buttons = [];
+          if (Array.isArray(currentNode.config?.sections) && currentNode.config.sections.length > 0) {
+            currentNode.config.sections.forEach(sec => {
+              (sec.buttons || sec.options || sec.rows || []).forEach(b => {
+                buttons.push({
+                  ...b,
+                  id: b.id || b.reply_id,
+                  reply_id: b.reply_id || b.id,
+                  title: b.label || b.title || "",
+                  next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+                });
+              });
+            });
+          } else {
+            buttons = (currentNode.config?.buttons || currentNode.config?.rows || currentNode.config?.options || []).map(b => ({
+              ...b,
+              id: b.id || b.reply_id,
+              reply_id: b.reply_id || b.id,
+              title: b.label || b.title || "",
+              next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+            }));
+          }
           if (!Array.isArray(vars._nav_history)) vars._nav_history = [];
 
           // Navigation command: Back / Previous
@@ -1421,6 +1504,51 @@ class WaFlowEngine {
           if (!media) stepLogs.push(`[Warning] '${node.node_key}' has no reachable media URL — set PUBLIC_BASE_URL for uploaded files.`);
         }
         currentNodeKey = node.config?.next_node_key;
+      } else if (node.node_type === "interactive_menu") {
+        const text = this.interpolate(node.config?.text || node.config?.message?.text || "", vars);
+        let sections = [];
+        if (Array.isArray(node.config?.sections) && node.config.sections.length > 0) {
+          sections = node.config.sections.map(s => ({
+            title: s.title ? this.interpolate(s.title, vars) : null,
+            buttons: (s.buttons || s.options || s.rows || []).map(b => ({
+              ...b,
+              id: b.id || b.reply_id,
+              label: this.interpolate(b.label || b.title || "", vars),
+              title: this.interpolate(b.label || b.title || "", vars),
+              description: b.description ? this.interpolate(b.description, vars) : null,
+              nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+            }))
+          }));
+        } else {
+          const flatBtns = (node.config?.buttons || node.config?.options || []).map(b => ({
+            ...b,
+            id: b.id || b.reply_id,
+            label: this.interpolate(b.label || b.title || "", vars),
+            title: this.interpolate(b.label || b.title || "", vars),
+            description: b.description ? this.interpolate(b.description, vars) : null,
+            nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+          }));
+          sections = [{ title: null, buttons: flatBtns }];
+        }
+
+        simulatedMessages.push({
+          sender: "bot",
+          type: "interactive_menu",
+          text,
+          header: node.config?.header_text,
+          footer: node.config?.footer_text,
+          sections,
+          at: new Date()
+        });
+
+        return {
+          handled: true,
+          messages: simulatedMessages,
+          vars,
+          currentNodeKey: node.node_key,
+          isEnded: false,
+          logs: stepLogs
+        };
       } else if (node.node_type === "send_buttons") {
         const text = this.interpolate(node.config?.text || "", vars);
         const buttons = (node.config?.buttons || []).map(b => ({
@@ -1783,6 +1911,88 @@ class WaFlowEngine {
 
     return await waLoadBalancer.sendTextMessage(phone, listBody, sessionKey).catch((err) => {
       console.warn("sendFlowList text fallback error:", err?.message || err);
+      return null;
+    });
+  }
+
+  async sendFlowInteractiveMenu(phone, text, sections, headerText = null, footerText = null, sessionKey = null) {
+    const waCloud = require("./whatsappCloudApi");
+    const waLoadBalancer = require("./waLoadBalancer");
+    const mdToWa = require("./mdToWa");
+
+    const allButtons = [];
+    sections.forEach(sec => {
+      (sec.buttons || sec.options || sec.rows || []).forEach(b => {
+        allButtons.push({
+          ...b,
+          sectionTitle: sec.title
+        });
+      });
+    });
+
+    let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
+    let globalIdx = 1;
+    sections.forEach(sec => {
+      if (sec.title) {
+        menuBody += `*${sec.title}*\n`;
+      }
+      (sec.buttons || sec.options || sec.rows || []).forEach(b => {
+        const cleanTitle = (b.label || b.title || `Option ${globalIdx}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+        menuBody += `*${globalIdx}.* ${cleanTitle}`;
+        if (b.description) menuBody += ` - _${b.description}_`;
+        menuBody += "\n";
+        globalIdx++;
+      });
+      menuBody += "\n";
+    });
+    if (footerText) menuBody += `_${footerText}_`;
+    else menuBody += `_Reply with option number (1, 2, 3...) or tap an option below._`;
+
+    await this.recordAndEmitBotMessage(phone, menuBody.trim(), "interactive", {
+      type: "interactive_menu",
+      header: headerText,
+      footer: footerText,
+      sections,
+      buttons: allButtons,
+      text
+    }, sessionKey);
+
+    if (waCloud.isConfigured() && allButtons.length) {
+      if (allButtons.length <= 3 && sections.length === 1 && !allButtons.some(b => b.description)) {
+        const sent = await waCloud.sendInteractiveButtons(
+          phone,
+          text,
+          allButtons.map((b, i) => ({
+            id: b.id || b.reply_id || `btn_${i + 1}`,
+            title: (b.label || b.title || `Option ${i + 1}`).slice(0, 20),
+          })),
+          headerText,
+          footerText
+        ).catch(() => null);
+        if (sent) return sent;
+      } else {
+        const formattedSections = sections.map((sec, sIdx) => ({
+          title: (sec.title || `Section ${sIdx + 1}`).slice(0, 24),
+          rows: (sec.buttons || sec.options || sec.rows || []).slice(0, 10).map((b, i) => ({
+            id: b.id || b.reply_id || `opt_${sIdx + 1}_${i + 1}`,
+            title: (b.label || b.title || `Option ${i + 1}`).slice(0, 24),
+            description: b.description ? String(b.description).slice(0, 72) : undefined,
+          }))
+        }));
+        const sent = await waCloud.sendInteractiveList(
+          phone,
+          text,
+          "Select Option",
+          formattedSections,
+          headerText,
+          footerText
+        ).catch(() => null);
+        if (sent) return sent;
+      }
+    }
+
+    return await waLoadBalancer.sendTextMessage(phone, menuBody.trim(), sessionKey).catch((err) => {
+      console.warn("sendFlowInteractiveMenu text fallback error:", err?.message || err);
       return null;
     });
   }

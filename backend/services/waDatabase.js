@@ -438,6 +438,26 @@ async function ensureWATables() {
       FOREIGN KEY (run_id) REFERENCES wa_flow_runs(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
+    // Flow Snapshots & Version History (Draft, Testing, Published, Archived)
+    `CREATE TABLE IF NOT EXISTS wa_flow_versions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      flow_id INT NOT NULL,
+      version_number INT NOT NULL DEFAULT 1,
+      name VARCHAR(255) NOT NULL,
+      description TEXT DEFAULT NULL,
+      trigger_type VARCHAR(50) DEFAULT 'keyword',
+      trigger_config JSON DEFAULT NULL,
+      entry_node_key VARCHAR(100) DEFAULT 'start',
+      nodes_snapshot JSON NOT NULL,
+      status ENUM('draft','testing','published','archived') DEFAULT 'draft',
+      changelog TEXT DEFAULT NULL,
+      published_at DATETIME DEFAULT NULL,
+      created_by INT DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (flow_id) REFERENCES wa_flows(id) ON DELETE CASCADE,
+      INDEX idx_flow_ver (flow_id, version_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
     // Scoped Public API Keys
     `CREATE TABLE IF NOT EXISTS wa_api_keys (
       id INT AUTO_INCREMENT PRIMARY KEY,

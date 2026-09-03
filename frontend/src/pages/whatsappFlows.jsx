@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
@@ -8,2640 +8,2560 @@ import {
   Sparkles, PhoneCall, ArrowRight, Smartphone, Database, Globe,
   CheckCircle2, Clock, UserCheck, ShieldAlert, Cpu, ListOrdered,
   Layers, BarChart2, RefreshCw, HelpCircle, FileText,
-  MoveUp, MoveDown, Zap
+  MoveUp, MoveDown, Zap, Search, Eye, Check, ChevronDown, ChevronRight,
+  ZoomIn, ZoomOut, Maximize2, Minimize2, Grid, RotateCcw, Copy,
+  ArrowDownRight, CheckSquare, Settings2, Sliders, MessageSquare,
+  AlertCircle, Compass, Share2, Tag, Shield, Terminal, ArrowUpRight,
+  Sun, Moon, CornerDownRight, HelpCircle as QuestionIcon
 } from "lucide-react";
 
+// Standard & Advanced WhatsApp Flow Placeholders
 const PLACEHOLDERS = [
-  { tag: "{name}", label: "Customer Name" },
-  { tag: "{company}", label: "Company" },
-  { tag: "{service}", label: "Service / AMC" },
-  { tag: "{city}", label: "City / Area" },
-  { tag: "{date}", label: "Current Date" },
-  { tag: "{start_time}", label: "Start Time" },
-  { tag: "{end_time}", label: "End Time" },
-  { tag: "{invoice_no}", label: "Invoice #" },
-  { tag: "{amount}", label: "Amount (₹)" },
-  { tag: "{due_date}", label: "Due Date" },
-  { tag: "{booking_date}", label: "Booking Date" },
-  { tag: "{amc_contract_no}", label: "AMC Contract #" },
+  { tag: "{{customer.name}}", label: "Customer Name", desc: "e.g. ANANTH" },
+  { tag: "{{customer.phone}}", label: "Phone Number", desc: "+91 9876543210" },
+  { tag: "{{customer.email}}", label: "Customer Email", desc: "client@example.com" },
+  { tag: "{{customer.city}}", label: "City / Area", desc: "e.g. Bangalore" },
+  { tag: "{{customer.company}}", label: "Company Name", desc: "Madhura Tech" },
+  { tag: "{{service}}", label: "Service / Product", desc: "AMC Maintenance" },
+  { tag: "{{amount}}", label: "Amount / Balance (₹)", desc: "₹45,280.00" },
+  { tag: "{{invoice_no}}", label: "Invoice #", desc: "INV-2026-088" },
+  { tag: "{{due_date}}", label: "Due Date", desc: "25 Aug 2026" },
+  { tag: "{{amc_contract_no}}", label: "AMC Contract #", desc: "AMC-2026-904" },
+  { tag: "{{current.date}}", label: "Current Date", desc: "Today's Date" },
+  { tag: "{{selected.option}}", label: "Last Selected Option", desc: "Account Balance" },
+  { tag: "{{agent.name}}", label: "Assigned Agent", desc: "Support Specialist" },
+  { tag: "{{conversation.id}}", label: "Conversation ID", desc: "Flow Session UUID" }
 ];
 
-const NODE_TYPES = [
-  { type: "send_message", label: "Text Message", icon: "💬", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  { type: "send_buttons", label: "Menu / Buttons", icon: "🔘", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  { type: "send_list", label: "List Menu", icon: "📋", color: "bg-teal-50 text-teal-700 border-teal-200" },
-  { type: "collect_input", label: "Collect Input", icon: "📥", color: "bg-purple-50 text-purple-700 border-purple-200" },
-  { type: "crm_lookup", label: "CRM Live Lookup", icon: "🔍", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  { type: "condition", label: "Condition Branch", icon: "🔀", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  { type: "create_lead", label: "Save CRM Lead", icon: "💼", color: "bg-sky-50 text-sky-700 border-sky-200" },
-  { type: "send_media", label: "Media / PDF", icon: "📷", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
-  { type: "send_template", label: "Approved Template", icon: "🧾", color: "bg-lime-50 text-lime-700 border-lime-200" },
-  { type: "delay", label: "Pacing Delay", icon: "⏱️", color: "bg-orange-50 text-orange-700 border-orange-200" },
-  { type: "api_webhook", label: "API Webhook", icon: "🌐", color: "bg-violet-50 text-violet-700 border-violet-200" },
-  { type: "ai_generate", label: "AI Smart Reply", icon: "🧠", color: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200" },
-  { type: "ai_intent", label: "AI Intent Router", icon: "🎯", color: "bg-purple-50 text-purple-700 border-purple-200" },
-  { type: "set_variable", label: "Set Variable", icon: "⚙️", color: "bg-slate-50 text-slate-700 border-slate-200" },
-  { type: "set_tag", label: "Tag Contact", icon: "🏷️", color: "bg-pink-50 text-pink-700 border-pink-200" },
-  { type: "add_to_group", label: "Add to Group", icon: "👥", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  { type: "jump_to_flow", label: "Jump to Flow", icon: "↪️", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  { type: "handoff", label: "Live Agent Handoff", icon: "👤", color: "bg-rose-50 text-rose-700 border-rose-200" },
-  { type: "end", label: "End Flow", icon: "🛑", color: "bg-gray-100 text-gray-700 border-gray-200" }
+// Categorized Component Palette Items for Flow Canvas
+const PALETTE_CATEGORIES = [
+  {
+    id: "triggers",
+    name: "TRIGGERS",
+    icon: Zap,
+    color: "text-amber-500",
+    items: [
+      { type: "start", label: "Start Entry", icon: "🚀", desc: "Flow kickoff point", defaultType: "start" },
+      { type: "keyword_trigger", label: "Keyword Match", icon: "🔑", desc: "Trigger on user keyword", triggerType: "keyword" },
+      { type: "all_inbound_trigger", label: "New Message", icon: "⚡", desc: "24/7 Universal reception", triggerType: "all_inbound" },
+      { type: "first_inbound_trigger", label: "First Welcome", icon: "👋", desc: "First-time visitor bot", triggerType: "first_inbound" },
+    ]
+  },
+  {
+    id: "message",
+    name: "MESSAGE",
+    icon: MessageSquare,
+    color: "text-emerald-500",
+    items: [
+      { type: "interactive_menu", label: "Interactive Menu", icon: "📱", desc: "Multi-section button options", color: "border-emerald-500 bg-emerald-50 text-emerald-900" },
+      { type: "send_buttons", label: "Reply Buttons", icon: "🔘", desc: "Quick reply buttons (max 3)", color: "border-teal-500 bg-teal-50 text-teal-900" },
+      { type: "send_list", label: "List Menu", icon: "📋", desc: "WhatsApp popup list selector", color: "border-cyan-500 bg-cyan-50 text-cyan-900" },
+      { type: "send_message", label: "Text Message", icon: "💬", desc: "Standard text message", color: "border-blue-500 bg-blue-50 text-blue-900" },
+      { type: "send_media", label: "Media / PDF", icon: "📷", desc: "Image, Video or PDF catalog", color: "border-indigo-500 bg-indigo-50 text-indigo-900" },
+      { type: "send_template", label: "Template", icon: "🧾", desc: "Approved Meta HSM template", color: "border-lime-500 bg-lime-50 text-lime-900" },
+    ]
+  },
+  {
+    id: "input",
+    name: "INPUT",
+    icon: ListOrdered,
+    color: "text-purple-500",
+    items: [
+      { type: "collect_input", label: "Text Input", icon: "📥", desc: "Ask question & capture answer", validation: "none", color: "border-purple-500 bg-purple-50 text-purple-900" },
+      { type: "collect_number", label: "Number Input", icon: "🔢", desc: "Collect numeric/income value", validation: "number", color: "border-purple-500 bg-purple-50 text-purple-900" },
+      { type: "collect_email", label: "Email Input", icon: "📧", desc: "Validate customer email", validation: "email", color: "border-purple-500 bg-purple-50 text-purple-900" },
+      { type: "collect_date", label: "Date Picker", icon: "📅", desc: "Capture booking/service date", validation: "date", color: "border-purple-500 bg-purple-50 text-purple-900" },
+    ]
+  },
+  {
+    id: "logic",
+    name: "LOGIC",
+    icon: GitFork,
+    color: "text-amber-500",
+    items: [
+      { type: "condition", label: "Condition (If/Else)", icon: "🔀", desc: "Branch on Yes/No or value", color: "border-amber-500 bg-amber-50 text-amber-900" },
+      { type: "ai_intent", label: "AI Intent Router", icon: "🎯", desc: "LLM Natural language classifier", color: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900" },
+      { type: "ai_generate", label: "AI Smart Reply", icon: "🧠", desc: "Auto-answer via AI agent", color: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900" },
+      { type: "delay", label: "Pacing Delay", icon: "⏱️", desc: "Human typing delay pause", color: "border-orange-500 bg-orange-50 text-orange-900" },
+    ]
+  },
+  {
+    id: "action",
+    name: "ACTION",
+    icon: Database,
+    color: "text-blue-500",
+    items: [
+      { type: "crm_lookup", label: "CRM Live Lookup", icon: "🔍", desc: "Fetch balances, invoices, AMC", color: "border-sky-500 bg-sky-50 text-sky-900" },
+      { type: "create_lead", label: "Create CRM Lead", icon: "💼", desc: "Save contact as hot sales lead", color: "border-blue-500 bg-blue-50 text-blue-900" },
+      { type: "api_webhook", label: "API Webhook", icon: "🌐", desc: "Call external REST API", color: "border-violet-500 bg-violet-50 text-violet-900" },
+      { type: "set_variable", label: "Set Variable", icon: "⚙️", desc: "Assign custom session variable", color: "border-slate-500 bg-slate-50 text-slate-900" },
+    ]
+  },
+  {
+    id: "control",
+    name: "CONTROL",
+    icon: Shield,
+    color: "text-rose-500",
+    items: [
+      { type: "handoff", label: "Live Agent Handoff", icon: "👤", desc: "Transfer chat to human agent", color: "border-rose-500 bg-rose-50 text-rose-900" },
+      { type: "jump_to_flow", label: "Jump to Flow", icon: "↪️", desc: "Switch to another chatbot flow", color: "border-amber-500 bg-amber-50 text-amber-900" },
+      { type: "end", label: "End Flow", icon: "🛑", desc: "Complete conversation session", color: "border-gray-500 bg-gray-100 text-gray-900" },
+    ]
+  }
 ];
-
-/**
- * Editable key -> value map. Used by the AI Intent router (intent -> step)
- * and the API Webhook response mapping (variable -> JSON path).
- */
-function KeyMapEditor({ map, onChange, keyPlaceholder, valuePlaceholder, valueOptions, addLabel }) {
-  const entries = Object.entries(map || {});
-  const commit = (next) => onChange(Object.fromEntries(next));
-
-  return (
-    <div className="space-y-1.5">
-      {entries.map(([k, v], i) => (
-        <div key={i} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={k}
-            placeholder={keyPlaceholder}
-            onChange={(e) => commit(entries.map((en, j) => (j === i ? [e.target.value, v] : en)))}
-            className="flex-1 min-w-0 p-1.5 border rounded-lg text-xs bg-white font-mono"
-          />
-          <ArrowRight size={14} className="text-gray-400 shrink-0" />
-          {valueOptions ? (
-            <select
-              value={v || ""}
-              onChange={(e) => commit(entries.map((en, j) => (j === i ? [k, e.target.value] : en)))}
-              className="w-44 shrink-0 p-1.5 border rounded-lg text-xs font-mono bg-white"
-            >
-              <option value="">-- Target Step --</option>
-              {valueOptions.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={v || ""}
-              placeholder={valuePlaceholder}
-              onChange={(e) => commit(entries.map((en, j) => (j === i ? [k, e.target.value] : en)))}
-              className="flex-1 min-w-0 p-1.5 border rounded-lg text-xs bg-white font-mono"
-            />
-          )}
-          <button
-            type="button"
-            onClick={() => commit(entries.filter((_, j) => j !== i))}
-            className="p-1 text-gray-400 hover:text-red-600 shrink-0"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => commit([...entries, ["", ""]])}
-        className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
-      >
-        {addLabel}
-      </button>
-    </div>
-  );
-}
 
 export default function WhatsAppFlows() {
   const [flows, setFlows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("flows"); // "flows" | "runs"
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Editor Modal State
-  const [showEditor, setShowEditor] = useState(false);
-  const [editingFlow, setEditingFlow] = useState(null);
-  const [formName, setFormName] = useState("");
-  const [formDesc, setFormDesc] = useState("");
-  const [formTriggerType, setFormTriggerType] = useState("keyword");
-  const [formKeywords, setFormKeywords] = useState("hi, hello, menu, help, start");
-  const [formEntryNode, setFormEntryNode] = useState("start");
-  const [formNodes, setFormNodes] = useState([]);
+  // Visual Studio / Editor State
+  const [showStudio, setShowStudio] = useState(false);
+  const [editingFlowId, setEditingFlowId] = useState(null);
+  const [flowName, setFlowName] = useState("");
+  const [flowDesc, setFlowDesc] = useState("");
+  const [flowTriggerType, setFlowTriggerType] = useState("keyword");
+  const [flowKeywords, setFlowKeywords] = useState("hi, hello, bank, menu, help");
+  const [flowEntryNode, setFlowEntryNode] = useState("start");
+  const [nodes, setNodes] = useState([]);
+  const [selectedNodeKey, setSelectedNodeKey] = useState(null);
+  const [activeInspectorTab, setActiveInspectorTab] = useState("config"); // "config" | "preview" | "audit"
   const [saving, setSaving] = useState(false);
 
-  // Simulator State
-  const [showSimulator, setShowSimulator] = useState(false);
-  const [simFlow, setSimFlow] = useState(null);
-  const [simInput, setSimInput] = useState("");
+  // Canvas Viewport State (Pan & Zoom)
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef(null);
+
+  // Node Dragging State
+  const [draggingNodeKey, setDraggingNodeKey] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Edge Connection Drawing State
+  const [connectingFrom, setConnectingFrom] = useState(null); // { nodeKey, portId, portType: 'button'|'true'|'false'|'next'|'intent', extraData }
+  const [connectingMousePos, setConnectingMousePos] = useState({ x: 0, y: 0 });
+
+  // WhatsApp Smartphone Mockup Simulator State
+  const [simDarkTheme, setSimDarkTheme] = useState(true);
   const [simMessages, setSimMessages] = useState([]);
-  const [simVars, setSimVars] = useState({});
+  const [simVars, setSimVars] = useState({
+    name: "ANANTH",
+    customer_name: "ANANTH",
+    company: "Madhura Bank & Tech",
+    phone: "+91 76519 05578",
+    city: "Bangalore",
+    service: "Banking & Loan Services",
+    amount: "₹45,280.00",
+    invoice_no: "INV-2026-088",
+    due_date: "25 Aug 2026",
+    date: new Date().toLocaleDateString("en-IN"),
+  });
   const [simCurrentNode, setSimCurrentNode] = useState(null);
   const [simLogs, setSimLogs] = useState([]);
-  const [simLoading, setSimLoading] = useState(false);
+  const [simTyping, setSimTyping] = useState(false);
+  const [simInputText, setSimInputText] = useState("");
   const [simEnded, setSimEnded] = useState(false);
-  const [simTrigger, setSimTrigger] = useState(null);
+  const [showSimDrawer, setShowSimDrawer] = useState(true);
 
-  // Direct Phone Trigger Modal
-  const [showTriggerModal, setShowTriggerModal] = useState(false);
-  const [triggerFlow, setTriggerFlow] = useState(null);
-  const [targetPhone, setTargetPhone] = useState("");
-  const [triggering, setTriggering] = useState(false);
+  // Versions Modal State
+  const [showVersionsModal, setShowVersionsModal] = useState(false);
+  const [flowVersions, setFlowVersions] = useState([]);
+  const [versionChangelog, setVersionChangelog] = useState("");
+  const [publishingVersion, setPublishingVersion] = useState(false);
 
-  // Analytics Modal
+  // Analytics Modal State
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
-  const [analyticsFlow, setAnalyticsFlow] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [selectedAnalyticsFlow, setSelectedAnalyticsFlow] = useState(null);
 
-  // Execution Runs Audit State
+  // Runs Audit Tab State
   const [runsList, setRunsList] = useState([]);
-  const [runsLoading, setRunsLoading] = useState(false);
-  const [selectedRunFlowId, setSelectedRunFlowId] = useState("all");
+  const [loadingRuns, setLoadingRuns] = useState(false);
 
-  const [seeding, setSeeding] = useState(false);
-  const [uploadingIdx, setUploadingIdx] = useState(null);
-  // Reference lists used by the Template / Group / Jump steps
-  const [templates, setTemplates] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const simScrollRef = useRef(null);
+  // Accordion open/close in palette
+  const [openCategories, setOpenCategories] = useState({
+    triggers: true,
+    message: true,
+    input: true,
+    logic: true,
+    action: true,
+    control: true
+  });
 
-  const fetchFlows = async () => {
-    setLoading(true);
+  const toggleCategory = (catId) => {
+    setOpenCategories(prev => ({ ...prev, [catId]: !prev[catId] }));
+  };
+
+  // ── Fetch Flows List ────────────────────────────────────────────────────────
+  const fetchFlows = useCallback(async () => {
     try {
+      setLoading(true);
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/api/wa/flows`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setFlows(res.data || []);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${API}/api/wa-flows`, { headers });
+      setFlows(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Error fetching flows:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const fetchRuns = async (flowId = null) => {
-    setRunsLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      const targetId = flowId && flowId !== "all" ? flowId : (flows[0]?.id || 1);
-      if (targetId) {
-        const res = await axios.get(`${API}/api/wa/flows/${targetId}/runs`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setRunsList(res.data || []);
-      }
-    } catch (err) {
-      console.error("Error fetching flow runs:", err);
-    }
-    setRunsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     fetchFlows();
-  }, []);
+  }, [fetchFlows]);
 
-  // Templates & contact groups power the dropdowns in the Template / Group steps.
-  // Failing to load them must never block the builder — the steps fall back to a manual ID.
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    const headers = { Authorization: `Bearer ${token}` };
-    axios.get(`${API}/api/wa/templates`, { headers })
-      .then((res) => setTemplates(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setTemplates([]));
-    axios.get(`${API}/api/wa/groups`, { headers })
-      .then((res) => setGroups(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setGroups([]));
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "runs" && flows.length > 0) {
-      fetchRuns(selectedRunFlowId);
-    }
-  }, [activeTab, selectedRunFlowId]);
-
-  useEffect(() => {
-    if (simScrollRef.current) {
-      const scrollIt = () => {
-        if (simScrollRef.current) {
-          simScrollRef.current.scrollTop = simScrollRef.current.scrollHeight;
-        }
-      };
-      scrollIt();
-      const t = setTimeout(scrollIt, 60);
-      return () => clearTimeout(t);
-    }
-  }, [simMessages, simLoading, showSimulator]);
-
-  const handleSeedPrebuilt = async () => {
-    setSeeding(true);
+  // ── Fetch Audit Runs ────────────────────────────────────────────────────────
+  const fetchRuns = async () => {
     try {
+      setLoadingRuns(true);
       const token = localStorage.getItem("token");
-      const res = await axios.post(`${API}/api/wa/flows/seed`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      await fetchFlows();
-      alert(`🎉 Successfully loaded ${res.data?.count || 6} enterprise business chatbot flows!`);
-    } catch (err) {
-      alert("Failed to seed flows: " + (err.response?.data?.error || err.message));
-    }
-    setSeeding(false);
-  };
-
-  const handleOpenCreate = () => {
-    setEditingFlow(null);
-    setFormName("");
-    setFormDesc("");
-    setFormTriggerType("keyword");
-    setFormKeywords("hi, hello, menu, help, start, book");
-    setFormEntryNode("start");
-    setFormNodes([
-      {
-        node_key: "start",
-        node_type: "start",
-        config: { next_node_key: "main_menu" },
-      },
-      {
-        node_key: "main_menu",
-        node_type: "send_buttons",
-        config: {
-          text: "👋 {Hi|Hello|Greetings} {name}! Welcome to {company}.\nHow can we assist you today? Please choose an option:",
-          footer_text: "Madhura Tech Smart Assistant • 24/7 Support",
-          buttons: [
-            { reply_id: "opt_services", title: "1. 🛠️ Services", next_node_key: "services_info" },
-            { reply_id: "opt_booking", title: "2. 📅 Book Service", next_node_key: "ask_booking_date" },
-            { reply_id: "opt_agent", title: "3. 👤 Live Agent", next_node_key: "agent_handoff" },
-          ],
-        },
-      },
-      {
-        node_key: "services_info",
-        node_type: "send_message",
-        config: {
-          text: "🛠️ We provide comprehensive HVAC, Electrical, and AMC solutions across {city}!\n\nReply MENU anytime to return.",
-          next_node_key: "end_flow",
-        },
-      },
-      {
-        node_key: "ask_booking_date",
-        node_type: "collect_input",
-        config: {
-          prompt_text: "📅 Which date would you like to schedule your service appointment? (e.g. Tomorrow or 25 Aug)",
-          var_key: "booking_date",
-          validation_type: "none",
-          next_node_key: "save_booking_lead",
-        },
-      },
-      {
-        node_key: "save_booking_lead",
-        node_type: "create_lead",
-        config: {
-          default_service: "Service Appointment",
-          notes: "Booked service for date {booking_date} in {city}",
-          next_node_key: "confirm_booking_msg",
-        },
-      },
-      {
-        node_key: "confirm_booking_msg",
-        node_type: "send_message",
-        config: {
-          text: "✅ Thank you {name}! Your service appointment for *{booking_date}* has been confirmed. Our technician will visit between {start_time} and {end_time}.",
-          next_node_key: "end_flow",
-        },
-      },
-      {
-        node_key: "agent_handoff",
-        node_type: "handoff",
-        config: {
-          note: "Customer requested human support specialist.",
-        },
-      },
-      {
-        node_key: "end_flow",
-        node_type: "end",
-        config: {},
-      },
-    ]);
-    setShowEditor(true);
-  };
-
-  const handleEdit = async (flow) => {
-    setEditingFlow(flow);
-    setFormName(flow.name);
-    setFormDesc(flow.description || "");
-    setFormTriggerType(flow.trigger_type || "keyword");
-    setFormEntryNode(flow.entry_node_key || "start");
-
-    let cfg = {};
-    try {
-      cfg = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
-    } catch (_) {}
-    setFormKeywords(Array.isArray(cfg.keywords) ? cfg.keywords.join(", ") : "hi, hello, menu");
-
-    try {
-      const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/api/wa/flows/${flow.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setFormNodes(res.data.nodes || []);
-    } catch {
-      setFormNodes([]);
-    }
-    setShowEditor(true);
-  };
-
-  const handleToggleStatus = async (id, currentStatus) => {
-    const nextStatus = currentStatus === "active" ? "draft" : "active";
-    try {
-      const token = localStorage.getItem("token");
-      await axios.patch(
-        `${API}/api/wa/flows/${id}/status`,
-        { status: nextStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      fetchFlows();
-    } catch (err) {
-      alert("Failed to toggle status: " + (err.response?.data?.error || err.message));
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this flow?")) return;
-    try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`${API}/api/wa/flows/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      fetchFlows();
-    } catch (err) {
-      alert("Failed to delete flow");
-    }
-  };
-
-  const handleSaveFlow = async (e) => {
-    e.preventDefault();
-    if (!formName.trim()) return alert("Flow name is required");
-    setSaving(true);
-
-    const keywords = formKeywords.split(",").map((k) => k.trim()).filter(Boolean);
-    const payload = {
-      name: formName.trim(),
-      description: formDesc.trim(),
-      trigger_type: formTriggerType,
-      trigger_config: { keywords },
-      entry_node_key: formEntryNode || "start",
-      nodes: formNodes,
-    };
-
-    try {
-      const token = localStorage.getItem("token");
-      const headers = { Authorization: `Bearer ${token}` };
-      if (editingFlow) {
-        await axios.put(`${API}/api/wa/flows/${editingFlow.id}`, payload, { headers });
-      } else {
-        await axios.post(`${API}/api/wa/flows`, payload, { headers });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      // Fetch latest runs across active flows
+      if (flows.length > 0) {
+        const res = await axios.get(`${API}/api/wa-flows/${flows[0].id}/runs`, { headers });
+        setRunsList(Array.isArray(res.data) ? res.data : []);
       }
-      setShowEditor(false);
-      fetchFlows();
     } catch (err) {
-      alert("Failed to save flow: " + (err.response?.data?.error || err.message));
+      console.error("Error fetching runs:", err);
+    } finally {
+      setLoadingRuns(false);
     }
-    setSaving(false);
   };
 
-  const updateNodeConfig = (index, newConfig) => {
-    setFormNodes((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], config: { ...updated[index].config, ...newConfig } };
-      return updated;
-    });
+  useEffect(() => {
+    if (activeTab === "runs") {
+      fetchRuns();
+    }
+  }, [activeTab]);
+
+  // ── Open Visual Studio for a Flow ───────────────────────────────────────────
+  const openStudio = async (flow = null) => {
+    if (flow) {
+      setEditingFlowId(flow.id);
+      setFlowName(flow.name || "Untitled Flow");
+      setFlowDesc(flow.description || "");
+      setFlowTriggerType(flow.trigger_type || "keyword");
+      let cfg = flow.trigger_config;
+      if (typeof cfg === "string") {
+        try { cfg = JSON.parse(cfg); } catch (_) { cfg = {}; }
+      }
+      const kws = cfg?.keywords || (cfg?.keyword ? [cfg.keyword] : []);
+      setFlowKeywords(kws.join(", ") || "hi, hello, menu");
+      setFlowEntryNode(flow.entry_node_key || "start");
+
+      // Fetch full nodes from backend
+      try {
+        const token = localStorage.getItem("token");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await axios.get(`${API}/api/wa-flows/${flow.id}`, { headers });
+        const fetchedNodes = res.data?.nodes || [];
+        setNodes(fetchedNodes.length > 0 ? fetchedNodes : getDefaultStarterNodes());
+        setSelectedNodeKey(fetchedNodes[0]?.node_key || "start");
+      } catch (e) {
+        setNodes(getDefaultStarterNodes());
+        setSelectedNodeKey("start");
+      }
+    } else {
+      // Create new flow
+      setEditingFlowId(null);
+      setFlowName("New Conversational Flow");
+      setFlowDesc("Visual WhatsApp interactive state machine");
+      setFlowTriggerType("all_inbound");
+      setFlowKeywords("hi, hello, menu, start, help");
+      setFlowEntryNode("start");
+      const defaultNodes = getDefaultStarterNodes();
+      setNodes(defaultNodes);
+      setSelectedNodeKey("start");
+    }
+
+    // Reset Canvas and Simulation
+    setZoom(1);
+    setPan({ x: 50, y: 50 });
+    setShowStudio(true);
+    resetSimulation();
   };
 
-  const updateNodeKey = (index, newKey) => {
-    setFormNodes((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], node_key: newKey };
-      return updated;
-    });
+  // ── Starter Nodes Template (Default Banking / Interactive Menu) ─────────────
+  const getDefaultStarterNodes = () => [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: { next_node_key: "banking_menu" },
+      position_x: 260,
+      position_y: 40
+    },
+    {
+      node_key: "banking_menu",
+      node_type: "interactive_menu",
+      config: {
+        text: "Good Afternoon, {{customer.name}} 🍀🙂\n\nPlease type any bank related query or select from the options below",
+        sections: [
+          {
+            title: "Bank Services",
+            buttons: [
+              { id: "account_balance", label: "Account Balance", nextNodeId: "lookup_balance" },
+              { id: "instant_fd", label: "Instant FD", nextNodeId: "fd_calculator" },
+              { id: "credit_card_due", label: "Credit Card Bill Due", nextNodeId: "card_bill_flow" }
+            ]
+          },
+          {
+            title: "Explore more! ⭐",
+            buttons: [
+              { id: "credit_card_fd", label: "Credit Card on FD", nextNodeId: "card_fd_flow" },
+              { id: "apply_card", label: "Apply New Card", nextNodeId: "apply_card_flow" },
+              { id: "loan_offers", label: "Loan Offers", nextNodeId: "loan_flow" }
+            ]
+          },
+          {
+            title: "Looking for something else? 🔍",
+            buttons: [
+              { id: "live_agent", label: "Live Agent", nextNodeId: "agent_handoff" }
+            ]
+          }
+        ]
+      },
+      position_x: 260,
+      position_y: 180
+    },
+    {
+      node_key: "lookup_balance",
+      node_type: "crm_lookup",
+      config: {
+        lookup_type: "customer",
+        next_node_key: "balance_card"
+      },
+      position_x: 30,
+      position_y: 380
+    },
+    {
+      node_key: "balance_card",
+      node_type: "interactive_menu",
+      config: {
+        text: "💳 *Account Summary for {{customer.name}}:*\n\n• Available Balance: *₹45,280.00*\n• Account: *XXXX-XXXX-4812*\n• Last Updated: {{current.date}}\n\nNeed a detailed mini statement?",
+        sections: [
+          {
+            title: "Actions",
+            buttons: [
+              { id: "mini_stmt", label: "Mini Statement (PDF)", nextNodeId: "send_stmt_pdf" },
+              { id: "back_main", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+            ]
+          }
+        ]
+      },
+      position_x: 30,
+      position_y: 540
+    },
+    {
+      node_key: "send_stmt_pdf",
+      node_type: "send_message",
+      config: {
+        text: "📄 Your last 10 transactions statement has been generated: https://madhurabank.example.com/stmt_4812.pdf\n\nReply MENU to return to main options.",
+        next_node_key: "end"
+      },
+      position_x: 30,
+      position_y: 720
+    },
+    {
+      node_key: "fd_calculator",
+      node_type: "interactive_menu",
+      config: {
+        text: "💰 *Instant Fixed Deposit (FD)*\n\nEarn up to *7.85% p.a.* interest with zero paperwork!\n\nChoose your preferred tenure:",
+        sections: [
+          {
+            title: "Tenures",
+            buttons: [
+              { id: "fd_1yr", label: "1 Year @ 7.25%", nextNodeId: "book_fd_lead" },
+              { id: "fd_3yr", label: "3 Years @ 7.85%", nextNodeId: "book_fd_lead" },
+              { id: "back_main2", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+            ]
+          }
+        ]
+      },
+      position_x: 290,
+      position_y: 380
+    },
+    {
+      node_key: "book_fd_lead",
+      node_type: "create_lead",
+      config: {
+        default_service: "Instant FD Application",
+        notes: "Customer applied for Fixed Deposit via WhatsApp bot. Selected: {{selected.option}}",
+        next_node_key: "fd_success_msg"
+      },
+      position_x: 290,
+      position_y: 540
+    },
+    {
+      node_key: "fd_success_msg",
+      node_type: "send_message",
+      config: {
+        text: "✅ Congratulations! Your Instant FD request has been initiated. Our relationship manager will verify your details within 15 minutes.\n\nReference ID: #FD-{{current.date}}-8891",
+        next_node_key: "end"
+      },
+      position_x: 290,
+      position_y: 720
+    },
+    {
+      node_key: "card_bill_flow",
+      node_type: "interactive_menu",
+      config: {
+        text: "💳 *Credit Card Bill Status*\n\nCard: *Platinum Rewards (ending 9021)*\n• Total Due: *₹18,450.00*\n• Minimum Due: *₹1,200.00*\n• Due Date: *10th of this month*",
+        sections: [
+          {
+            title: "Payment Options",
+            buttons: [
+              { id: "pay_now", label: "Pay Total Due (UPI)", nextNodeId: "send_pay_link" },
+              { id: "back_main3", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+            ]
+          }
+        ]
+      },
+      position_x: 550,
+      position_y: 380
+    },
+    {
+      node_key: "send_pay_link",
+      node_type: "send_message",
+      config: {
+        text: "⚡ Instant UPI Payment Link: https://pay.madhurabank.example.com/bill/9021\n\nInstant confirmation will be sent upon payment receipt.",
+        next_node_key: "end"
+      },
+      position_x: 550,
+      position_y: 540
+    },
+    {
+      node_key: "card_fd_flow",
+      node_type: "send_message",
+      config: {
+        text: "🌟 *Credit Card Against FD*\nGet 90% credit limit against your fixed deposit with zero CIBIL checks and instant activation!\n\nLink to apply: https://cards.madhurabank.example.com/card-on-fd",
+        next_node_key: "end"
+      },
+      position_x: 810,
+      position_y: 380
+    },
+    {
+      node_key: "apply_card_flow",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Please enter your monthly take-home income (e.g. 50000):",
+        var_key: "income",
+        next_node_key: "check_card_eligibility"
+      },
+      position_x: 810,
+      position_y: 540
+    },
+    {
+      node_key: "check_card_eligibility",
+      node_type: "condition",
+      config: {
+        subject_key: "income",
+        operator: "greater_or_equal",
+        value: "25000",
+        true_next: "card_approved_msg",
+        false_next: "card_fd_flow"
+      },
+      position_x: 810,
+      position_y: 700
+    },
+    {
+      node_key: "card_approved_msg",
+      node_type: "send_message",
+      config: {
+        text: "🎉 You are pre-approved for our *Lifetime Free Titanium Card* with ₹1,50,000 credit limit!\n\nComplete your KYC in 2 mins: https://cards.madhurabank.example.com/kyc",
+        next_node_key: "end"
+      },
+      position_x: 810,
+      position_y: 840
+    },
+    {
+      node_key: "loan_flow",
+      node_type: "interactive_menu",
+      config: {
+        text: "🏡 *Instant Loan Offers for {{customer.name}}*\n\nSelect a loan type to check customized interest rates & eligibility:",
+        sections: [
+          {
+            title: "Loan Types",
+            buttons: [
+              { id: "home_loan", label: "Home Loan @ 8.40%", nextNodeId: "lead_loan" },
+              { id: "personal_loan", label: "Personal Loan @ 10.5%", nextNodeId: "lead_loan" },
+              { id: "car_loan", label: "Car Loan @ 8.75%", nextNodeId: "lead_loan" }
+            ]
+          }
+        ]
+      },
+      position_x: 1070,
+      position_y: 380
+    },
+    {
+      node_key: "lead_loan",
+      node_type: "create_lead",
+      config: {
+        default_service: "Loan Inquiry",
+        notes: "Customer inquired about loan offers via WhatsApp bot. Selected: {{selected.option}}",
+        next_node_key: "loan_ack_msg"
+      },
+      position_x: 1070,
+      position_y: 540
+    },
+    {
+      node_key: "loan_ack_msg",
+      node_type: "send_message",
+      config: {
+        text: "✅ Thank you! Our loan expert will call you within 30 minutes with customized sanction terms & EMI schedule.",
+        next_node_key: "end"
+      },
+      position_x: 1070,
+      position_y: 700
+    },
+    {
+      node_key: "agent_handoff",
+      node_type: "handoff",
+      config: {
+        note: "Customer requested live support specialist from interactive menu"
+      },
+      position_x: 1320,
+      position_y: 380
+    },
+    {
+      node_key: "end",
+      node_type: "end",
+      config: {},
+      position_x: 600,
+      position_y: 1000
+    }
+  ];
+
+  // ── Seed Prebuilt Flows ─────────────────────────────────────────────────────
+  const handleSeedFlows = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.post(`${API}/api/wa-flows/seed`, {}, { headers });
+      await fetchFlows();
+      alert("✅ Standard conversational flows & banking templates loaded successfully!");
+    } catch (e) {
+      alert("Failed to seed flows: " + e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Upload an image / PDF / doc / video / audio straight into a Media step.
-  // Reuses the existing WhatsApp media uploader, which returns a public URL,
-  // the detected media_type and the original filename.
-  const handleUploadNodeMedia = async (nodeIdx, file) => {
-    if (!file) return;
-    setUploadingIdx(nodeIdx);
+  // ── Save Current Flow to Backend ────────────────────────────────────────────
+  const handleSaveFlow = async (isPublishing = false) => {
+    if (!flowName.trim()) {
+      alert("Please enter a flow name");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const keywordsArr = flowKeywords.split(",").map(k => k.trim()).filter(Boolean);
+      const payload = {
+        name: flowName,
+        description: flowDesc,
+        status: isPublishing ? "active" : "draft",
+        trigger_type: flowTriggerType,
+        trigger_config: { keywords: keywordsArr },
+        entry_node_key: flowEntryNode || nodes[0]?.node_key || "start",
+        nodes: nodes.map(n => ({
+          node_key: n.node_key,
+          node_type: n.node_type,
+          config: n.config || {},
+          position_x: Math.round(n.position_x || 0),
+          position_y: Math.round(n.position_y || 0)
+        }))
+      };
+
+      let flowId = editingFlowId;
+      if (editingFlowId) {
+        await axios.put(`${API}/api/wa-flows/${editingFlowId}`, payload, { headers });
+      } else {
+        const res = await axios.post(`${API}/api/wa-flows`, payload, { headers });
+        flowId = res.data.id;
+        setEditingFlowId(flowId);
+      }
+
+      if (isPublishing && flowId) {
+        await axios.post(`${API}/api/wa-flows/${flowId}/versions/publish`, { changelog: versionChangelog || "Published via Visual Studio" }, { headers });
+        setVersionChangelog("");
+      }
+
+      await fetchFlows();
+      return flowId;
+    } catch (err) {
+      alert("Error saving flow: " + (err.response?.data?.error || err.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Delete Flow ─────────────────────────────────────────────────────────────
+  const handleDeleteFlow = async (id, name, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
     try {
       const token = localStorage.getItem("token");
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await axios.post(`${API}/api/whatsapp/upload-media`, fd, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      updateNodeConfig(nodeIdx, {
-        media_url: res.data.url,
-        media_type: res.data.media_type,
-        filename: res.data.filename,
-      });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.delete(`${API}/api/wa-flows/${id}`, { headers });
+      await fetchFlows();
+      if (editingFlowId === id) setShowStudio(false);
     } catch (err) {
-      alert("Upload failed: " + (err.response?.data?.error || err.message));
+      alert("Error deleting flow: " + err.message);
     }
-    setUploadingIdx(null);
   };
 
-  const insertPlaceholderIntoNode = (nodeIdx, fieldName, tag) => {
-    const currentVal = formNodes[nodeIdx]?.config?.[fieldName] || "";
-    updateNodeConfig(nodeIdx, { [fieldName]: currentVal + (currentVal.length > 0 ? " " : "") + tag });
-  };
-
-  const addNode = (type) => {
-    const nodeKey = `step_${Date.now().toString().slice(-4)}`;
-    let defaultCfg = {};
-
-    if (type === "send_message") defaultCfg = { text: "Hello {name}! How can we assist you with {service} today?", next_node_key: "end_flow" };
-    if (type === "send_media") defaultCfg = { media_type: "image", media_url: "https://madhuratech.com/catalog.pdf", caption: "Check out our latest catalog for {company}!", next_node_key: "end_flow" };
-    if (type === "delay") defaultCfg = { delay_seconds: 5, next_node_key: "end_flow" };
-    if (type === "send_buttons") defaultCfg = {
-      text: "Please choose an option:",
-      footer_text: "Reply with the number or tap a button",
-      buttons: [
-        { reply_id: "opt_1", title: "1. 🛠️ Services", next_node_key: "end_flow" },
-        { reply_id: "opt_2", title: "2. 📅 Book Appointment", next_node_key: "end_flow" }
-      ]
-    };
-    if (type === "send_list") defaultCfg = {
-      text: "Explore our solutions:",
-      button_text: "View Solutions",
-      title: "Madhura Tech Catalog",
-      rows: [
-        { id: "row_1", title: "HVAC Maintenance", description: "Preventive AC maintenance & AMC", next_node_key: "end_flow" },
-        { id: "row_2", title: "Electrical Safety", description: "Audit & compliance inspections", next_node_key: "end_flow" }
-      ]
-    };
-    if (type === "collect_input") defaultCfg = { prompt_text: "Please enter your city/location:", var_key: "city", validation_type: "none", next_node_key: "end_flow" };
-    if (type === "crm_lookup") defaultCfg = { lookup_type: "invoice", branch_on_result: true, found_next: "end_flow", not_found_next: "end_flow" };
-    if (type === "condition") defaultCfg = { subject_key: "input", operator: "equals", value: "yes", true_next: "end_flow", false_next: "end_flow" };
-    if (type === "api_webhook") defaultCfg = { method: "GET", url: "https://api.example.com/check-status?phone={phone}", headers: "", body: "", response_mapping: {}, success_next: "end_flow", error_next: "end_flow" };
-    if (type === "create_lead") defaultCfg = { default_service: "WhatsApp Lead", notes: "Captured via WhatsApp Flow", next_node_key: "end_flow" };
-    if (type === "set_variable") defaultCfg = { variable_name: "lead_status", variable_value: "Hot", next_node_key: "end_flow" };
-    if (type === "set_tag") defaultCfg = { tag: "Bot Qualified", next_node_key: "end_flow" };
-    if (type === "send_template") defaultCfg = { template_id: "", next_node_key: "end_flow" };
-    if (type === "ai_generate") defaultCfg = { system_prompt: "You are a helpful support assistant for {company}. Answer briefly and politely in the customer's language.", next_node_key: "end_flow" };
-    if (type === "ai_intent") defaultCfg = { branches: { booking: "end_flow", pricing: "end_flow", support: "end_flow" }, fallback_node: "end_flow" };
-    if (type === "add_to_group") defaultCfg = { group_id: "", next_node_key: "end_flow" };
-    if (type === "jump_to_flow") defaultCfg = { target_flow_id: "", next_node_key: "end_flow" };
-    if (type === "handoff") defaultCfg = { note: "Customer transferred to human live support agent." };
-    if (type === "end") defaultCfg = {};
-
-    setFormNodes((prev) => [...prev, { node_key: nodeKey, node_type: type, config: defaultCfg }]);
-  };
-
-  const removeNode = (index) => {
-    setFormNodes((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const moveNode = (index, direction) => {
-    if ((direction === -1 && index === 0) || (direction === 1 && index === formNodes.length - 1)) return;
-    setFormNodes((prev) => {
-      const copy = [...prev];
-      const targetIdx = index + direction;
-      const temp = copy[index];
-      copy[index] = copy[targetIdx];
-      copy[targetIdx] = temp;
-      return copy;
-    });
-  };
-
-  // Direct Trigger modal
-  const openTriggerModal = (flow) => {
-    setTriggerFlow(flow);
-    setTargetPhone("");
-    setShowTriggerModal(true);
-  };
-
-  const handleExecuteTrigger = async () => {
-    if (!targetPhone.trim() || !triggerFlow) return;
-    setTriggering(true);
+  // ── Toggle Active Status ────────────────────────────────────────────────────
+  const handleToggleStatus = async (flow, e) => {
+    if (e) e.stopPropagation();
+    const newStatus = flow.status === "active" ? "draft" : "active";
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.post(`${API}/api/wa/flows/${triggerFlow.id}/trigger-phone`, {
-        phone: targetPhone.trim()
-      }, { headers: { Authorization: `Bearer ${token}` } });
-      alert(res.data?.message || `Flow started for +${targetPhone}`);
-      setShowTriggerModal(false);
-      fetchFlows();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.patch(`${API}/api/wa-flows/${flow.id}/status`, { status: newStatus }, { headers });
+      setFlows(prev => prev.map(f => f.id === flow.id ? { ...f, status: newStatus } : f));
     } catch (err) {
-      alert("Failed to trigger flow: " + (err.response?.data?.error || err.message));
+      alert("Error changing status: " + err.message);
     }
-    setTriggering(false);
   };
 
-  // Analytics Modal
-  const openAnalytics = async (flow) => {
-    setAnalyticsFlow(flow);
-    setAnalyticsLoading(true);
+  // ── Open Analytics Modal ────────────────────────────────────────────────────
+  const openAnalytics = async (flow, e) => {
+    if (e) e.stopPropagation();
+    setSelectedAnalyticsFlow(flow);
     setShowAnalyticsModal(true);
+    setAnalyticsLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/api/wa/flows/${flow.id}/analytics`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${API}/api/wa-flows/${flow.id}/analytics`, { headers });
       setAnalyticsData(res.data);
     } catch (err) {
-      console.error(err);
+      console.error("Error loading analytics:", err);
+    } finally {
+      setAnalyticsLoading(false);
     }
-    setAnalyticsLoading(false);
   };
 
-  // Simulator Start & Interaction
-  const handleOpenSimulator = async (flow) => {
-    setSimFlow(flow);
+  // ── Open Versions Modal ────────────────────────────────────────────────────
+  const openVersions = async (flowId = editingFlowId) => {
+    if (!flowId) return;
+    setShowVersionsModal(true);
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.get(`${API}/api/wa-flows/${flowId}/versions`, { headers });
+      setFlowVersions(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Error loading versions:", err);
+    }
+  };
+
+  const handleRollbackVersion = async (versionId) => {
+    if (!window.confirm("Restore this version? Unsaved changes will be replaced.")) return;
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.post(`${API}/api/wa-flows/${editingFlowId}/versions/${versionId}/rollback`, {}, { headers });
+      setShowVersionsModal(false);
+      // Reload flow in studio
+      const res = await axios.get(`${API}/api/wa-flows/${editingFlowId}`, { headers });
+      const fetchedFlow = res.data;
+      setFlowName(fetchedFlow.name);
+      setFlowDesc(fetchedFlow.description || "");
+      setNodes(fetchedFlow.nodes || []);
+      setSelectedNodeKey(fetchedFlow.nodes[0]?.node_key || "start");
+      alert("✅ Successfully restored version snapshot!");
+    } catch (err) {
+      alert("Error rolling back: " + err.message);
+    }
+  };
+
+  // ── Canvas Dragging & Node Manipulation ─────────────────────────────────────
+  const handleCanvasMouseDown = (e) => {
+    if (e.target === canvasRef.current || e.target.tagName === "svg" || e.target.classList.contains("canvas-grid")) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
+  const handleCanvasMouseMove = (e) => {
+    if (isPanning) {
+      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    } else if (draggingNodeKey) {
+      const newX = (e.clientX - pan.x - dragOffset.x) / zoom;
+      const newY = (e.clientY - pan.y - dragOffset.y) / zoom;
+      setNodes(prev => prev.map(n => n.node_key === draggingNodeKey ? { ...n, position_x: Math.max(0, newX), position_y: Math.max(0, newY) } : n));
+    } else if (connectingFrom) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      setConnectingMousePos({
+        x: (e.clientX - rect.left - pan.x) / zoom,
+        y: (e.clientY - rect.top - pan.y) / zoom
+      });
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsPanning(false);
+    setDraggingNodeKey(null);
+    setConnectingFrom(null);
+  };
+
+  const handleNodeMouseDown = (nodeKey, e) => {
+    e.stopPropagation();
+    setSelectedNodeKey(nodeKey);
+    setDraggingNodeKey(nodeKey);
+    const node = nodes.find(n => n.node_key === nodeKey);
+    if (node) {
+      setDragOffset({
+        x: (e.clientX - pan.x) - (node.position_x * zoom),
+        y: (e.clientY - pan.y) - (node.position_y * zoom)
+      });
+    }
+  };
+
+  // ── Port Connection Logic ───────────────────────────────────────────────────
+  const startConnecting = (nodeKey, portId, portType, extra = {}, e) => {
+    e.stopPropagation();
+    const rect = canvasRef.current.getBoundingClientRect();
+    setConnectingFrom({ nodeKey, portId, portType, ...extra });
+    setConnectingMousePos({
+      x: (e.clientX - rect.left - pan.x) / zoom,
+      y: (e.clientY - rect.top - pan.y) / zoom
+    });
+  };
+
+  const completeConnection = (targetNodeKey, e) => {
+    e.stopPropagation();
+    if (!connectingFrom || connectingFrom.nodeKey === targetNodeKey) {
+      setConnectingFrom(null);
+      return;
+    }
+
+    const { nodeKey: srcKey, portType, buttonId, sectionIdx, buttonIdx } = connectingFrom;
+
+    setNodes(prev => prev.map(n => {
+      if (n.node_key !== srcKey) return n;
+      const cfg = { ...(n.config || {}) };
+
+      if (portType === "button" && n.node_type === "interactive_menu") {
+        const secs = [...(cfg.sections || [])];
+        if (secs[sectionIdx] && secs[sectionIdx].buttons && secs[sectionIdx].buttons[buttonIdx]) {
+          secs[sectionIdx].buttons[buttonIdx] = {
+            ...secs[sectionIdx].buttons[buttonIdx],
+            nextNodeId: targetNodeKey,
+            next_node_key: targetNodeKey
+          };
+          cfg.sections = secs;
+        }
+      } else if (portType === "button" && (n.node_type === "send_buttons" || n.node_type === "send_list")) {
+        const btns = [...(cfg.buttons || cfg.rows || [])];
+        if (btns[buttonIdx]) {
+          btns[buttonIdx] = {
+            ...btns[buttonIdx],
+            next_node_key: targetNodeKey,
+            nextNodeId: targetNodeKey
+          };
+          cfg.buttons = btns;
+        }
+      } else if (portType === "true") {
+        cfg.true_next = targetNodeKey;
+      } else if (portType === "false") {
+        cfg.false_next = targetNodeKey;
+      } else if (portType === "intent") {
+        const branches = { ...(cfg.branches || {}) };
+        branches[connectingFrom.intentKey] = targetNodeKey;
+        cfg.branches = branches;
+      } else {
+        cfg.next_node_key = targetNodeKey;
+      }
+
+      return { ...n, config: cfg };
+    }));
+
+    setConnectingFrom(null);
+  };
+
+  // ── Add Node to Canvas ──────────────────────────────────────────────────────
+  const addNodeFromPalette = (item) => {
+    const baseKey = item.type.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+    let uniqueKey = baseKey;
+    let counter = 1;
+    while (nodes.some(n => n.node_key === uniqueKey)) {
+      counter++;
+      uniqueKey = `${baseKey}_${counter}`;
+    }
+
+    // Default configuration based on item type
+    let newConfig = {};
+    if (item.type === "interactive_menu") {
+      newConfig = {
+        text: "Hello {{customer.name}}! Please select from the options below:",
+        sections: [
+          {
+            title: "Main Options",
+            buttons: [
+              { id: "opt_1", label: "Option 1", nextNodeId: "" },
+              { id: "opt_2", label: "Option 2", nextNodeId: "" }
+            ]
+          }
+        ]
+      };
+    } else if (item.type === "send_buttons") {
+      newConfig = {
+        text: "Please select an option:",
+        buttons: [
+          { reply_id: "btn_1", title: "Option 1", next_node_key: "" },
+          { reply_id: "btn_2", title: "Option 2", next_node_key: "" }
+        ]
+      };
+    } else if (item.type === "send_list") {
+      newConfig = {
+        text: "Please choose from the menu:",
+        button_text: "View Options",
+        rows: [
+          { id: "row_1", title: "Item 1", description: "Details 1", next_node_key: "" },
+          { id: "row_2", title: "Item 2", description: "Details 2", next_node_key: "" }
+        ]
+      };
+    } else if (item.type === "send_message") {
+      newConfig = { text: "Thank you for contacting us!", next_node_key: "" };
+    } else if (item.type === "collect_input" || item.type.startsWith("collect_")) {
+      newConfig = {
+        prompt_text: "Please enter your response:",
+        var_key: uniqueKey,
+        validation_type: item.validation || "none",
+        next_node_key: ""
+      };
+    } else if (item.type === "condition") {
+      newConfig = {
+        subject_key: "input",
+        operator: "equals",
+        value: "yes",
+        true_next: "",
+        false_next: ""
+      };
+    } else if (item.type === "crm_lookup") {
+      newConfig = { lookup_type: "customer", next_node_key: "" };
+    } else if (item.type === "create_lead") {
+      newConfig = { default_service: "General Inquiry", notes: "Captured via bot", next_node_key: "" };
+    } else if (item.type === "api_webhook") {
+      newConfig = { method: "GET", url: "https://api.example.com/check", next_node_key: "" };
+    } else if (item.type === "handoff") {
+      newConfig = { note: "Connecting you to our support specialist..." };
+    } else if (item.type === "delay") {
+      newConfig = { delay_seconds: 3, next_node_key: "" };
+    }
+
+    const canvasCenterX = (-pan.x + 400) / zoom;
+    const canvasCenterY = (-pan.y + 250) / zoom;
+
+    const newNode = {
+      node_key: uniqueKey,
+      node_type: item.type === "collect_number" || item.type === "collect_email" || item.type === "collect_date" ? "collect_input" : item.type,
+      config: newConfig,
+      position_x: Math.max(50, canvasCenterX + (Math.random() * 40 - 20)),
+      position_y: Math.max(50, canvasCenterY + (Math.random() * 40 - 20))
+    };
+
+    setNodes(prev => [...prev, newNode]);
+    setSelectedNodeKey(uniqueKey);
+  };
+
+  const deleteNode = (nodeKey) => {
+    if (nodeKey === "start") {
+      alert("The start entry node cannot be deleted.");
+      return;
+    }
+    setNodes(prev => prev.filter(n => n.node_key !== nodeKey));
+    if (selectedNodeKey === nodeKey) setSelectedNodeKey(null);
+  };
+
+  const duplicateNode = (node) => {
+    const newKey = `${node.node_key}_copy_${Math.floor(Math.random() * 1000)}`;
+    const copy = {
+      ...node,
+      node_key: newKey,
+      position_x: (node.position_x || 0) + 40,
+      position_y: (node.position_y || 0) + 40
+    };
+    setNodes(prev => [...prev, copy]);
+    setSelectedNodeKey(newKey);
+  };
+
+  // ── Interactive In-Phone Simulator Engine ───────────────────────────────────
+  const resetSimulation = () => {
     setSimMessages([]);
-    setSimVars({});
-    setSimCurrentNode(null);
     setSimLogs([]);
     setSimEnded(false);
-    setSimTrigger(null);
-    setShowSimulator(true);
-    setSimLoading(true);
-
-    // Open with a message that ACTUALLY fires this flow, so the preview matches
-    // WhatsApp. A hardcoded "hi" starts an invoice-keyword flow in the simulator
-    // that would never have started on a real chat.
-    let cfg = {};
-    try {
-      cfg = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
-    } catch (_) {}
-    const firstKeyword = (cfg.keywords || [])[0] || cfg.keyword || "hi";
-    const openingMessage = (flow.trigger_type === "keyword" || !flow.trigger_type) ? firstKeyword : "hi";
-
-    setSimMessages([{ sender: "user", type: "text", text: openingMessage, at: new Date() }]);
-
-    try {
-      const token = localStorage.getItem("token");
-      const res = await axios.post(
-        `${API}/api/wa/flows/${flow.id}/test-simulate`,
-        { input: openingMessage, state: null },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (res.data?.success) {
-        setSimMessages((prev) => [...prev, ...(res.data.messages || [])]);
-        setSimVars(res.data.vars || {});
-        setSimCurrentNode(res.data.currentNodeKey);
-        setSimLogs(res.data.logs || []);
-        setSimEnded(res.data.isEnded || false);
-        setSimTrigger({
-          type: res.data.triggerType,
-          keywords: res.data.triggerKeywords || [],
-          matched: res.data.triggerMatched,
-          input: openingMessage,
-        });
-      }
-    } catch (err) {
-      setSimMessages([{ sender: "system", type: "text", text: `Simulation error: ${err.message}` }]);
-    }
-    setSimLoading(false);
+    setSimCurrentNode(null);
+    setSimTyping(false);
+    // Auto-execute from start
+    executeSimStep("");
   };
 
-  const handleSendSimInput = async (inputText) => {
-    if (!inputText || !simFlow || simLoading) return;
-    const cleanInput = String(inputText).trim();
-    if (!cleanInput) return;
+  const executeSimStep = async (userInput = "") => {
+    if (simTyping) return;
+    setSimTyping(true);
 
-    // Add user message to UI immediately
-    setSimMessages((prev) => [...prev, { sender: "user", type: "text", text: cleanInput, at: new Date() }]);
-    setSimInput("");
-    setSimLoading(true);
+    const activeFlowDraft = {
+      name: flowName,
+      trigger_type: flowTriggerType,
+      trigger_config: { keywords: flowKeywords.split(",").map(k => k.trim()) },
+      entry_node_key: flowEntryNode || "start",
+      nodes
+    };
+
+    // If user typed/tapped something, append user message pill
+    if (userInput) {
+      setSimMessages(prev => [
+        ...prev,
+        { sender: "user", text: userInput, at: new Date() }
+      ]);
+    }
 
     try {
       const token = localStorage.getItem("token");
-      const currentState = {
-        currentNodeKey: simCurrentNode,
-        vars: simVars,
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      
+      const payload = {
+        flow: activeFlowDraft,
+        input: userInput,
+        state: simCurrentNode ? {
+          currentNodeKey: simCurrentNode,
+          vars: simVars
+        } : null
       };
 
-      const res = await axios.post(
-        `${API}/api/wa/flows/${simFlow.id}/test-simulate`,
-        { input: cleanInput, state: currentState },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await axios.post(`${API}/api/wa-flows/draft-simulate`, payload, { headers });
+      const result = res.data;
 
-      if (res.data?.success) {
-        const newBotMessages = res.data.messages || [];
-        setSimMessages((prev) => [...prev, ...newBotMessages]);
-        setSimVars(res.data.vars || {});
-        setSimCurrentNode(res.data.currentNodeKey);
-        setSimLogs(res.data.logs || []);
-        setSimEnded(res.data.isEnded || false);
-      }
+      setTimeout(() => {
+        if (result.messages && result.messages.length > 0) {
+          setSimMessages(prev => [...prev, ...result.messages]);
+        }
+        if (result.vars) {
+          setSimVars(result.vars);
+        }
+        if (result.logs) {
+          setSimLogs(prev => [...prev, ...result.logs]);
+        }
+        setSimCurrentNode(result.currentNodeKey);
+        setSimEnded(result.isEnded || false);
+        setSimTyping(false);
+      }, 400);
+
     } catch (err) {
-      setSimMessages((prev) => [...prev, { sender: "system", type: "text", text: `Error: ${err.message}` }]);
+      console.error("Simulation error:", err);
+      setSimTyping(false);
     }
-    setSimLoading(false);
   };
 
-  // Node Key List for Dropdowns
-  const availableNodeKeys = formNodes.map((n) => n.node_key);
+  const selectedNode = nodes.find(n => n.node_key === selectedNodeKey);
 
-  return (
-    <div className="w-full pb-12 bg-slate-50/50 min-h-screen">
-      <WhatsAppNav />
+  // ── Calculate SVG Connections between Nodes ─────────────────────────────────
+  const getWirePaths = () => {
+    const wires = [];
+    const nodeMap = {};
+    nodes.forEach(n => { nodeMap[n.node_key] = n; });
 
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 bg-white p-5 rounded-2xl border border-gray-200/80 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#25D366] to-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
-            <Bot size={26} />
+    nodes.forEach(src => {
+      const srcX = src.position_x || 0;
+      const srcY = src.position_y || 0;
+      const cfg = src.config || {};
+
+      const addWire = (targetKey, portLabel, portColor = "#10B981", offsetY = 60) => {
+        if (!targetKey || !nodeMap[targetKey]) return;
+        const tgt = nodeMap[targetKey];
+        const tgtX = tgt.position_x || 0;
+        const tgtY = tgt.position_y || 0;
+
+        const startX = srcX + 260; // right side of source card
+        const startY = srcY + offsetY;
+        const endX = tgtX; // left side of target card
+        const endY = tgtY + 45;
+
+        // Bezier control points
+        const dx = Math.abs(endX - startX) * 0.5;
+        const pathD = `M ${startX} ${startY} C ${startX + Math.max(60, dx)} ${startY}, ${endX - Math.max(60, dx)} ${endY}, ${endX} ${endY}`;
+
+        wires.push({
+          id: `${src.node_key}->${targetKey}-${portLabel}`,
+          pathD,
+          color: portColor,
+          label: portLabel,
+          startX, startY, endX, endY
+        });
+      };
+
+      if (src.node_type === "interactive_menu") {
+        let btnOffset = 95;
+        if (Array.isArray(cfg.sections)) {
+          cfg.sections.forEach(sec => {
+            btnOffset += 24; // section title header space
+            (sec.buttons || []).forEach(b => {
+              const target = b.nextNodeId || b.next_node_key;
+              if (target) addWire(target, b.label || b.title || "Option", "#10B981", btnOffset);
+              btnOffset += 34;
+            });
+          });
+        } else if (Array.isArray(cfg.buttons)) {
+          cfg.buttons.forEach(b => {
+            const target = b.nextNodeId || b.next_node_key;
+            if (target) addWire(target, b.label || b.title, "#10B981", btnOffset);
+            btnOffset += 34;
+          });
+        }
+      } else if (src.node_type === "send_buttons" || src.node_type === "send_list") {
+        let btnOffset = 95;
+        (cfg.buttons || cfg.rows || []).forEach(b => {
+          const target = b.next_node_key || b.nextNodeId;
+          if (target) addWire(target, b.title || b.label, "#0D9488", btnOffset);
+          btnOffset += 34;
+        });
+      } else if (src.node_type === "condition") {
+        if (cfg.true_next) addWire(cfg.true_next, "YES (True)", "#10B981", 85);
+        if (cfg.false_next) addWire(cfg.false_next, "NO (False)", "#F59E0B", 125);
+      } else if (src.node_type === "ai_intent") {
+        let branchOffset = 90;
+        Object.entries(cfg.branches || {}).forEach(([intent, tgt]) => {
+          if (tgt) addWire(tgt, intent, "#A855F7", branchOffset);
+          branchOffset += 28;
+        });
+      } else if (src.node_type === "crm_lookup") {
+        if (cfg.found_next) addWire(cfg.found_next, "Found", "#10B981", 80);
+        if (cfg.not_found_next) addWire(cfg.not_found_next, "Not Found", "#EF4444", 110);
+        if (cfg.next_node_key) addWire(cfg.next_node_key, "Next", "#3B82F6", 80);
+      } else if (src.config?.next_node_key) {
+        addWire(src.config.next_node_key, "Next", "#6B7280", 75);
+      }
+    });
+
+    return wires;
+  };
+
+  // ── Render Node Card in Canvas ──────────────────────────────────────────────
+  const renderCanvasNode = (node) => {
+    const isSelected = selectedNodeKey === node.node_key;
+    const isEntry = flowEntryNode === node.node_key || node.node_key === "start";
+
+    // Palette metadata icon and color
+    let typeMeta = { icon: "⚡", label: node.node_type, color: "bg-slate-50 border-slate-300 text-slate-800" };
+    PALETTE_CATEGORIES.forEach(cat => {
+      const found = cat.items.find(i => i.type === node.node_type);
+      if (found) typeMeta = found;
+    });
+
+    return (
+      <div
+        key={node.node_key}
+        onMouseDown={(e) => handleNodeMouseDown(node.node_key, e)}
+        onClick={(e) => { e.stopPropagation(); setSelectedNodeKey(node.node_key); }}
+        style={{
+          transform: `translate(${node.position_x}px, ${node.position_y}px)`,
+          width: "270px"
+        }}
+        className={`absolute rounded-2xl bg-white shadow-lg border-2 transition-shadow select-none cursor-move z-10 ${
+          isSelected ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-2xl" : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        {/* Input Port Anchor (Left) */}
+        {node.node_key !== "start" && (
+          <div
+            onMouseUp={(e) => completeConnection(node.node_key, e)}
+            className="absolute -left-3 top-10 w-6 h-6 rounded-full bg-white border-2 border-emerald-500 flex items-center justify-center shadow hover:scale-125 transition-transform z-20 cursor-pointer"
+            title="Connect here"
+          >
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
           </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-xl font-bold text-gray-900">WhatsApp Chatbot Flows</h1>
-              <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                {flows.length} Smart Flows
-              </span>
+        )}
+
+        {/* Node Header */}
+        <div className="px-3.5 py-2.5 rounded-t-2xl border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base">{typeMeta.icon || "⚡"}</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-800 truncate">{node.node_key}</span>
+                {isEntry && (
+                  <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 font-extrabold text-[9px] rounded-full uppercase">
+                    Entry
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 truncate">{typeMeta.label}</p>
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Visual decision trees, dynamic live CRM lookups, API webhooks, 24/7 lead capture, and live agent handoffs.
-            </p>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); duplicateNode(node); }}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded"
+              title="Duplicate"
+            >
+              <Copy size={12} />
+            </button>
+            {node.node_key !== "start" && (
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteNode(node.node_key); }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={handleSeedPrebuilt}
-            disabled={seeding}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-800 border border-emerald-300/80 rounded-xl hover:bg-emerald-100 transition text-xs font-bold shadow-sm"
-          >
-            {seeding ? <Loader2 size={15} className="animate-spin text-emerald-600" /> : <Sparkles size={15} className="text-emerald-600" />}
-            <span>Load 6 Prebuilt Smart Flows</span>
-          </button>
-          <button
-            onClick={handleOpenCreate}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white rounded-xl transition text-xs font-bold shadow-md shadow-[#25D366]/20"
-          >
-            <Plus size={16} />
-            <span>Create New Flow</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-2">
-        <button
-          onClick={() => setActiveTab("flows")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-            activeTab === "flows"
-              ? "bg-[#25D366] text-white shadow-sm"
-              : "bg-white text-gray-600 border hover:bg-gray-50"
-          }`}
-        >
-          <Layers size={15} />
-          <span>Active Chatbot Flows ({flows.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("runs")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-            activeTab === "runs"
-              ? "bg-[#25D366] text-white shadow-sm"
-              : "bg-white text-gray-600 border hover:bg-gray-50"
-          }`}
-        >
-          <ListOrdered size={15} />
-          <span>Execution Runs & Captured Leads</span>
-        </button>
-      </div>
-
-      {/* TAB 1: Flows Grid */}
-      {activeTab === "flows" && (
-        <>
-          {loading ? (
-            <div className="flex justify-center py-24">
-              <Loader2 size={36} className="animate-spin text-[#25D366]" />
-            </div>
-          ) : flows.length === 0 ? (
-            <div className="text-center py-20 bg-white rounded-3xl border border-gray-200 shadow-sm p-8 max-w-lg mx-auto">
-              <Bot size={48} className="mx-auto mb-3 text-emerald-500/60" />
-              <h3 className="text-base font-bold text-gray-800">No Chatbot Flows Found</h3>
-              <p className="text-xs text-gray-500 mt-1 mb-5 leading-relaxed">
-                Click "Load 6 Prebuilt Smart Flows" to instantly install business menus, invoice lookup bots, and AMC booking trees.
+        {/* Node Body Content Preview */}
+        <div className="p-3 text-xs space-y-2">
+          {/* Interactive Menu multi-section display */}
+          {node.node_type === "interactive_menu" && (
+            <div className="space-y-2">
+              <p className="text-slate-600 text-[11px] line-clamp-2 italic bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                "{node.config?.text || "Choose an option:"}"
               </p>
-              <div className="flex justify-center gap-3">
-                <button
-                  onClick={handleSeedPrebuilt}
-                  className="px-4 py-2.5 bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-1.5"
+
+              {Array.isArray(node.config?.sections) ? (
+                node.config.sections.map((sec, sIdx) => (
+                  <div key={sIdx} className="space-y-1">
+                    {sec.title && (
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">
+                        {sec.title}
+                      </span>
+                    )}
+                    <div className="space-y-1">
+                      {(sec.buttons || []).map((b, bIdx) => (
+                        <div
+                          key={bIdx}
+                          className="flex items-center justify-between px-2 py-1.5 bg-emerald-50/70 border border-emerald-200 text-emerald-900 rounded-lg text-[11px] font-semibold group"
+                        >
+                          <span className="truncate">{b.label || b.title || `Option ${bIdx + 1}`}</span>
+                          <div
+                            onMouseDown={(e) => startConnecting(node.node_key, b.id || `btn_${bIdx}`, "button", { sectionIdx: sIdx, buttonIdx: bIdx }, e)}
+                            className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition-transform"
+                            title="Drag to connect"
+                          >
+                            <ChevronRight size={10} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="space-y-1">
+                  {(node.config?.buttons || []).map((b, bIdx) => (
+                    <div
+                      key={bIdx}
+                      className="flex items-center justify-between px-2 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg text-[11px] font-semibold"
+                    >
+                      <span className="truncate">{b.label || b.title || `Option ${bIdx + 1}`}</span>
+                      <div
+                        onMouseDown={(e) => startConnecting(node.node_key, b.id || `btn_${bIdx}`, "button", { buttonIdx: bIdx }, e)}
+                        className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                      >
+                        <ChevronRight size={10} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick Reply Buttons Preview */}
+          {(node.node_type === "send_buttons" || node.node_type === "send_list") && (
+            <div className="space-y-1.5">
+              <p className="text-slate-600 text-[11px] line-clamp-2 italic bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                "{node.config?.text || "Choose:"}"
+              </p>
+              <div className="space-y-1">
+                {(node.config?.buttons || node.config?.rows || []).map((b, bIdx) => (
+                  <div
+                    key={bIdx}
+                    className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border border-teal-200 text-teal-900 rounded-lg text-[11px] font-semibold"
+                  >
+                    <span className="truncate">{b.title || b.label || `Option ${bIdx + 1}`}</span>
+                    <div
+                      onMouseDown={(e) => startConnecting(node.node_key, b.reply_id || b.id || `btn_${bIdx}`, "button", { buttonIdx: bIdx }, e)}
+                      className="w-4 h-4 rounded-full bg-teal-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                    >
+                      <ChevronRight size={10} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Text Message Preview */}
+          {node.node_type === "send_message" && (
+            <div className="space-y-1.5">
+              <p className="text-slate-700 text-xs line-clamp-3 bg-blue-50/50 p-2 rounded-lg border border-blue-100 font-mono">
+                {node.config?.text || "Text content"}
+              </p>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
                 >
-                  <Sparkles size={14} />
-                  <span>Load Prebuilt Flows</span>
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Condition Preview */}
+          {node.node_type === "condition" && (
+            <div className="space-y-2">
+              <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-[11px] font-mono text-amber-900">
+                if ({node.config?.subject_key || "input"} {node.config?.operator || "=="} "{node.config?.value || ""}")
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "true", "true", {}, e)}
+                  className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px] flex items-center justify-between cursor-crosshair hover:bg-emerald-200"
+                >
+                  <span>YES (True)</span>
+                  <ChevronRight size={12} />
+                </div>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "false", "false", {}, e)}
+                  className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-bold text-[10px] flex items-center justify-between cursor-crosshair hover:bg-amber-200"
+                >
+                  <span>NO (False)</span>
+                  <ChevronRight size={12} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CRM Lookup Preview */}
+          {node.node_type === "crm_lookup" && (
+            <div className="space-y-1.5">
+              <div className="p-1.5 bg-sky-50 text-sky-900 border border-sky-200 rounded text-[11px] flex items-center gap-1.5">
+                <Database size={12} />
+                <span>Fetch: <b>{node.config?.lookup_type || "customer"}</b></span>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Continue</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-sky-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Collect Input Preview */}
+          {node.node_type === "collect_input" && (
+            <div className="space-y-1.5">
+              <p className="text-slate-600 text-[11px] italic bg-purple-50 p-1.5 rounded border border-purple-100">
+                "{node.config?.prompt_text || "Enter value:"}"
+              </p>
+              <div className="flex items-center justify-between text-[11px] text-purple-700">
+                <span>Save to: <code>vars.{node.config?.var_key || "input"}</code></span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-purple-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Live Agent Handoff Preview */}
+          {node.node_type === "handoff" && (
+            <div className="p-2 bg-rose-50 border border-rose-200 text-rose-900 rounded-lg text-[11px] space-y-1">
+              <div className="flex items-center gap-1 font-bold">
+                <UserCheck size={12} />
+                <span>Transfers to Live Agent</span>
+              </div>
+              <p className="text-[10px] text-rose-700">Pauses automation & notifies CRM chat team.</p>
+            </div>
+          )}
+
+          {/* End Node Preview */}
+          {node.node_type === "end" && (
+            <div className="p-2 bg-slate-100 text-slate-700 rounded-lg text-center font-bold text-[11px]">
+              🛑 End of Conversation
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Render Node Configuration Inspector (Right Panel) ───────────────────────
+  const renderNodeInspector = () => {
+    if (!selectedNode) {
+      return (
+        <div className="p-6 text-center text-slate-400 space-y-3">
+          <Sliders size={32} className="mx-auto text-slate-300" />
+          <p className="text-xs font-semibold">Select any node on the canvas to configure its properties & options.</p>
+        </div>
+      );
+    }
+
+    const cfg = selectedNode.config || {};
+    const updateConfig = (newCfg) => {
+      setNodes(prev => prev.map(n => n.node_key === selectedNode.node_key ? { ...n, config: { ...cfg, ...newCfg } } : n));
+    };
+
+    return (
+      <div className="p-4 space-y-5 overflow-y-auto max-h-[calc(100vh-140px)]">
+        {/* Node Identifier */}
+        <div className="space-y-2 pb-3 border-b border-slate-100">
+          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Step Node Key
+          </label>
+          <input
+            type="text"
+            value={selectedNode.node_key}
+            onChange={(e) => {
+              const newKey = e.target.value.replace(/[^a-zA-Z0-9_]/g, "");
+              setNodes(prev => prev.map(n => n.node_key === selectedNode.node_key ? { ...n, node_key: newKey } : n));
+              setSelectedNodeKey(newKey);
+            }}
+            disabled={selectedNode.node_key === "start"}
+            className="w-full px-3 py-1.5 text-xs font-mono font-bold bg-slate-50 border rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+
+        {/* ── INTERACTIVE MENU CONFIGURATION ────────────────────────── */}
+        {selectedNode.node_type === "interactive_menu" && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Message Text *</label>
+                <span className="text-[10px] text-slate-400">Supports variables</span>
+              </div>
+              <textarea
+                value={cfg.text || ""}
+                onChange={(e) => updateConfig({ text: e.target.value })}
+                rows={3}
+                placeholder="Good Afternoon, {{customer.name}} 🍀🙂..."
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+              />
+              {/* Quick Placeholder Inserter */}
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {PLACEHOLDERS.slice(0, 6).map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => updateConfig({ text: `${cfg.text || ""} ${p.tag}` })}
+                    className="px-1.5 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded text-[10px] font-mono transition"
+                  >
+                    + {p.tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sections & Options Builder */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 uppercase">Sections & Button Options</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const secs = [...(cfg.sections || [])];
+                    secs.push({
+                      title: `SECTION ${secs.length + 1}`,
+                      buttons: [{ id: `opt_${Date.now()}`, label: "New Option", nextNodeId: "" }]
+                    });
+                    updateConfig({ sections: secs });
+                  }}
+                  className="px-2 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-lg hover:bg-emerald-200 flex items-center gap-1"
+                >
+                  <Plus size={12} /> Add Section
                 </button>
-                <button
-                  onClick={handleOpenCreate}
-                  className="px-4 py-2.5 bg-[#25D366] text-white rounded-xl text-xs font-bold hover:bg-[#1ebe5d] transition shadow-md shadow-[#25D366]/20"
+              </div>
+
+              {Array.isArray(cfg.sections) && cfg.sections.map((sec, sIdx) => (
+                <div key={sIdx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      type="text"
+                      value={sec.title || ""}
+                      onChange={(e) => {
+                        const secs = [...cfg.sections];
+                        secs[sIdx].title = e.target.value;
+                        updateConfig({ sections: secs });
+                      }}
+                      placeholder="e.g. Bank Services / Explore more! ⭐"
+                      className="flex-1 px-2.5 py-1 text-xs font-bold bg-white border rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const secs = cfg.sections.filter((_, i) => i !== sIdx);
+                        updateConfig({ sections: secs });
+                      }}
+                      className="p-1 text-slate-400 hover:text-rose-600"
+                      title="Delete section"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  {/* Options inside Section */}
+                  <div className="space-y-1.5 pl-2 border-l-2 border-emerald-500">
+                    {(sec.buttons || []).map((btn, bIdx) => (
+                      <div key={bIdx} className="p-2 bg-white rounded-lg border border-slate-200 space-y-1.5 shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={btn.label || btn.title || ""}
+                            onChange={(e) => {
+                              const secs = [...cfg.sections];
+                              secs[sIdx].buttons[bIdx].label = e.target.value;
+                              secs[sIdx].buttons[bIdx].title = e.target.value;
+                              updateConfig({ sections: secs });
+                            }}
+                            placeholder="Button Label (e.g. Account Balance)"
+                            className="flex-1 px-2 py-1 text-xs font-semibold border rounded"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const secs = [...cfg.sections];
+                              secs[sIdx].buttons = secs[sIdx].buttons.filter((_, i) => i !== bIdx);
+                              updateConfig({ sections: secs });
+                            }}
+                            className="text-slate-400 hover:text-rose-500"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 shrink-0">Target:</span>
+                          <select
+                            value={btn.nextNodeId || btn.next_node_key || ""}
+                            onChange={(e) => {
+                              const secs = [...cfg.sections];
+                              secs[sIdx].buttons[bIdx].nextNodeId = e.target.value;
+                              secs[sIdx].buttons[bIdx].next_node_key = e.target.value;
+                              updateConfig({ sections: secs });
+                            }}
+                            className="flex-1 px-2 py-1 text-xs bg-slate-50 border rounded font-mono"
+                          >
+                            <option value="">-- Connect to Next Step --</option>
+                            {nodes.map(n => (
+                              <option key={n.node_key} value={n.node_key}>
+                                {n.node_key} ({n.node_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const secs = [...cfg.sections];
+                        secs[sIdx].buttons.push({
+                          id: `btn_${Date.now()}`,
+                          label: "New Option",
+                          nextNodeId: ""
+                        });
+                        updateConfig({ sections: secs });
+                      }}
+                      className="w-full py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 flex items-center justify-center gap-1 border border-dashed border-emerald-300"
+                    >
+                      <Plus size={11} /> Add Option Button
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── CONDITION BRANCHING CONFIGURATION ─────────────────────── */}
+        {selectedNode.node_type === "condition" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Subject Variable</label>
+              <input
+                type="text"
+                value={cfg.subject_key || "input"}
+                onChange={(e) => updateConfig({ subject_key: e.target.value })}
+                placeholder="e.g. income / city / service / selected_option"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Comparison Operator</label>
+              <select
+                value={cfg.operator || "equals"}
+                onChange={(e) => updateConfig({ operator: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white"
+              >
+                <option value="equals">Equals (=)</option>
+                <option value="not_equals">Not Equals (!=)</option>
+                <option value="contains">Contains text</option>
+                <option value="greater_or_equal">Greater than or Equal (&gt;=)</option>
+                <option value="greater_than">Greater than (&gt;)</option>
+                <option value="less_than">Less than (&lt;)</option>
+                <option value="is_numeric">Is Numeric</option>
+                <option value="is_not_empty">Is Not Empty / Present</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Comparison Target Value</label>
+              <input
+                type="text"
+                value={cfg.value || ""}
+                onChange={(e) => updateConfig({ value: e.target.value })}
+                placeholder="e.g. 25000 / yes / Bangalore"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <div>
+                <label className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">YES (True) Next Step</label>
+                <select
+                  value={cfg.true_next || ""}
+                  onChange={(e) => updateConfig({ true_next: e.target.value })}
+                  className="w-full p-1.5 text-xs bg-emerald-50 border border-emerald-300 rounded font-mono"
                 >
-                  + Create First Flow
+                  <option value="">-- Target --</option>
+                  {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">NO (False) Next Step</label>
+                <select
+                  value={cfg.false_next || ""}
+                  onChange={(e) => updateConfig({ false_next: e.target.value })}
+                  className="w-full p-1.5 text-xs bg-amber-50 border border-amber-300 rounded font-mono"
+                >
+                  <option value="">-- Target --</option>
+                  {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CRM LOOKUP CONFIGURATION ──────────────────────────────── */}
+        {selectedNode.node_type === "crm_lookup" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">CRM Data to Fetch</label>
+              <select
+                value={cfg.lookup_type || "customer"}
+                onChange={(e) => updateConfig({ lookup_type: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white"
+              >
+                <option value="customer">Customer Profile (Name, Phone, City, Balance)</option>
+                <option value="invoice">Latest Outstanding Invoice &amp; Due Date</option>
+                <option value="amc">Active AMC Maintenance Contract &amp; Expiry</option>
+                <option value="service_ticket">Latest Service Ticket Status</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── COLLECT INPUT CONFIGURATION ───────────────────────────── */}
+        {selectedNode.node_type === "collect_input" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Question Prompt Text</label>
+              <textarea
+                value={cfg.prompt_text || ""}
+                onChange={(e) => updateConfig({ prompt_text: e.target.value })}
+                rows={2}
+                placeholder="Please enter your income / details:"
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Save Answer in Variable</label>
+              <input
+                type="text"
+                value={cfg.var_key || ""}
+                onChange={(e) => updateConfig({ var_key: e.target.value })}
+                placeholder="e.g. income / email / city"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── LIVE AGENT HANDOFF CONFIGURATION ──────────────────────── */}
+        {selectedNode.node_type === "handoff" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Handoff Notification Note</label>
+              <input
+                type="text"
+                value={cfg.note || ""}
+                onChange={(e) => updateConfig({ note: e.target.value })}
+                placeholder="Connecting you to our specialist..."
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+              <p className="font-bold flex items-center gap-1"><ShieldAlert size={14} /> Agent Transfer Protocol</p>
+              <p className="text-[11px] text-amber-800">
+                1. Pauses bot automation for 120 minutes.<br />
+                2. Alerts live CRM support dashboard with customer variables.<br />
+                3. Allows human agents to take over in real time.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Render True-to-Life WhatsApp Smartphone Simulator ──────────────────────
+  const renderWhatsAppPhoneSimulator = () => {
+    return (
+      <div className={`w-[340px] h-[580px] rounded-[40px] p-3 shadow-2xl flex flex-col border-[6px] transition-colors shrink-0 relative overflow-hidden select-none ${
+        simDarkTheme ? "bg-[#0b141a] border-[#1f2c34] text-white" : "bg-[#efeae2] border-slate-800 text-slate-900"
+      }`}>
+        {/* Smartphone Camera Notch */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-4 bg-[#1f2c34] rounded-full z-30 flex items-center justify-center">
+          <div className="w-2.5 h-2.5 rounded-full bg-black/60" />
+        </div>
+
+        {/* WhatsApp Top App Bar */}
+        <div className={`pt-4 pb-2 px-2 flex items-center justify-between border-b shrink-0 z-20 ${
+          simDarkTheme ? "bg-[#202c33] border-[#2a3942] text-white" : "bg-[#008069] border-[#008069] text-white"
+        }`}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-400/40">
+              🤖
+            </div>
+            <div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-bold truncate max-w-[130px]">Madhura Bank Bot</span>
+                <CheckCircle2 size={12} className="text-emerald-400 shrink-0 fill-emerald-400/20" />
+              </div>
+              <p className="text-[9px] text-emerald-400 font-semibold leading-tight">online • automated</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-white/80">
+            <PhoneCall size={14} className="hover:text-white cursor-pointer" />
+            <button
+              onClick={() => setSimDarkTheme(!simDarkTheme)}
+              className="p-1 rounded-full hover:bg-white/10"
+              title="Toggle Dark/Light theme"
+            >
+              {simDarkTheme ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+            <button
+              onClick={resetSimulation}
+              className="p-1 rounded-full hover:bg-white/10"
+              title="Restart Simulation"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* WhatsApp Chat Area Background Pattern */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0 relative z-10 text-xs font-sans">
+          {/* Encryption pill */}
+          <div className="text-center my-1">
+            <span className={`px-2.5 py-1 rounded-md text-[9px] font-medium inline-flex items-center gap-1 shadow-sm ${
+              simDarkTheme ? "bg-[#182229] text-[#ffd279]" : "bg-[#ffeecd] text-amber-900"
+            }`}>
+              🔒 Messages are end-to-end encrypted
+            </span>
+          </div>
+
+          {/* Render Messages */}
+          {simMessages.map((msg, mIdx) => {
+            const isBot = msg.sender === "bot";
+            const timeStr = new Date(msg.at || Date.now()).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+
+            return (
+              <div key={mIdx} className={`flex flex-col ${isBot ? "items-start" : "items-end"}`}>
+                <div className={`max-w-[85%] rounded-2xl p-2.5 shadow-md relative text-xs ${
+                  isBot
+                    ? (simDarkTheme ? "bg-[#202c33] text-[#e9edef] rounded-tl-sm border border-[#2a3942]" : "bg-white text-slate-800 rounded-tl-sm")
+                    : (simDarkTheme ? "bg-[#005c4b] text-[#e9edef] rounded-tr-sm" : "bg-[#d9fdd3] text-slate-800 rounded-tr-sm")
+                }`}>
+                  {/* Message Main Body */}
+                  <p className="whitespace-pre-line leading-relaxed text-[11px] font-sans">
+                    {msg.text}
+                  </p>
+
+                  {/* Multi-Section Interactive Buttons Display */}
+                  {msg.type === "interactive_menu" && Array.isArray(msg.sections) && (
+                    <div className="mt-2.5 space-y-2 border-t border-slate-600/30 pt-2">
+                      {msg.sections.map((sec, sIdx) => (
+                        <div key={sIdx} className="space-y-1">
+                          {sec.title && (
+                            <span className={`text-[10px] font-bold tracking-wide block ${
+                              simDarkTheme ? "text-[#00a884]" : "text-emerald-700"
+                            }`}>
+                              {sec.title}
+                            </span>
+                          )}
+                          <div className="space-y-1">
+                            {(sec.buttons || []).map((btn, bIdx) => (
+                              <button
+                                key={bIdx}
+                                type="button"
+                                onClick={() => executeSimStep(btn.label || btn.title || btn.id)}
+                                className={`w-full py-1.5 px-2.5 rounded-xl text-center text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                                  simDarkTheme
+                                    ? "bg-[#111b21] hover:bg-[#202c33] text-[#00a884] border border-[#2a3942] active:scale-95"
+                                    : "bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 active:scale-95"
+                                }`}
+                              >
+                                <span>{btn.label || btn.title}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Standard Reply Buttons Display */}
+                  {msg.type === "buttons" && Array.isArray(msg.buttons) && (
+                    <div className="mt-2 space-y-1 border-t border-slate-600/30 pt-1.5">
+                      {msg.buttons.map((btn, bIdx) => (
+                        <button
+                          key={bIdx}
+                          type="button"
+                          onClick={() => executeSimStep(btn.title || btn.id)}
+                          className={`w-full py-1.5 px-2 rounded-xl text-center text-xs font-bold transition-all ${
+                            simDarkTheme
+                              ? "bg-[#111b21] hover:bg-[#202c33] text-[#00a884] border border-[#2a3942]"
+                              : "bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200"
+                          }`}
+                        >
+                          {btn.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Timestamp & Double Checkmarks */}
+                  <div className="flex items-center justify-end gap-1 mt-1 text-[9px] opacity-60">
+                    <span>{timeStr}</span>
+                    {!isBot && <span className="text-emerald-400">✓✓</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Typing Indicator */}
+          {simTyping && (
+            <div className="flex items-center gap-1.5 p-2 rounded-xl bg-[#202c33] text-[#00a884] text-[10px] w-24">
+              <span className="animate-bounce">●</span>
+              <span className="animate-bounce delay-100">●</span>
+              <span className="animate-bounce delay-200">●</span>
+              <span className="italic">typing</span>
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Bottom Chat Input Bar */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (simInputText.trim()) {
+              const text = simInputText.trim();
+              setSimInputText("");
+              executeSimStep(text);
+            }
+          }}
+          className={`p-2 rounded-b-[30px] flex items-center gap-1.5 border-t shrink-0 z-20 ${
+            simDarkTheme ? "bg-[#202c33] border-[#2a3942]" : "bg-[#f0f2f5] border-slate-200"
+          }`}
+        >
+          <input
+            type="text"
+            value={simInputText}
+            onChange={(e) => setSimInputText(e.target.value)}
+            placeholder="Type a message or option #..."
+            className={`flex-1 px-3 py-1.5 rounded-full text-xs outline-none ${
+              simDarkTheme ? "bg-[#2a3942] text-white placeholder-slate-400" : "bg-white text-slate-900 border"
+            }`}
+          />
+          <button
+            type="submit"
+            disabled={simTyping || !simInputText.trim()}
+            className="w-7 h-7 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:scale-105 transition disabled:opacity-50"
+          >
+            <Send size={12} />
+          </button>
+        </form>
+      </div>
+    );
+  };
+
+  // ── Render Fullscreen Studio Workspace ──────────────────────────────────────
+  if (showStudio) {
+    const wires = getWirePaths();
+
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900 text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+        {/* Top Studio Action Bar */}
+        <div className="h-14 bg-slate-950 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-30">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowStudio(false)}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              title="Close Visual Studio"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                <GitFork size={16} />
+              </div>
+              <div>
+                <input
+                  type="text"
+                  value={flowName}
+                  onChange={(e) => setFlowName(e.target.value)}
+                  placeholder="Flow Name..."
+                  className="bg-transparent text-sm font-bold text-white outline-none hover:bg-slate-800/60 px-1.5 py-0.5 rounded focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 px-1.5">
+                  <span>Trigger: <b>{flowTriggerType}</b></span>
+                  <span>•</span>
+                  <span>{nodes.length} Nodes</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Canvas Controls Toolbar */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+            <button
+              onClick={() => setZoom(z => Math.max(0.4, z - 0.1))}
+              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              title="Zoom Out"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <span className="text-[10px] font-mono font-bold px-1.5 text-slate-300">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom(z => Math.min(1.8, z + 0.1))}
+              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              title="Zoom In"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              onClick={() => { setZoom(1); setPan({ x: 50, y: 50 }); }}
+              className="px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              title="Reset View"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Save & Publish Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSimDrawer(!showSimDrawer)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                showSimDrawer ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-slate-800 text-slate-300 border-slate-700"
+              }`}
+            >
+              <Smartphone size={14} />
+              <span>WhatsApp Preview</span>
+            </button>
+
+            {editingFlowId && (
+              <button
+                onClick={() => openVersions(editingFlowId)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+              >
+                <Layers size={14} />
+                <span>Versions</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => handleSaveFlow(false)}
+              disabled={saving}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              <span>Save Draft</span>
+            </button>
+
+            <button
+              onClick={() => handleSaveFlow(true)}
+              disabled={saving}
+              className="px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+            >
+              <Play size={14} />
+              <span>Publish Live</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Studio Workspace Layout */}
+        <div className="flex-1 flex min-h-0 relative overflow-hidden">
+          {/* Left Component Palette Sidebar */}
+          <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 z-20 select-none">
+            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
+                Component Palette
+              </span>
+              <span className="text-[10px] text-slate-500">Click to add</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {PALETTE_CATEGORIES.map(cat => (
+                <div key={cat.id} className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-900/40">
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(cat.id)}
+                    className="w-full px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-300 hover:bg-slate-800/60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <cat.icon size={13} className={cat.color} />
+                      {cat.name}
+                    </span>
+                    {openCategories[cat.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+
+                  {openCategories[cat.id] && (
+                    <div className="p-1.5 grid grid-cols-1 gap-1 border-t border-slate-800/60 bg-slate-950/60">
+                      {cat.items.map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => addNodeFromPalette(item)}
+                          className="w-full text-left p-2 rounded-lg hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition flex items-center gap-2.5 group"
+                        >
+                          <span className="text-base group-hover:scale-110 transition-transform">{item.icon}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-200 truncate">{item.label}</div>
+                            <div className="text-[10px] text-slate-500 truncate">{item.desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── 2D Canvas Graph Area ───────────────────────────────── */}
+          <div
+            ref={canvasRef}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+            className="flex-1 bg-[#0f172a] relative overflow-hidden cursor-crosshair canvas-grid"
+            style={{
+              backgroundImage: "radial-gradient(#1e293b 1.5px, transparent 1.5px)",
+              backgroundSize: `${24 * zoom}px ${24 * zoom}px`
+            }}
+          >
+            {/* SVG Connector Wires Layer */}
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none z-0"
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: "0 0"
+              }}
+            >
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#10B981" />
+                </marker>
+                <marker id="arrow-active" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#3B82F6" />
+                </marker>
+              </defs>
+
+              {/* Render Existing Edges */}
+              {wires.map(w => (
+                <g key={w.id}>
+                  <path
+                    d={w.pathD}
+                    fill="none"
+                    stroke={w.color}
+                    strokeWidth={2.5}
+                    markerEnd="url(#arrow)"
+                    className="transition-all hover:stroke-emerald-400 hover:stroke-[4]"
+                  />
+                  {/* Wire Label pill */}
+                  <rect
+                    x={(w.startX + w.endX) / 2 - 25}
+                    y={(w.startY + w.endY) / 2 - 10}
+                    width={50}
+                    height={18}
+                    rx={6}
+                    fill="#0f172a"
+                    stroke={w.color}
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={(w.startX + w.endX) / 2}
+                    y={(w.startY + w.endY) / 2 + 3}
+                    fill="#e2e8f0"
+                    fontSize="9"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                  >
+                    {w.label.slice(0, 8)}
+                  </text>
+                </g>
+              ))}
+
+              {/* Render Dynamic Dragging Wire */}
+              {connectingFrom && (
+                <path
+                  d={`M ${connectingFrom.x || 0} ${connectingFrom.y || 0} L ${connectingMousePos.x} ${connectingMousePos.y}`}
+                  fill="none"
+                  stroke="#3B82F6"
+                  strokeWidth={3}
+                  strokeDasharray="5,5"
+                  className="animate-pulse"
+                />
+              )}
+            </svg>
+
+            {/* Nodes Render Container */}
+            <div
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: "0 0"
+              }}
+              className="absolute inset-0 pointer-events-none"
+            >
+              <div className="pointer-events-auto">
+                {nodes.map(node => renderCanvasNode(node))}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Node Inspector / WhatsApp Simulator Panel */}
+          <div className="w-[380px] bg-slate-950 border-l border-slate-800 flex flex-col shrink-0 z-20 select-none">
+            {/* Inspector Top Tabs */}
+            <div className="flex border-b border-slate-800 bg-slate-900/60 p-1">
+              <button
+                onClick={() => setActiveInspectorTab("config")}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  activeInspectorTab === "config" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Sliders size={13} />
+                <span>Inspector</span>
+              </button>
+              <button
+                onClick={() => setActiveInspectorTab("preview")}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  activeInspectorTab === "preview" ? "bg-emerald-600/30 text-emerald-300 shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Smartphone size={13} />
+                <span>Test Phone</span>
+              </button>
+              <button
+                onClick={() => setActiveInspectorTab("audit")}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  activeInspectorTab === "audit" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Terminal size={13} />
+                <span>Logs ({simLogs.length})</span>
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="flex-1 overflow-y-auto min-h-0 bg-white text-slate-900">
+              {activeInspectorTab === "config" && renderNodeInspector()}
+
+              {activeInspectorTab === "preview" && (
+                <div className="p-4 flex items-center justify-center bg-slate-900 min-h-full">
+                  {renderWhatsAppPhoneSimulator()}
+                </div>
+              )}
+
+              {activeInspectorTab === "audit" && (
+                <div className="p-4 space-y-4 bg-slate-900 text-slate-100 min-h-full font-mono text-xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <span className="font-bold text-emerald-400">⚡ Execution State</span>
+                    <button onClick={resetSimulation} className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1">
+                      <RotateCcw size={10} /> Reset
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-[11px] text-slate-400">Current Node: <b className="text-white">{simCurrentNode || "start"}</b></div>
+                    <div className="text-[11px] text-slate-400">Status: <b className={simEnded ? "text-rose-400" : "text-emerald-400"}>{simEnded ? "Completed" : "Waiting for reply"}</b></div>
+                  </div>
+
+                  {/* Variables Inspector */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-slate-300">Variables Snapshot:</span>
+                    <pre className="p-2 bg-slate-950 rounded-lg text-[10px] text-emerald-300 overflow-x-auto max-h-40">
+                      {JSON.stringify(simVars, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* Execution Event Log */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-slate-300">Event Trace:</span>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {simLogs.map((log, idx) => (
+                        <div key={idx} className="p-1.5 bg-slate-950/80 rounded text-[10px] text-slate-300 border-l-2 border-emerald-500">
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── FLOW VERSIONS MODAL ────────────────────────────────────── */}
+        {showVersionsModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowVersionsModal(false)}>
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl text-slate-100" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Layers className="text-emerald-400" size={18} />
+                  <h3 className="font-bold text-sm">Flow Snapshots &amp; Version History</h3>
+                </div>
+                <button onClick={() => setShowVersionsModal(false)} className="text-slate-400 hover:text-white">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Version History List */}
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {flowVersions.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">No snapshot versions yet. Publish your first version below.</p>
+                ) : (
+                  flowVersions.map(ver => (
+                    <div key={ver.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-emerald-400">v{ver.version_number}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            ver.status === "published" ? "bg-emerald-900/60 text-emerald-300" : "bg-slate-800 text-slate-400"
+                          }`}>
+                            {ver.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 mt-0.5">{ver.changelog || "Snapshot"}</p>
+                        <span className="text-[9px] text-slate-500">{new Date(ver.created_at).toLocaleString()}</span>
+                      </div>
+
+                      <button
+                        onClick={() => handleRollbackVersion(ver.id)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg border border-slate-700"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Publish New Snapshot Form */}
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <label className="text-xs font-bold text-slate-300 block">Publish New Snapshot</label>
+                <input
+                  type="text"
+                  value={versionChangelog}
+                  onChange={(e) => setVersionChangelog(e.target.value)}
+                  placeholder="Changelog / Release Notes..."
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  onClick={() => handleSaveFlow(true)}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30"
+                >
+                  Publish Version Snapshot
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {flows.map((flow) => {
-                const isActive = flow.status === "active";
-                let cfg = {};
-                try {
-                  cfg = typeof flow.trigger_config === "string" ? JSON.parse(flow.trigger_config) : (flow.trigger_config || {});
-                } catch (_) {}
+          </div>
+        )}
+      </div>
+    );
+  }
 
-                return (
-                  <div
-                    key={flow.id}
-                    className="bg-white rounded-2xl border border-gray-200/90 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group"
+  // ── Main Flows Dashboard View ───────────────────────────────────────────────
+  const filteredFlows = flows.filter(f =>
+    (f.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (f.description || "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <WhatsAppNav />
+
+      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Header Hero Banner */}
+        <div className="bg-gradient-to-r from-[#0b141a] via-[#111b21] to-[#005c4b] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl relative z-10">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-extrabold rounded-full border border-emerald-500/30">
+              <Sparkles size={14} /> WhatsApp Visual Conversational Platform
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Interactive Bot Flows &amp; State Engine
+            </h1>
+            <p className="text-xs sm:text-sm text-emerald-100/80 leading-relaxed">
+              Design multi-section interactive WhatsApp menus with structured buttons, dynamic CRM lookups, API webhooks, condition branches, and real-time smartphone simulators.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 relative z-10">
+            <button
+              onClick={handleSeedFlows}
+              className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-2xl backdrop-blur-sm border border-white/10 flex items-center gap-2 transition"
+            >
+              <Database size={15} />
+              <span>Load Starter Templates</span>
+            </button>
+            <button
+              onClick={() => openStudio(null)}
+              className="px-5 py-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-slate-900 text-xs font-extrabold rounded-2xl shadow-lg shadow-emerald-500/30 flex items-center gap-2 transition hover:scale-105"
+            >
+              <Plus size={16} />
+              <span>Create Visual Flow</span>
+            </button>
+          </div>
+        </div>
+
+        {/* View Tabs & Search Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm">
+            <button
+              onClick={() => setActiveTab("flows")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                activeTab === "flows" ? "bg-emerald-50 text-emerald-800 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <GitFork size={15} />
+              <span>Configured Flows ({flows.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("runs")}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                activeTab === "runs" ? "bg-emerald-50 text-emerald-800 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Clock size={15} />
+              <span>Live Run Audit</span>
+            </button>
+          </div>
+
+          {activeTab === "flows" && (
+            <div className="relative min-w-[280px]">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search chatbot flows..."
+                className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-2xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] shadow-sm font-semibold"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ── FLOWS CARD GRID VIEW ──────────────────────────────────── */}
+        {activeTab === "flows" && (
+          <div>
+            {loading ? (
+              <div className="py-20 text-center space-y-3">
+                <Loader2 size={36} className="animate-spin text-[#25D366] mx-auto" />
+                <p className="text-xs text-slate-500 font-bold">Loading Conversational Flows...</p>
+              </div>
+            ) : filteredFlows.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm space-y-4 max-w-lg mx-auto">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                  <Bot size={28} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">No Chatbot Flows Configured</h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Create a new flow or load our preconfigured Banking &amp; Financial bot templates to get started.
+                  </p>
+                </div>
+                <div className="flex justify-center gap-2 pt-2">
+                  <button
+                    onClick={handleSeedFlows}
+                    className="px-4 py-2 bg-slate-100 text-slate-800 rounded-xl text-xs font-bold hover:bg-slate-200"
                   >
-                    <div>
-                      {/* Top status & Action buttons */}
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                            isActive
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-gray-100 text-gray-600 border-gray-200"
-                          }`}
-                        >
-                          <span className={`w-2 h-2 rounded-full ${isActive ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
-                          {isActive ? "Listening Live" : "Paused / Draft"}
-                        </span>
+                    Load Templates
+                  </button>
+                  <button
+                    onClick={() => openStudio(null)}
+                    className="px-4 py-2 bg-[#25D366] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#20bd5a]"
+                  >
+                    Create Flow
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredFlows.map((flow) => {
+                  const isActive = flow.status === "active";
+                  return (
+                    <div
+                      key={flow.id}
+                      onClick={() => openStudio(flow)}
+                      className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm hover:shadow-xl hover:border-emerald-300 transition-all duration-200 cursor-pointer flex flex-col justify-between group relative overflow-hidden"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 ${
+                            isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                            {flow.status}
+                          </span>
 
-                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {flow.trigger_type || "keyword"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900 group-hover:text-emerald-700 transition line-clamp-1">
+                            {flow.name}
+                          </h3>
+                          <p className="text-xs text-slate-500 line-clamp-2 mt-1">
+                            {flow.description || "Interactive conversational flow with state machine and CRM lookups."}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Card Footer Metrics & Actions */}
+                      <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 font-semibold">
+                          <span>{flow.node_count || 0} Steps</span>
+                          <span>•</span>
+                          <span>{flow.active_runs || 0} Runs</span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
                           <button
-                            onClick={() => handleOpenSimulator(flow)}
-                            className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                            title="Interactive WhatsApp Simulator"
-                          >
-                            <Smartphone size={15} />
-                          </button>
-                          <button
-                            onClick={() => openTriggerModal(flow)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Launch on Phone Number"
-                          >
-                            <PhoneCall size={15} />
-                          </button>
-                          <button
-                            onClick={() => openAnalytics(flow)}
-                            className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition"
-                            title="Flow Funnel Analytics"
+                            onClick={(e) => openAnalytics(flow, e)}
+                            className="p-2 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition"
+                            title="View Funnel Analytics"
                           >
                             <BarChart2 size={15} />
                           </button>
                           <button
-                            onClick={() => handleEdit(flow)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Edit Flow Nodes"
+                            onClick={(e) => handleToggleStatus(flow, e)}
+                            className={`p-2 rounded-xl transition ${
+                              isActive ? "text-emerald-600 hover:bg-emerald-50" : "text-slate-400 hover:bg-slate-100"
+                            }`}
+                            title={isActive ? "Pause Bot" : "Activate Bot"}
                           >
-                            <Edit2 size={15} />
+                            <Play size={15} className={isActive ? "fill-emerald-600" : ""} />
                           </button>
                           <button
-                            onClick={() => handleDelete(flow.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                            title="Delete Flow"
+                            onClick={(e) => handleDeleteFlow(flow.id, flow.name, e)}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                            title="Delete"
                           >
                             <Trash2 size={15} />
                           </button>
                         </div>
                       </div>
-
-                      <h3 className="text-sm font-bold text-gray-900 group-hover:text-emerald-700 transition line-clamp-1">
-                        {flow.name}
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">
-                        {flow.description || "Multi-branch conversational bot with dynamic CRM routing."}
-                      </p>
-
-                      {/* Specs */}
-                      <div className="mt-4 pt-3 border-t border-gray-100 space-y-2 text-xs text-gray-600">
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Trigger:</span>
-                          <span className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                            flow.trigger_type === "all_inbound"
-                              ? "bg-emerald-100 text-emerald-800 font-bold"
-                              : flow.trigger_type === "first_inbound" || flow.trigger_type === "welcome"
-                              ? "bg-blue-100 text-blue-800 font-bold"
-                              : flow.trigger_type === "ai_intent"
-                              ? "bg-purple-100 text-purple-800 font-bold"
-                              : "bg-gray-100 text-gray-700 font-semibold uppercase"
-                          }`}>
-                            {flow.trigger_type === "all_inbound"
-                              ? "🌐 24/7 Universal / No Keyword"
-                              : flow.trigger_type === "first_inbound" || flow.trigger_type === "welcome"
-                              ? "👋 First-Inbound Welcome"
-                              : flow.trigger_type === "ai_intent"
-                              ? "🧠 AI Intent"
-                              : "🔑 " + (flow.trigger_type || "keyword")}
-                          </span>
-                        </div>
-
-                        {flow.trigger_type === "keyword" && cfg.keywords && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-400">Keywords:</span>
-                            <span className="font-medium text-emerald-700 truncate max-w-[160px] text-[11px]">
-                              {Array.isArray(cfg.keywords) ? cfg.keywords.join(", ") : cfg.keywords}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Steps / Nodes:</span>
-                          <span className="font-bold text-gray-800">{flow.node_count || 0} steps</span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Total Executions:</span>
-                          <span className="font-bold text-emerald-600">{flow.execution_count || 0} runs</span>
-                        </div>
-                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                    <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleStatus(flow.id, flow.status)}
-                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                          isActive
-                            ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
-                            : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {isActive ? "Pause Flow" : "Activate Live"}
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenSimulator(flow)}
-                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                        title="Open interactive phone simulator"
-                      >
-                        <Play size={12} className="text-[#25D366]" />
-                        <span>Test Simulator</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* TAB 2: Execution Runs & Captured Leads */}
-      {activeTab === "runs" && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-            <div>
-              <h2 className="text-base font-bold text-gray-900">Flow Execution Runs & Captured Context</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Audit log of customer conversations, captured variables, and handoffs</p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <select
-                value={selectedRunFlowId}
-                onChange={(e) => setSelectedRunFlowId(e.target.value)}
-                className="px-3 py-2 border rounded-xl text-xs font-semibold bg-white outline-none focus:ring-2 focus:ring-[#25D366]"
-              >
-                {flows.map((f) => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={() => fetchRuns(selectedRunFlowId)}
-                className="p-2 border rounded-xl hover:bg-gray-50 text-gray-600"
-                title="Refresh logs"
-              >
-                <RefreshCw size={15} />
+        {/* ── LIVE AUDIT RUNS TAB ──────────────────────────────────── */}
+        {activeTab === "runs" && (
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Recent Conversational Session Executions</h3>
+              <button onClick={fetchRuns} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg">
+                <RefreshCw size={14} />
               </button>
             </div>
-          </div>
 
-          {runsLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 size={30} className="animate-spin text-[#25D366]" />
-            </div>
-          ) : runsList.length === 0 ? (
-            <div className="text-center py-14 text-gray-400">
-              <ListOrdered size={36} className="mx-auto mb-2 text-gray-300" />
-              <p className="text-xs font-bold">No runs recorded for this flow yet.</p>
-              <p className="text-[11px] text-gray-400 mt-1">Send a message to your WhatsApp number or use the simulator to trigger a run.</p>
-            </div>
-          ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b bg-gray-50 text-gray-600 uppercase font-bold text-[10px]">
-                    <th className="py-2.5 px-3">Customer Phone</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3">Captured CRM Variables</th>
-                    <th className="py-2.5 px-3">End Reason</th>
-                    <th className="py-2.5 px-3">Started At</th>
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">Customer</th>
+                    <th className="p-3">Phone</th>
+                    <th className="p-3">Current Node</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Started</th>
+                    <th className="p-3">Variables Captured</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {runsList.map((r) => {
-                    let varsObj = {};
-                    try {
-                      varsObj = typeof r.vars === "string" ? JSON.parse(r.vars) : (r.vars || {});
-                    } catch (_) {}
+                <tbody className="divide-y divide-slate-100">
+                  {loadingRuns ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400">Loading execution runs...</td>
+                    </tr>
+                  ) : runsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400">No active execution runs recorded yet.</td>
+                    </tr>
+                  ) : (
+                    runsList.map(run => {
+                      let parsedVars = {};
+                      try { parsedVars = typeof run.vars === "string" ? JSON.parse(run.vars) : (run.vars || {}); } catch (_) {}
 
-                    return (
-                      <tr key={r.id} className="hover:bg-gray-50/80">
-                        <td className="py-3 px-3 font-mono font-bold text-gray-800">
-                          +{r.phone}
-                          {r.contact_name && <span className="block text-[11px] font-normal text-gray-500">{r.contact_name}</span>}
-                        </td>
-                        <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              r.status === "completed"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : r.status === "handed_off"
-                                ? "bg-purple-100 text-purple-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 max-w-xs">
-                          <div className="flex flex-wrap gap-1">
-                            {Object.entries(varsObj).slice(0, 4).map(([k, v]) => (
-                              <span key={k} className="px-1.5 py-0.5 bg-gray-100 border text-gray-700 rounded text-[10px]">
-                                <b>{k}:</b> {String(v)}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-gray-500 font-mono text-[11px]">{r.end_reason || "in_progress"}</td>
-                        <td className="py-3 px-3 text-gray-400 text-[11px]">
-                          {r.started_at ? new Date(r.started_at).toLocaleString("en-IN") : "-"}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr key={run.id} className="hover:bg-slate-50">
+                          <td className="p-3 font-bold text-slate-900">{run.contact_name || "Valued Customer"}</td>
+                          <td className="p-3 font-mono text-slate-600">+{run.phone}</td>
+                          <td className="p-3 font-mono text-emerald-700 font-bold">{run.current_node_key || "start"}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                              run.status === "completed" ? "bg-emerald-100 text-emerald-800" :
+                              run.status === "handed_off" ? "bg-rose-100 text-rose-800" : "bg-blue-100 text-blue-800"
+                            }`}>
+                              {run.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-400">{new Date(run.started_at).toLocaleString()}</td>
+                          <td className="p-3">
+                            <span className="font-mono text-[10px] text-slate-500 truncate max-w-xs block">
+                              {Object.keys(parsedVars).length} captured
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* ── MODAL: Visual Flow Builder & Step Designer ── */}
-      {showEditor && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3" onClick={() => setShowEditor(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-5xl h-[90vh] max-h-[850px] min-h-[500px] flex flex-col border border-gray-100 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b flex items-center justify-between bg-gray-50/90 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                  <GitFork size={18} />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-gray-900">
-                    {editingFlow ? "Visual Flow Builder" : "Design New Chatbot Flow"}
-                  </h2>
-                  <p className="text-xs text-gray-500">Configure multi-turn nodes, CRM lookups, and branch logic</p>
-                </div>
-              </div>
-              <button onClick={() => setShowEditor(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleSaveFlow} className="p-6 overflow-y-auto space-y-6 flex-1 min-h-0">
-              {/* Trigger & Settings Card */}
-              <div className="p-4 bg-gray-50/90 rounded-2xl border border-gray-200 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Flow Name *</label>
-                    <input
-                      type="text"
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      placeholder="e.g. Main Interactive Business Menu"
-                      className="w-full px-3.5 py-2.5 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-semibold"
-                      required
-                    />
-                  </div>
-
+        {/* ── FLOW ANALYTICS MODAL ──────────────────────────────────── */}
+        {showAnalyticsModal && selectedAnalyticsFlow && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAnalyticsModal(false)}>
+            <div className="bg-white rounded-3xl w-full max-w-2xl p-6 space-y-6 shadow-2xl border border-slate-100" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2">
+                  <BarChart2 className="text-emerald-600" size={20} />
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Trigger Type</label>
-                    <select
-                      value={formTriggerType}
-                      onChange={(e) => setFormTriggerType(e.target.value)}
-                      className="w-full px-3 py-2.5 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-semibold text-gray-800"
-                    >
-                      <option value="keyword">🔑 Keyword Match (e.g. hi, menu, book, amc)</option>
-                      <option value="all_inbound">🌐 Universal 24/7 Bot (All Inbound Messages)</option>
-                      <option value="first_inbound">👋 First Inbound Message (Welcome Bot)</option>
-                      <option value="ai_intent">🧠 AI Smart Intent Classifier</option>
-                      <option value="manual">⚡ Manual / API Trigger Only</option>
-                    </select>
+                    <h3 className="font-bold text-base text-slate-900">Flow Performance &amp; Conversion Funnel</h3>
+                    <p className="text-xs text-slate-500">{selectedAnalyticsFlow.name}</p>
                   </div>
                 </div>
-
-                {formTriggerType === "keyword" && (
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
-                      Trigger Keywords (comma separated)
-                    </label>
-                    <input
-                      type="text"
-                      value={formKeywords}
-                      onChange={(e) => setFormKeywords(e.target.value)}
-                      placeholder="e.g. hi, hello, menu, start, help, price, book, amc"
-                      className="w-full px-3.5 py-2 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-mono"
-                    />
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      💡 If incoming messages don't match these keywords, active First-Inbound / Welcome bots and Welcome Automations will automatically greet the customer.
-                    </p>
-                  </div>
-                )}
-
-                {formTriggerType === "first_inbound" && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <span>👋 First Inbound / Welcome Bot Enabled</span>
-                    </p>
-                    <p className="text-[11px] text-blue-700 mt-0.5">
-                      Automatically welcomes any user who messages your WhatsApp number for the first time (or begins a new conversation session), even if they type arbitrary questions without keywords.
-                    </p>
-                  </div>
-                )}
-
-                {formTriggerType === "all_inbound" && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <span>🌐 Universal 24/7 Receptionist / Default Fallback Enabled</span>
-                    </p>
-                    <p className="text-[11px] text-emerald-700 mt-0.5">
-                      This flow will automatically listen and reply within seconds to ANY incoming message that doesn't match a specific keyword, providing an instant 24/7 guided interactive menu.
-                    </p>
-                  </div>
-                )}
-
-                {formTriggerType === "ai_intent" && (
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <span>🧠 AI Smart Intent Routing Enabled</span>
-                    </p>
-                    <p className="text-[11px] text-purple-700 mt-0.5">
-                      Uses advanced AI LLM to analyze the customer's intent (e.g., booking vs. billing vs. breakdown) and branches to the exact workflow step automatically.
-                    </p>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Description</label>
-                    <input
-                      type="text"
-                      value={formDesc}
-                      onChange={(e) => setFormDesc(e.target.value)}
-                      placeholder="Describe what this bot does..."
-                      className="w-full px-3.5 py-2 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Entry Step Node</label>
-                    <select
-                      value={formEntryNode}
-                      onChange={(e) => setFormEntryNode(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#25D366] bg-white font-mono"
-                    >
-                      {availableNodeKeys.map((k) => (
-                        <option key={k} value={k}>{k}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                <button onClick={() => setShowAnalyticsModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
               </div>
 
-              {/* Node Sequence Builder */}
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b">
-                  <div>
-                    <h3 className="text-xs font-bold text-gray-900 uppercase flex items-center gap-2">
-                      <span>Flow Execution Steps ({formNodes.length} nodes)</span>
-                    </h3>
-                    <p className="text-[11px] text-gray-500">Each step executes sequentially or branches based on customer choices.</p>
+              {analyticsLoading ? (
+                <div className="py-12 text-center text-slate-400 font-semibold">Loading analytics...</div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    <div className="p-3 bg-slate-50 rounded-2xl border">
+                      <div className="text-lg font-extrabold text-slate-900">{analyticsData?.totalRuns || 0}</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Total Runs</div>
+                    </div>
+                    <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                      <div className="text-lg font-extrabold text-emerald-700">{analyticsData?.completedRuns || 0}</div>
+                      <div className="text-[10px] font-bold text-emerald-600 uppercase mt-0.5">Completed</div>
+                    </div>
+                    <div className="p-3 bg-rose-50 rounded-2xl border border-rose-100">
+                      <div className="text-lg font-extrabold text-rose-700">{analyticsData?.handoffRuns || 0}</div>
+                      <div className="text-[10px] font-bold text-rose-600 uppercase mt-0.5">Live Handoff</div>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100">
+                      <div className="text-lg font-extrabold text-blue-700">{analyticsData?.activeRuns || 0}</div>
+                      <div className="text-[10px] font-bold text-blue-600 uppercase mt-0.5">In Progress</div>
+                    </div>
                   </div>
 
-                  {/* Node Add Buttons */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {NODE_TYPES.map((nt) => (
-                      <button
-                        key={nt.type}
-                        type="button"
-                        onClick={() => addNode(nt.type)}
-                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1 ${nt.color} hover:opacity-90`}
-                        title={`Add ${nt.label}`}
-                      >
-                        <span>{nt.icon}</span>
-                        <span>{nt.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Nodes List */}
-                <div className="space-y-3.5">
-                  {formNodes.map((node, idx) => {
-                    const nodeTypeMeta = NODE_TYPES.find((n) => n.type === node.node_type) || { label: node.node_type, icon: "⚡", color: "bg-gray-100" };
-
-                    return (
-                      <div
-                        key={idx}
-                        className="p-4 bg-white rounded-2xl border-2 border-gray-200/90 shadow-sm relative space-y-3 hover:border-emerald-300 transition"
-                      >
-                        {/* Step Card Header */}
-                        <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className="w-6 h-6 bg-[#25D366] text-white rounded-full flex items-center justify-center text-xs font-bold shrink-0">
-                              {idx + 1}
-                            </span>
-                            
-                            <span className={`text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-md border flex items-center gap-1 ${nodeTypeMeta.color}`}>
-                              <span>{nodeTypeMeta.icon}</span>
-                              <span>{nodeTypeMeta.label}</span>
-                            </span>
-
-                            <div className="flex items-center gap-1">
-                              <span className="text-[11px] text-gray-400 font-mono">key:</span>
-                              <input
-                                type="text"
-                                value={node.node_key}
-                                onChange={(e) => updateNodeKey(idx, e.target.value)}
-                                className="px-2 py-0.5 bg-gray-50 border rounded-md text-xs font-mono font-bold text-gray-800 outline-none w-32 focus:bg-white focus:ring-1 focus:ring-emerald-500"
-                              />
-                            </div>
+                  {/* Step Engagement Breakdown */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase">Top Interacted Steps &amp; Buttons</h4>
+                    <div className="space-y-2">
+                      {(analyticsData?.nodeDropoffs || []).map((node, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex justify-between text-xs font-semibold">
+                            <span className="font-mono text-slate-700">{node.node_key}</span>
+                            <span className="text-slate-500">{node.hit_count} hits</span>
                           </div>
-
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => moveNode(idx, -1)}
-                              disabled={idx === 0}
-                              className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                              title="Move step up"
-                            >
-                              <MoveUp size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveNode(idx, 1)}
-                              disabled={idx === formNodes.length - 1}
-                              className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
-                              title="Move step down"
-                            >
-                              <MoveDown size={14} />
-                            </button>
-
-                            {node.node_type !== "start" && (
-                              <button
-                                type="button"
-                                onClick={() => removeNode(idx)}
-                                className="p-1 text-gray-400 hover:text-red-600 rounded-lg ml-1"
-                                title="Remove step"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Node Config Forms */}
-                        {node.node_type === "send_message" && (
-                          <div className="space-y-2">
-                            <div>
-                              <WAVariablePicker
-                                onInsert={(tag) => updateNodeConfig(idx, { text: (node.config.text || "") + " " + tag })}
-                                className="mb-2"
-                              />
-                              <textarea
-                                rows={3}
-                                value={node.config.text || ""}
-                                onChange={(e) => updateNodeConfig(idx, { text: e.target.value })}
-                                className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
-                                placeholder="Hello {{name}}! {{greeting_time}}, thank you for messaging {{company}}. Your service is {{service}} in {{city}}..."
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-xl text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Choose Next Step --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "send_buttons" && (
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-[11px] text-gray-600 font-bold uppercase mb-1">Menu Prompt Text</label>
-                              <textarea
-                                rows={2}
-                                value={node.config.text || ""}
-                                onChange={(e) => updateNodeConfig(idx, { text: e.target.value })}
-                                className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
-                                placeholder="Please choose an option:"
-                              />
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                                <label className="text-[11px] text-gray-600 font-bold uppercase">Interactive Buttons / Branches</label>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentBtns = node.config.buttons || [];
-                                      const newOptNum = currentBtns.length + 1;
-                                      updateNodeConfig(idx, {
-                                        buttons: [
-                                          ...currentBtns,
-                                          { reply_id: `opt_${newOptNum}`, title: `${newOptNum}. Option ${newOptNum}`, next_node_key: "" }
-                                        ]
-                                      });
-                                    }}
-                                    className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded hover:bg-emerald-200"
-                                  >
-                                    + Add Option
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentBtns = node.config.buttons || [];
-                                      updateNodeConfig(idx, {
-                                        buttons: [
-                                          ...currentBtns,
-                                          { reply_id: "opt_back", title: "0. 🔙 Back to Menu", next_node_key: "start" }
-                                        ]
-                                      });
-                                    }}
-                                    className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
-                                  >
-                                    + 🔙 Back
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentBtns = node.config.buttons || [];
-                                      updateNodeConfig(idx, {
-                                        buttons: [
-                                          ...currentBtns,
-                                          { reply_id: "opt_agent", title: "👤 Live Agent", next_node_key: "agent_handoff" }
-                                        ]
-                                      });
-                                    }}
-                                    className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded hover:bg-rose-100 border border-rose-200"
-                                  >
-                                    + 👤 Agent
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                {(node.config.buttons || []).map((btn, bIdx) => (
-                                  <div key={bIdx} className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
-                                    <input
-                                      type="text"
-                                      placeholder="Option Title (e.g. 1. 🛠️ Services)"
-                                      value={btn.title}
-                                      onChange={(e) => {
-                                        const updatedBtns = [...node.config.buttons];
-                                        updatedBtns[bIdx] = { ...updatedBtns[bIdx], title: e.target.value };
-                                        updateNodeConfig(idx, { buttons: updatedBtns });
-                                      }}
-                                      className="flex-1 p-1.5 border rounded-lg text-xs bg-white"
-                                    />
-                                    <ArrowRight size={14} className="text-gray-400" />
-                                    <select
-                                      value={btn.next_node_key || ""}
-                                      onChange={(e) => {
-                                        const updatedBtns = [...node.config.buttons];
-                                        updatedBtns[bIdx] = { ...updatedBtns[bIdx], next_node_key: e.target.value };
-                                        updateNodeConfig(idx, { buttons: updatedBtns });
-                                      }}
-                                      className="w-48 p-1.5 border rounded-lg text-xs font-mono bg-white"
-                                    >
-                                      <option value="">-- Target Step --</option>
-                                      {availableNodeKeys.map((k) => (
-                                        <option key={k} value={k}>{k}</option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updatedBtns = node.config.buttons.filter((_, i) => i !== bIdx);
-                                        updateNodeConfig(idx, { buttons: updatedBtns });
-                                      }}
-                                      className="p-1 text-gray-400 hover:text-red-600"
-                                    >
-                                      <X size={14} />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "send_list" && (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[11px] text-gray-600 font-bold uppercase mb-1">List Header Title</label>
-                                <input
-                                  type="text"
-                                  value={node.config.title || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { title: e.target.value })}
-                                  placeholder="e.g. Our Service Catalog"
-                                  className="w-full p-2 border rounded-xl text-xs bg-gray-50"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[11px] text-gray-600 font-bold uppercase mb-1">List Button Text</label>
-                                <input
-                                  type="text"
-                                  value={node.config.button_text || "View Options"}
-                                  onChange={(e) => updateNodeConfig(idx, { button_text: e.target.value })}
-                                  placeholder="e.g. View Options"
-                                  className="w-full p-2 border rounded-xl text-xs bg-gray-50"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-[11px] text-gray-600 font-bold uppercase mb-1">List Body Text</label>
-                              <textarea
-                                rows={2}
-                                value={node.config.text || ""}
-                                onChange={(e) => updateNodeConfig(idx, { text: e.target.value })}
-                                className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
-                                placeholder="Please select a service from our catalog below:"
-                              />
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                                <label className="text-[11px] text-gray-600 font-bold uppercase">List Rows (Up to 10)</label>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentRows = node.config.rows || [];
-                                      const newNum = currentRows.length + 1;
-                                      updateNodeConfig(idx, {
-                                        rows: [
-                                          ...currentRows,
-                                          { id: `row_${newNum}`, title: `Service ${newNum}`, description: "Description", next_node_key: "" }
-                                        ]
-                                      });
-                                    }}
-                                    className="px-2 py-0.5 bg-teal-100 text-teal-800 text-[10px] font-bold rounded hover:bg-teal-200"
-                                  >
-                                    + Add Row
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentRows = node.config.rows || [];
-                                      updateNodeConfig(idx, {
-                                        rows: [
-                                          ...currentRows,
-                                          { id: "row_back", title: "0. 🔙 Back to Menu", description: "Return to previous menu", next_node_key: "start" }
-                                        ]
-                                      });
-                                    }}
-                                    className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200"
-                                  >
-                                    + 🔙 Back
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                {(node.config.rows || []).map((row, rIdx) => (
-                                  <div key={rIdx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-gray-50 p-2 rounded-xl border items-center">
-                                    <input
-                                      type="text"
-                                      placeholder="Title (e.g. AC Maintenance)"
-                                      value={row.title}
-                                      onChange={(e) => {
-                                        const updated = [...node.config.rows];
-                                        updated[rIdx] = { ...updated[rIdx], title: e.target.value };
-                                        updateNodeConfig(idx, { rows: updated });
-                                      }}
-                                      className="sm:col-span-4 p-1.5 border rounded-lg text-xs bg-white"
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Short description"
-                                      value={row.description || ""}
-                                      onChange={(e) => {
-                                        const updated = [...node.config.rows];
-                                        updated[rIdx] = { ...updated[rIdx], description: e.target.value };
-                                        updateNodeConfig(idx, { rows: updated });
-                                      }}
-                                      className="sm:col-span-4 p-1.5 border rounded-lg text-xs bg-white"
-                                    />
-                                    <select
-                                      value={row.next_node_key || ""}
-                                      onChange={(e) => {
-                                        const updated = [...node.config.rows];
-                                        updated[rIdx] = { ...updated[rIdx], next_node_key: e.target.value };
-                                        updateNodeConfig(idx, { rows: updated });
-                                      }}
-                                      className="sm:col-span-3 p-1.5 border rounded-lg text-xs font-mono bg-white"
-                                    >
-                                      <option value="">-- Target --</option>
-                                      {availableNodeKeys.map((k) => (
-                                        <option key={k} value={k}>{k}</option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = node.config.rows.filter((_, i) => i !== rIdx);
-                                        updateNodeConfig(idx, { rows: updated });
-                                      }}
-                                      className="sm:col-span-1 p-1 text-gray-400 hover:text-red-600 flex justify-center"
-                                    >
-                                      <X size={14} />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "collect_input" && (
-                          <div className="space-y-3">
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-[11px] text-gray-700 font-bold uppercase">Question Prompt Text *</label>
-                                <span className="text-[10px] text-purple-700 font-semibold">Collects & saves user response</span>
-                              </div>
-
-                              <WAVariablePicker
-                                onInsert={(tag) => updateNodeConfig(idx, { prompt_text: (node.config.prompt_text || "") + " " + tag })}
-                                className="mb-2"
-                              />
-
-                              <input
-                                type="text"
-                                value={node.config.prompt_text || ""}
-                                onChange={(e) => updateNodeConfig(idx, { prompt_text: e.target.value })}
-                                placeholder="e.g. Hello {{name}}! Please provide your service location or city:"
-                                className="w-full p-2.5 border rounded-xl text-xs bg-gray-50 outline-none focus:bg-white focus:ring-2 focus:ring-[#25D366]"
-                              />
-
-                              {/* 1-Click Question Presets */}
-                              <div className="flex flex-wrap items-center gap-1.5 pt-2">
-                                <span className="text-[10px] font-bold text-gray-500 uppercase">Quick Questions:</span>
-                                {[
-                                  { label: "👤 Name", q: "Please share your full name:", v: "name", t: "none" },
-                                  { label: "📍 City / Location", q: "Which city or area are you located in?", v: "city", t: "none" },
-                                  { label: "📞 Mobile", q: "Please confirm your 10-digit mobile number:", v: "phone", t: "phone" },
-                                  { label: "✉️ Email", q: "What is your email address for invoices?", v: "email", t: "email" },
-                                  { label: "📅 Preferred Date", q: "When would you prefer our technician to visit? (e.g. Tomorrow or 25 Aug):", v: "booking_date", t: "none" },
-                                  { label: "🛠️ Service Requirement", q: "Please describe your service or maintenance requirement:", v: "inquiry", t: "none" },
-                                  { label: "📎 Photo / Document", q: "Please send a photo or PDF of the issue (or type your answer):", v: "attachment", t: "none", media: true },
-                                ].map((preset) => (
-                                  <button
-                                    key={preset.label}
-                                    type="button"
-                                    onClick={() => updateNodeConfig(idx, {
-                                      prompt_text: preset.q,
-                                      var_key: preset.v,
-                                      validation_type: preset.t,
-                                      accept_media: preset.media === true ? true : undefined
-                                    })}
-                                    className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-[10px] font-semibold transition"
-                                  >
-                                    {preset.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Store in Variable</label>
-                                <input
-                                  type="text"
-                                  value={node.config.var_key || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { var_key: e.target.value })}
-                                  placeholder="e.g. booking_date, city, inquiry"
-                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Validation Type</label>
-                                <select
-                                  value={node.config.validation_type || "none"}
-                                  onChange={(e) => updateNodeConfig(idx, { validation_type: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50"
-                                >
-                                  <option value="none">Any Text Response</option>
-                                  <option value="number">Numeric Only (Digits)</option>
-                                  <option value="email">Email Address (@)</option>
-                                  <option value="phone">10-Digit Mobile Number</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                                <select
-                                  value={node.config.next_node_key || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                                >
-                                  <option value="">-- Choose Next Step --</option>
-                                  {availableNodeKeys.map((k) => (
-                                    <option key={k} value={k}>{k}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Attachment answers */}
-                            {(() => {
-                              const strict = !!(node.config.regex) ||
-                                (node.config.validation_type && node.config.validation_type !== "none");
-                              const accepted = node.config.accept_media === true ||
-                                (node.config.accept_media !== false && !strict);
-                              return (
-                                <label className="flex items-start gap-2 p-2.5 bg-cyan-50/60 border border-cyan-100 rounded-xl cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={accepted}
-                                    onChange={(e) => updateNodeConfig(idx, { accept_media: e.target.checked })}
-                                    className="mt-0.5 accent-cyan-600"
-                                  />
-                                  <span className="text-[10px] leading-relaxed text-gray-700">
-                                    <span className="font-bold uppercase">Accept photo / PDF / file as the answer</span>
-                                    <br />
-                                    The file is saved to the CRM and stored in{" "}
-                                    <code className="font-mono text-cyan-800">
-                                      {"{"}{node.config.var_key || "input"}_url{"}"}
-                                    </code>
-                                    {strict && !accepted && (
-                                      <span className="text-amber-700"> — off by default here because this question is validated as {node.config.validation_type || "regex"}.</span>
-                                    )}
-                                  </span>
-                                </label>
-                              );
-                            })()}
-                          </div>
-                        )}
-
-                        {node.node_type === "crm_lookup" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                            <div>
-                              <label className="block text-[10px] text-indigo-900 font-bold uppercase">CRM Query Target</label>
-                              <select
-                                value={node.config.lookup_type || "invoice"}
-                                onChange={(e) => updateNodeConfig(idx, { lookup_type: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              >
-                                <option value="invoice">Latest Client Invoice</option>
-                                <option value="amc">Active AMC Maintenance Contract</option>
-                                <option value="quotation">Latest Quotation / Proposal</option>
-                                <option value="client">Client / Contact Record</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-indigo-900 font-bold uppercase">Found Record Next Step</label>
-                              <select
-                                value={node.config.found_next || ""}
-                                onChange={(e) => updateNodeConfig(idx, { found_next: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Target when Found --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-indigo-900 font-bold uppercase">Not Found Next Step</label>
-                              <select
-                                value={node.config.not_found_next || ""}
-                                onChange={(e) => updateNodeConfig(idx, { not_found_next: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Target when Not Found --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "condition" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-amber-50/50 rounded-xl border border-amber-100">
-                            <div>
-                              <label className="block text-[10px] text-amber-900 font-bold uppercase">Variable Subject</label>
-                              <input
-                                type="text"
-                                value={node.config.subject_key || "input"}
-                                onChange={(e) => updateNodeConfig(idx, { subject_key: e.target.value })}
-                                placeholder="e.g. city, input, amount"
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-amber-900 font-bold uppercase">Operator</label>
-                              <select
-                                value={node.config.operator || "equals"}
-                                onChange={(e) => updateNodeConfig(idx, { operator: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              >
-                                <option value="equals">Equals</option>
-                                <option value="not_equals">Not Equals</option>
-                                <option value="contains">Contains</option>
-                                <option value="greater_than">Greater Than (&gt;)</option>
-                                <option value="less_than">Less Than (&lt;)</option>
-                                <option value="is_empty">Is Empty</option>
-                                <option value="is_not_empty">Is Not Empty</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-amber-900 font-bold uppercase">Value</label>
-                              <input
-                                type="text"
-                                value={node.config.value || ""}
-                                onChange={(e) => updateNodeConfig(idx, { value: e.target.value })}
-                                placeholder="e.g. Bangalore"
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              />
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="block text-[10px] text-emerald-800 font-bold uppercase">True Target</label>
-                              <select
-                                value={node.config.true_next || ""}
-                                onChange={(e) => updateNodeConfig(idx, { true_next: e.target.value })}
-                                className="w-full p-1.5 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- If True --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-
-                              <label className="block text-[10px] text-rose-800 font-bold uppercase pt-1">False Target</label>
-                              <select
-                                value={node.config.false_next || ""}
-                                onChange={(e) => updateNodeConfig(idx, { false_next: e.target.value })}
-                                className="w-full p-1.5 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- If False --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "create_lead" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-sky-50/50 rounded-xl border border-sky-100">
-                            <div>
-                              <label className="block text-[10px] text-sky-900 font-bold uppercase">Default Service Category</label>
-                              <input
-                                type="text"
-                                value={node.config.default_service || ""}
-                                onChange={(e) => updateNodeConfig(idx, { default_service: e.target.value })}
-                                placeholder="e.g. AC AMC Service"
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-sky-900 font-bold uppercase">Inquiry Summary Note</label>
-                              <input
-                                type="text"
-                                value={node.config.notes || ""}
-                                onChange={(e) => updateNodeConfig(idx, { notes: e.target.value })}
-                                placeholder="Booked via WhatsApp: {booking_date}"
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-sky-900 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "delay" && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Pause Duration (Seconds)</label>
-                              <input
-                                type="number"
-                                min={1}
-                                max={60}
-                                value={node.config.delay_seconds || 5}
-                                onChange={(e) => updateNodeConfig(idx, { delay_seconds: parseInt(e.target.value, 10) || 5 })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-bold"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Choose Next Step --</option>
-                                {availableNodeKeys.map((k) => (
-                                  <option key={k} value={k}>{k}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "send_media" && (
-                          <div className="space-y-3 p-3 bg-cyan-50/50 rounded-xl border border-cyan-100">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Media Type</label>
-                                <select
-                                  value={node.config.media_type || "image"}
-                                  onChange={(e) => updateNodeConfig(idx, { media_type: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
-                                >
-                                  <option value="image">📷 Image (PNG, JPG, WEBP)</option>
-                                  <option value="document">📄 File / PDF / Word / Excel</option>
-                                  <option value="video">🎥 Video (MP4, MOV)</option>
-                                  <option value="audio">🎵 Audio Voice Note (MP3, OGG)</option>
-                                  <option value="link">🔗 Link (sends a rich URL preview)</option>
-                                </select>
-                              </div>
-                              <div className="sm:col-span-2">
-                                <div className="flex items-center justify-between mb-1">
-                                  <label className="text-[10px] text-gray-500 font-bold uppercase">
-                                    {node.config.media_type === "link" ? "Link URL *" : "Media / Document URL *"}
-                                  </label>
-                                  {node.config.media_type !== "link" && (
-                                    <label className="text-[10px] font-bold text-cyan-800 bg-white border border-cyan-300 rounded px-2 py-0.5 cursor-pointer hover:bg-cyan-50">
-                                      {uploadingIdx === idx ? "Uploading…" : "⬆ Upload file"}
-                                      <input
-                                        type="file"
-                                        className="hidden"
-                                        disabled={uploadingIdx === idx}
-                                        onChange={(e) => {
-                                          handleUploadNodeMedia(idx, e.target.files?.[0]);
-                                          e.target.value = "";
-                                        }}
-                                      />
-                                    </label>
-                                  )}
-                                </div>
-                                <input
-                                  type="text"
-                                  value={node.config.media_url || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { media_url: e.target.value })}
-                                  placeholder="https://example.com/catalog.pdf — or upload a file"
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-[10px] text-gray-500 font-bold uppercase">Caption / Message Text</label>
-                                <span className="text-[9px] text-cyan-800">Dynamic variables supported</span>
-                              </div>
-                              <WAVariablePicker
-                                onInsert={(tag) => updateNodeConfig(idx, { caption: (node.config.caption || "") + " " + tag, text: (node.config.text || "") + " " + tag })}
-                                className="mb-2"
-                              />
-                              <input
-                                type="text"
-                                value={node.config.caption || node.config.text || ""}
-                                onChange={(e) => updateNodeConfig(idx, { caption: e.target.value, text: e.target.value })}
-                                placeholder="Here is your document / brochure for {{company}}, {{name}}!"
-                                className="w-full p-2 border rounded-lg text-xs bg-white"
-                              />
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Attachment Filename (Optional)</label>
-                                <input
-                                  type="text"
-                                  value={node.config.filename || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { filename: e.target.value })}
-                                  placeholder="e.g. Brochure-2026.pdf"
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                                <select
-                                  value={node.config.next_node_key || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                >
-                                  <option value="">-- Next Step --</option>
-                                  {availableNodeKeys.map((k) => (
-                                    <option key={k} value={k}>{k}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "send_template" && (
-                          <div className="space-y-2 p-3 bg-lime-50/50 rounded-xl border border-lime-100">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Approved WhatsApp Template</label>
-                              {templates.length > 0 ? (
-                                <select
-                                  value={node.config.template_id || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { template_id: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-medium"
-                                >
-                                  <option value="">-- Choose Template --</option>
-                                  {templates.map((t) => (
-                                    <option key={t.id} value={t.id}>{t.name} ({t.language || "en"})</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={node.config.template_id || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { template_id: e.target.value })}
-                                  placeholder="Template ID or exact template name"
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                />
-                              )}
-                              <p className="text-[9px] text-gray-500 mt-1">Template variables are filled from the flow's collected data automatically.</p>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "api_webhook" && (
-                          <div className="space-y-3 p-3 bg-violet-50/50 rounded-xl border border-violet-100">
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Method</label>
-                                <select
-                                  value={node.config.method || "GET"}
-                                  onChange={(e) => updateNodeConfig(idx, { method: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-bold"
-                                >
-                                  {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (<option key={m} value={m}>{m}</option>))}
-                                </select>
-                              </div>
-                              <div className="sm:col-span-3">
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Endpoint URL *</label>
-                                <input
-                                  type="text"
-                                  value={node.config.url || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { url: e.target.value })}
-                                  placeholder="https://api.example.com/status?phone={phone}"
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Headers (JSON)</label>
-                                <textarea
-                                  rows={2}
-                                  value={typeof node.config.headers === "string" ? node.config.headers : JSON.stringify(node.config.headers || {})}
-                                  onChange={(e) => updateNodeConfig(idx, { headers: e.target.value })}
-                                  placeholder='{"Authorization": "Bearer xxx"}'
-                                  className="w-full p-2 border rounded-lg text-[11px] bg-white font-mono resize-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-gray-500 font-bold uppercase">Request Body (JSON, non-GET)</label>
-                                <textarea
-                                  rows={2}
-                                  value={typeof node.config.body === "string" ? node.config.body : JSON.stringify(node.config.body || {})}
-                                  onChange={(e) => updateNodeConfig(idx, { body: e.target.value })}
-                                  placeholder='{"phone": "{phone}", "name": "{name}"}'
-                                  className="w-full p-2 border rounded-lg text-[11px] bg-white font-mono resize-none"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Save Response Into Variables</label>
-                              <KeyMapEditor
-                                map={node.config.response_mapping || {}}
-                                onChange={(next) => updateNodeConfig(idx, { response_mapping: next })}
-                                keyPlaceholder="variable_name"
-                                valuePlaceholder="data.items[0].status"
-                                addLabel="+ Map a response field"
-                              />
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-emerald-700 font-bold uppercase">On Success →</label>
-                                <select
-                                  value={node.config.success_next || node.config.next_node_key || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { success_next: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                >
-                                  <option value="">-- Next Step --</option>
-                                  {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-rose-700 font-bold uppercase">On Error →</label>
-                                <select
-                                  value={node.config.error_next || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { error_next: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                                >
-                                  <option value="">-- Next Step --</option>
-                                  {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                                </select>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "ai_generate" && (
-                          <div className="space-y-2 p-3 bg-fuchsia-50/50 rounded-xl border border-fuchsia-100">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">AI Instructions (System Prompt)</label>
-                              <WAVariablePicker
-                                onInsert={(tag) => updateNodeConfig(idx, { system_prompt: (node.config.system_prompt || "") + " " + tag })}
-                                className="mb-2"
-                              />
-                              <textarea
-                                rows={3}
-                                value={node.config.system_prompt || ""}
-                                onChange={(e) => updateNodeConfig(idx, { system_prompt: e.target.value })}
-                                placeholder="You are a helpful support assistant for {company}. Answer briefly in the customer's language."
-                                className="w-full p-2.5 border rounded-xl text-xs bg-white resize-none outline-none focus:ring-2 focus:ring-fuchsia-400"
-                              />
-                              <p className="text-[9px] text-gray-500 mt-1">The customer's last message is sent as the user turn. Uses the AI model configured in WhatsApp AI Settings.</p>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "ai_intent" && (
-                          <div className="space-y-2 p-3 bg-purple-50/50 rounded-xl border border-purple-100">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Route Detected Intent → Step</label>
-                              <KeyMapEditor
-                                map={node.config.branches || {}}
-                                onChange={(next) => updateNodeConfig(idx, { branches: next })}
-                                keyPlaceholder="intent (e.g. booking)"
-                                valueOptions={availableNodeKeys}
-                                addLabel="+ Add intent"
-                              />
-                              <p className="text-[9px] text-gray-500 mt-1">The AI classifies the customer's message into exactly one of these intent names.</p>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Unrecognised Intent →</label>
-                              <select
-                                value={node.config.fallback_node || ""}
-                                onChange={(e) => updateNodeConfig(idx, { fallback_node: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-white font-mono"
-                              >
-                                <option value="">-- Fallback Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "set_variable" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Variable Name</label>
-                              <input
-                                type="text"
-                                value={node.config.variable_name || ""}
-                                onChange={(e) => updateNodeConfig(idx, { variable_name: e.target.value })}
-                                placeholder="lead_status"
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Value (variables allowed)</label>
-                              <input
-                                type="text"
-                                value={node.config.variable_value || ""}
-                                onChange={(e) => updateNodeConfig(idx, { variable_value: e.target.value })}
-                                placeholder="Hot — {selected_option}"
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "set_tag" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Tag to Apply</label>
-                              <input
-                                type="text"
-                                value={node.config.tag || ""}
-                                onChange={(e) => updateNodeConfig(idx, { tag: e.target.value })}
-                                placeholder="Bot Qualified"
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "add_to_group" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Contact Group</label>
-                              {groups.length > 0 ? (
-                                <select
-                                  value={node.config.group_id || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { group_id: e.target.value })}
-                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-medium"
-                                >
-                                  <option value="">-- Choose Group --</option>
-                                  {groups.map((g) => (
-                                    <option key={g.id} value={g.id}>{g.name} ({g.contact_count || 0})</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={node.config.group_id || ""}
-                                  onChange={(e) => updateNodeConfig(idx, { group_id: e.target.value })}
-                                  placeholder="Group ID"
-                                  className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                                />
-                              )}
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Next Step</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Next Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "jump_to_flow" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">Hand Over To Flow</label>
-                              <select
-                                value={node.config.target_flow_id || ""}
-                                onChange={(e) => updateNodeConfig(idx, { target_flow_id: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-medium"
-                              >
-                                <option value="">-- Choose Flow --</option>
-                                {flows
-                                  .filter((f) => !editingFlow || f.id !== editingFlow.id)
-                                  .map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-500 font-bold uppercase">If Flow Missing →</label>
-                              <select
-                                value={node.config.next_node_key || ""}
-                                onChange={(e) => updateNodeConfig(idx, { next_node_key: e.target.value })}
-                                className="w-full p-2 border rounded-lg text-xs bg-gray-50 font-mono"
-                              >
-                                <option value="">-- Fallback Step --</option>
-                                {availableNodeKeys.map((k) => (<option key={k} value={k}>{k}</option>))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {node.node_type === "handoff" && (
-                          <div>
-                            <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Transfer Notice Message</label>
-                            <input
-                              type="text"
-                              value={node.config.note || ""}
-                              onChange={(e) => updateNodeConfig(idx, { note: e.target.value })}
-                              placeholder="Connecting you to our support specialist now. Please stay online."
-                              className="w-full p-2 border rounded-lg text-xs bg-gray-50"
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500 rounded-full"
+                              style={{ width: `${Math.min(100, (node.hit_count / (analyticsData?.totalRuns || 1)) * 100)}%` }}
                             />
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setShowEditor(false)}
-                  className="flex-1 py-3 border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 py-3 bg-[#25D366] text-white rounded-xl text-xs font-bold hover:bg-[#1ebe5d] disabled:opacity-50 transition shadow-md shadow-[#25D366]/20 flex items-center justify-center gap-1.5"
-                >
-                  {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                  <span>{saving ? "Saving Flow..." : editingFlow ? "Update Flow Pipeline" : "Create Flow"}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: WhatsApp Interactive Phone Simulator ── */}
-      {showSimulator && simFlow && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden" onClick={() => setShowSimulator(false)}>
-          <div className="bg-slate-950 rounded-3xl w-full max-w-4xl h-[86vh] max-h-[580px] min-h-[400px] flex flex-col md:flex-row shadow-2xl border border-slate-800 overflow-hidden" onClick={e => e.stopPropagation()}>
-            
-            {/* Phone Screen Left Column (58% Width) */}
-            <div className="w-full md:w-[58%] flex flex-col h-full min-h-0 border-r border-slate-800 bg-[#0B141A] overflow-hidden shrink-0">
-              {/* WhatsApp Screen Header */}
-              <div className="bg-[#202C33] px-4 py-3 flex items-center justify-between text-white border-b border-slate-700/60 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-[#25D366] flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                    🤖
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-gray-100 truncate max-w-[170px]">{simFlow.name}</h3>
-                    <p className="text-[10px] text-emerald-400 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Interactive Live Simulator
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenSimulator(simFlow)}
-                  className="px-2.5 py-1 bg-slate-700/80 hover:bg-slate-600 text-slate-200 text-[10px] font-bold rounded-lg transition"
-                >
-                  Reset
-                </button>
-              </div>
-
-              {/* Real-world trigger check — does this message actually start the bot? */}
-              {simTrigger && (
-                <div
-                  className={`px-3.5 py-2 text-[10px] leading-relaxed border-b shrink-0 ${
-                    simTrigger.matched
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                      : "bg-amber-500/10 border-amber-500/30 text-amber-300"
-                  }`}
-                >
-                  {simTrigger.matched ? (
-                    <>
-                      <span className="font-bold">✓ Auto-starts on WhatsApp.</span>{" "}
-                      {simTrigger.type === "keyword"
-                        ? <>“{simTrigger.input}” matches this bot's trigger words.</>
-                        : <>This bot runs on <span className="font-bold">{simTrigger.type}</span> — no keyword needed.</>}
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-bold">⚠ Would NOT auto-start.</span>{" "}
-                      “{simTrigger.input}” does not match this bot's trigger words — the preview below is forced.
-                    </>
-                  )}
-                  {simTrigger.type === "keyword" && simTrigger.keywords.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {simTrigger.keywords.map((k) => (
-                        <span key={k} className="px-1.5 py-0.5 bg-slate-800/80 border border-slate-600 rounded text-slate-300 font-mono">
-                          {k}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {simTrigger.type === "keyword" && simTrigger.keywords.length === 0 && (
-                    <div className="mt-1 font-bold">No trigger words set — this bot can never start itself.</div>
-                  )}
-                </div>
-              )}
-
-              {/* Chat Message Stream */}
-              <div ref={simScrollRef} className="flex-1 min-h-0 p-3.5 sm:p-4 overflow-y-auto space-y-3.5 overscroll-contain scroll-smooth">
-                {simMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
-                  >
-                    {/* User Text Bubble */}
-                    {msg.sender === "user" && (
-                      <div className="max-w-[85%] rounded-2xl rounded-tr-none px-3.5 py-2 text-xs leading-relaxed bg-[#005C4B] text-white shadow-sm">
-                        {msg.text}
-                      </div>
-                    )}
-
-                    {/* Bot Message Bubble */}
-                    {msg.sender === "bot" && (
-                      <div className="max-w-[88%] space-y-2">
-                        {/* Media / Document / Image Attachment */}
-                        {msg.type === "media" && (
-                          <div className="bg-[#202C33] rounded-2xl rounded-tl-none p-2 border border-emerald-500/20 shadow-sm">
-                            {msg.media_type === "image" && msg.media_url ? (
-                              <img
-                                src={msg.media_url}
-                                alt={msg.filename || "attachment"}
-                                className="rounded-xl max-h-44 w-full object-cover bg-slate-800"
-                                onError={(e) => { e.currentTarget.style.display = "none"; }}
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2 px-2 py-2.5 bg-[#111B21] rounded-xl border border-slate-700">
-                                <span className="text-lg">
-                                  {msg.media_type === "video" ? "🎥" : msg.media_type === "audio" ? "🎵" : "📄"}
-                                </span>
-                                <div className="min-w-0">
-                                  <div className="text-[11px] font-bold text-gray-100 truncate">{msg.filename || "attachment"}</div>
-                                  <div className="text-[9px] text-gray-400 uppercase">{msg.media_type || "document"}</div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Text / Caption */}
-                        {(msg.text || msg.caption) && (
-                          <div className="bg-[#202C33] text-gray-100 rounded-2xl rounded-tl-none px-3.5 py-2.5 text-xs leading-relaxed border border-emerald-500/20 shadow-sm whitespace-pre-line">
-                            {msg.text || msg.caption}
-                            {msg.footer && <div className="text-[10px] text-gray-400 mt-1 italic border-t border-slate-700/50 pt-1">{msg.footer}</div>}
-                          </div>
-                        )}
-
-                        {/* Interactive Clickable Buttons */}
-                        {msg.type === "buttons" && Array.isArray(msg.buttons) && (
-                          <div className="space-y-1.5">
-                            {msg.buttons.map((b, bIdx) => (
-                              <button
-                                key={bIdx}
-                                type="button"
-                                onClick={() => handleSendSimInput(b.title)}
-                                className="w-full py-2 px-3 bg-[#2A3942] hover:bg-[#202C33] text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-bold transition text-center border border-emerald-500/30 shadow-sm flex items-center justify-center gap-1.5 active:scale-[0.98]"
-                              >
-                                <span>🔘</span>
-                                <span>{b.title}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Interactive Clickable List Rows */}
-                        {msg.type === "list" && Array.isArray(msg.rows) && (
-                          <div className="space-y-1.5 bg-[#111B21] p-2.5 rounded-2xl border border-slate-700">
-                            <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">{msg.title || "Options"}</div>
-                            {msg.rows.map((r, rIdx) => (
-                              <button
-                                key={rIdx}
-                                type="button"
-                                onClick={() => handleSendSimInput(r.title)}
-                                className="w-full text-left p-2 bg-[#202C33] hover:bg-[#2A3942] rounded-xl text-xs text-gray-200 transition border border-slate-700 active:scale-[0.98]"
-                              >
-                                <div className="font-bold text-emerald-400">{r.title}</div>
-                                {r.description && <div className="text-[10px] text-gray-400">{r.description}</div>}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Fallback option parser if text contains numbered lines */}
-                        {msg.type !== "buttons" && msg.type !== "list" && (() => {
-                          const lines = (msg.text || "").split("\n");
-                          const options = [];
-                          for (const line of lines) {
-                            const match = line.trim().match(/^(?:\*|•|-)?\s*(?:\d+[\s.)-]+)\s*\*?(.*?)\*?$/);
-                            if (match && match[1]) {
-                              const clean = match[1].trim().replace(/\*+/g, "");
-                              if (clean.length >= 2 && !clean.toLowerCase().startsWith("reply with") && !clean.toLowerCase().startsWith("or reply")) {
-                                options.push(clean);
-                              }
-                            }
-                          }
-                          if (options.length < 2 || options.length > 8) return null;
-                          return (
-                            <div className="space-y-1 pt-1">
-                              {options.map((opt, optIdx) => (
-                                <button
-                                  key={optIdx}
-                                  type="button"
-                                  onClick={() => handleSendSimInput(opt)}
-                                  className="w-full py-1.5 px-2.5 bg-[#2A3942]/90 hover:bg-[#202C33] text-emerald-300 hover:text-emerald-200 rounded-xl text-xs font-semibold transition text-left border border-emerald-500/20 shadow-sm flex items-center gap-1.5"
-                                >
-                                  <span>👉</span>
-                                  <span>{opt}</span>
-                                </button>
-                              ))}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* System / Info Notice */}
-                    {msg.sender === "system" && (
-                      <div className="w-full text-center text-[10px] italic text-slate-400 py-1">
-                        {msg.text}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {simLoading && (
-                  <div className="flex items-center gap-2 text-xs text-gray-400 bg-[#202C33] p-2.5 rounded-xl max-w-[130px] border border-slate-700">
-                    <Loader2 size={13} className="animate-spin text-emerald-400" />
-                    <span>Bot typing...</span>
-                  </div>
-                )}
-
-                {simEnded && (
-                  <div className="text-center py-2 bg-emerald-950/40 border border-emerald-800/40 rounded-xl text-[11px] text-emerald-400 font-bold">
-                    🏁 Flow execution completed. Reply "menu" to restart.
-                  </div>
-                )}
-              </div>
-
-              {/* Chat Input Bar */}
-              <form onSubmit={(e) => { e.preventDefault(); handleSendSimInput(simInput); }} className="p-3 bg-[#202C33] flex items-center gap-2 border-t border-slate-700/80 shrink-0">
-                <input
-                  type="text"
-                  value={simInput}
-                  onChange={(e) => setSimInput(e.target.value)}
-                  placeholder="Type message, number (1, 2) or 'menu'..."
-                  className="flex-1 px-3.5 py-2.5 bg-[#2A3942] text-white rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#25D366] placeholder:text-gray-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!simInput.trim() || simLoading}
-                  className="p-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe5d] disabled:opacity-40 transition"
-                >
-                  <Send size={15} />
-                </button>
-              </form>
-            </div>
-
-            {/* Inspector Right Column (42% Width) */}
-            <div className="hidden md:flex md:w-[42%] bg-slate-950 p-4 sm:p-5 flex-col h-full min-h-0 justify-between text-slate-300 text-xs overflow-y-auto overscroll-contain">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                  <span className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
-                    <Zap size={14} className="text-[#25D366]" />
-                    <span>Live State Inspector</span>
-                  </span>
-                  <button onClick={() => setShowSimulator(false)} className="text-slate-400 hover:text-white">
-                    <X size={16} />
-                  </button>
-                </div>
-
-                {/* Quick Shortcuts */}
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Quick Inputs</span>
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {["hi", "menu", "1", "2", "3", "agent", "invoice", "amc", "quote"].map((shortcut) => (
-                      <button
-                        key={shortcut}
-                        type="button"
-                        onClick={() => handleSendSimInput(shortcut)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg text-xs font-mono font-bold transition"
-                      >
-                        "{shortcut}"
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Live Variables Box */}
-                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
-                  <span className="text-[10px] text-emerald-400 uppercase font-bold flex items-center gap-1">
-                    <Database size={11} />
-                    <span>Flow Context Variables ({Object.keys(simVars).length})</span>
-                  </span>
-                  <div className="max-h-36 overflow-y-auto space-y-1 font-mono text-[10px]">
-                    {Object.entries(simVars).map(([k, v]) => (
-                      <div key={k} className="flex justify-between border-b border-slate-800/60 pb-0.5">
-                        <span className="text-slate-400">{k}:</span>
-                        <span className="text-emerald-300 font-bold truncate max-w-[130px]">{String(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Execution Logs */}
-                <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[10px] font-mono space-y-1 text-slate-400 max-h-32 overflow-y-auto">
-                  <span className="text-[9px] text-slate-500 uppercase font-bold block mb-1">Step Audit Logs</span>
-                  {simLogs.map((l, i) => (
-                    <div key={i} className="truncate">▶ {l}</div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="text-[10px] text-slate-500 text-center border-t border-slate-800 pt-2.5">
-                Madhura Tech State Machine Simulator
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: Trigger on Phone ── */}
-      {showTriggerModal && triggerFlow && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowTriggerModal(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-gray-100" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
-                  <PhoneCall size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">Start Flow for Phone</h3>
-                  <p className="text-xs text-gray-500">{triggerFlow.name}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowTriggerModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Target 10-Digit Mobile Number</label>
-                <input
-                  type="text"
-                  value={targetPhone}
-                  onChange={e => setTargetPhone(e.target.value)}
-                  placeholder="e.g. 9876543210"
-                  className="w-full px-3.5 py-2.5 border rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-[#25D366]"
-                />
-                <p className="text-[11px] text-gray-400 mt-1">The bot will start the welcome step and listen for customer replies.</p>
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowTriggerModal(false)}
-                  className="flex-1 py-2.5 border rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExecuteTrigger}
-                  disabled={!targetPhone.trim() || triggering}
-                  className="flex-1 py-2.5 bg-[#25D366] text-white rounded-xl text-xs font-bold hover:bg-[#1ebe5d] disabled:opacity-50 transition shadow-md shadow-[#25D366]/20"
-                >
-                  {triggering ? "Starting Flow..." : "Launch on WhatsApp"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL: Analytics & Funnel ── */}
-      {showAnalyticsModal && analyticsFlow && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAnalyticsModal(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-gray-100" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-                  <BarChart2 size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">Flow Performance Funnel</h3>
-                  <p className="text-xs text-gray-500">{analyticsFlow.name}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowAnalyticsModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
-            </div>
-
-            {analyticsLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 size={28} className="animate-spin text-[#25D366]" />
-              </div>
-            ) : analyticsData ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100">
-                    <span className="text-lg font-bold text-blue-800">{analyticsData.totalRuns}</span>
-                    <p className="text-[10px] text-blue-600 font-semibold uppercase">Total Runs</p>
-                  </div>
-                  <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
-                    <span className="text-lg font-bold text-emerald-800">{analyticsData.completedRuns}</span>
-                    <p className="text-[10px] text-emerald-600 font-semibold uppercase">Completed</p>
-                  </div>
-                  <div className="p-3 bg-purple-50 rounded-2xl border border-purple-100">
-                    <span className="text-lg font-bold text-purple-800">{analyticsData.handoffRuns}</span>
-                    <p className="text-[10px] text-purple-600 font-semibold uppercase">Live Handoffs</p>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-2xl border">
-                  <h4 className="text-xs font-bold text-gray-700 uppercase mb-2">Step Drop-off & Hit Frequency</h4>
-                  {analyticsData.nodeDropoffs && analyticsData.nodeDropoffs.length > 0 ? (
-                    <div className="space-y-2">
-                      {analyticsData.nodeDropoffs.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="font-mono text-gray-700">{d.node_key}</span>
-                          <span className="font-bold text-emerald-600">{d.hit_count} hits</span>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <p className="text-[11px] text-gray-400 italic">No node drop-offs recorded yet.</p>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

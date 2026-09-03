@@ -259,6 +259,160 @@ router.post("/:id/test-simulate", auth, async (req, res) => {
   }
 });
 
+// ── Live In-Memory Draft Flow Simulator (Instant Test without Saving) ──────────
+router.post("/draft-simulate", auth, async (req, res) => {
+  try {
+    const { flow, input = "", state = null } = req.body;
+    if (!flow || !flow.nodes) {
+      return res.status(400).json({ error: "Draft flow and nodes are required" });
+    }
+
+    const simResult = await waFlowEngine.simulateFlowStep(flow, input, state);
+    const triggerKeywords = waFlowEngine.getTriggerKeywords(flow);
+    const isKeywordFlow = flow.trigger_type === "keyword" || !flow.trigger_type;
+    const triggerMatched = isKeywordFlow
+      ? waFlowEngine.matchesTriggerKeywords(input, flow)
+      : true;
+
+    res.json({
+      success: true,
+      ...simResult,
+      triggerType: flow.trigger_type || "keyword",
+      triggerKeywords,
+      triggerMatched,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Flow Versions & Snapshots ─────────────────────────────────────────────────
+router.get("/:id/versions", auth, async (req, res) => {
+  try {
+    const flowId = req.params.id;
+    const [versions] = await db.promise().query(
+      `SELECT v.*, u.name as publisher_name 
+       FROM wa_flow_versions v 
+       LEFT JOIN users u ON v.created_by = u.id 
+       WHERE v.flow_id = ? 
+       ORDER BY v.version_number DESC`,
+      [flowId]
+    ).catch(() => [[]]);
+    res.json(versions || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:id/versions/publish", auth, async (req, res) => {
+  try {
+    const flowId = req.params.id;
+    const { changelog = "Published new version" } = req.body;
+
+    const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ?", [flowId]);
+    if (!flows.length) return res.status(404).json({ error: "Flow not found" });
+    const flow = flows[0];
+
+    const [nodes] = await db.promise().query("SELECT * FROM wa_flow_nodes WHERE flow_id = ? ORDER BY id ASC", [flowId]);
+    const parsedNodes = nodes.map(n => ({
+      ...n,
+      config: typeof n.config === "string" ? JSON.parse(n.config) : (n.config || {})
+    }));
+
+    // Find next version number
+    const [[maxVer]] = await db.promise().query(
+      "SELECT COALESCE(MAX(version_number), 0) as max_v FROM wa_flow_versions WHERE flow_id = ?",
+      [flowId]
+    ).catch(() => [[{ max_v: 0 }]]);
+    const nextVersion = (maxVer?.max_v || 0) + 1;
+
+    // Archive previous published versions
+    await db.promise().query(
+      "UPDATE wa_flow_versions SET status = 'archived' WHERE flow_id = ? AND status = 'published'",
+      [flowId]
+    ).catch(() => {});
+
+    // Save snapshot
+    await db.promise().query(
+      `INSERT INTO wa_flow_versions (flow_id, version_number, name, description, trigger_type, trigger_config, entry_node_key, nodes_snapshot, status, changelog, published_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, NOW(), ?)`,
+      [
+        flowId,
+        nextVersion,
+        flow.name,
+        flow.description,
+        flow.trigger_type,
+        typeof flow.trigger_config === "string" ? flow.trigger_config : JSON.stringify(flow.trigger_config || {}),
+        flow.entry_node_key,
+        JSON.stringify(parsedNodes),
+        changelog,
+        req.user?.id || null
+      ]
+    ).catch(() => {});
+
+    // Update parent flow to active
+    await db.promise().query(
+      "UPDATE wa_flows SET status = 'active', updated_at = NOW() WHERE id = ?",
+      [flowId]
+    );
+
+    res.json({ success: true, versionNumber: nextVersion, status: "active" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:id/versions/:versionId/rollback", auth, async (req, res) => {
+  try {
+    const flowId = req.params.id;
+    const versionId = req.params.versionId;
+
+    const [vers] = await db.promise().query(
+      "SELECT * FROM wa_flow_versions WHERE id = ? AND flow_id = ?",
+      [versionId, flowId]
+    );
+    if (!vers.length) return res.status(404).json({ error: "Version snapshot not found" });
+    const targetVer = vers[0];
+    const nodes = typeof targetVer.nodes_snapshot === "string" ? JSON.parse(targetVer.nodes_snapshot) : targetVer.nodes_snapshot;
+
+    // Restore flow settings
+    await db.promise().query(
+      `UPDATE wa_flows 
+       SET name = ?, description = ?, trigger_type = ?, trigger_config = ?, entry_node_key = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [
+        targetVer.name,
+        targetVer.description,
+        targetVer.trigger_type,
+        typeof targetVer.trigger_config === "string" ? targetVer.trigger_config : JSON.stringify(targetVer.trigger_config),
+        targetVer.entry_node_key,
+        flowId
+      ]
+    );
+
+    // Restore nodes
+    await db.promise().query("DELETE FROM wa_flow_nodes WHERE flow_id = ?", [flowId]);
+    for (const node of nodes) {
+      await db.promise().query(
+        `INSERT INTO wa_flow_nodes (flow_id, node_key, node_type, config, position_x, position_y)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          flowId,
+          node.node_key,
+          node.node_type,
+          JSON.stringify(node.config || {}),
+          node.position_x || 0,
+          node.position_y || 0
+        ]
+      );
+    }
+
+    res.json({ success: true, message: `Rolled back to version v${targetVer.version_number}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Flow Analytics & Conversion Funnel ─────────────────────────────────────────
 router.get("/:id/analytics", auth, async (req, res) => {
   try {
@@ -294,10 +448,282 @@ router.get("/:id/analytics", auth, async (req, res) => {
   }
 });
 
-// ── Seed 6 Comprehensive Prebuilt Business Chatbot Flows ───────────────────────
+// ── Seed Comprehensive Prebuilt Business Chatbot Flows ───────────────────────
 router.post("/seed", auth, async (req, res) => {
   try {
     const seedFlows = [
+      {
+        name: "Interactive Banking & Account Services Bot",
+        description: "Multi-section interactive banking menu with structured button options, instant FD, account balance lookup, card applications, loan eligibility checks, and live agent handoff.",
+        trigger_type: "all_inbound",
+        trigger_config: { keywords: ["bank", "account", "balance", "card", "loan", "hi", "hello", "menu"] },
+        entry_node_key: "start",
+        nodes: [
+          { node_key: "start", node_type: "start", config: { next_node_key: "banking_menu" }, position_x: 280, position_y: 40 },
+          {
+            node_key: "banking_menu",
+            node_type: "interactive_menu",
+            config: {
+              text: "Good Afternoon, {{customer.name}} 🍀🙂\n\nPlease type any bank related query or select from the options below",
+              sections: [
+                {
+                  title: "Bank Services",
+                  buttons: [
+                    { id: "account_balance", label: "Account Balance", nextNodeId: "lookup_balance" },
+                    { id: "instant_fd", label: "Instant FD", nextNodeId: "fd_calculator" },
+                    { id: "credit_card_due", label: "Credit Card Bill Due", nextNodeId: "card_bill_flow" }
+                  ]
+                },
+                {
+                  title: "Explore more! ⭐",
+                  buttons: [
+                    { id: "credit_card_fd", label: "Credit Card on FD", nextNodeId: "card_fd_flow" },
+                    { id: "apply_card", label: "Apply New Card", nextNodeId: "apply_card_flow" },
+                    { id: "loan_offers", label: "Loan Offers", nextNodeId: "check_loan_eligibility" }
+                  ]
+                },
+                {
+                  title: "Looking for something else? 🔍",
+                  buttons: [
+                    { id: "live_agent", label: "Live Agent", nextNodeId: "agent_transfer" }
+                  ]
+                }
+              ]
+            },
+            position_x: 280,
+            position_y: 160
+          },
+          {
+            node_key: "lookup_balance",
+            node_type: "crm_lookup",
+            config: {
+              lookup_type: "customer",
+              next_node_key: "show_balance_msg"
+            },
+            position_x: 60,
+            position_y: 320
+          },
+          {
+            node_key: "show_balance_msg",
+            node_type: "interactive_menu",
+            config: {
+              text: "💳 *Account Summary for {{customer.name}}:*\n\n• Available Balance: *₹45,280.00*\n• Account: *XXXX-XXXX-4812*\n• Last Updated: {{current.date}}\n\nNeed a detailed mini statement?",
+              sections: [
+                {
+                  title: "Actions",
+                  buttons: [
+                    { id: "mini_stmt", label: "Mini Statement (PDF)", nextNodeId: "send_stmt_pdf" },
+                    { id: "back_main", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+                  ]
+                }
+              ]
+            },
+            position_x: 60,
+            position_y: 460
+          },
+          {
+            node_key: "send_stmt_pdf",
+            node_type: "send_message",
+            config: {
+              text: "📄 Your last 10 transactions statement has been generated: https://madhurabank.example.com/stmt_4812.pdf\n\nReply MENU to return to main options.",
+              next_node_key: "end"
+            },
+            position_x: 60,
+            position_y: 600
+          },
+          {
+            node_key: "fd_calculator",
+            node_type: "interactive_menu",
+            config: {
+              text: "💰 *Instant Fixed Deposit (FD)*\n\nEarn up to *7.85% p.a.* interest with zero paperwork!\n\nChoose your preferred tenure:",
+              sections: [
+                {
+                  title: "Tenures",
+                  buttons: [
+                    { id: "fd_1yr", label: "1 Year @ 7.25%", nextNodeId: "book_fd_lead" },
+                    { id: "fd_3yr", label: "3 Years @ 7.85%", nextNodeId: "book_fd_lead" },
+                    { id: "back_main2", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+                  ]
+                }
+              ]
+            },
+            position_x: 280,
+            position_y: 320
+          },
+          {
+            node_key: "book_fd_lead",
+            node_type: "create_lead",
+            config: {
+              default_service: "Instant FD Application",
+              notes: "Customer applied for Fixed Deposit via WhatsApp bot. Selected tenure: {{selected.option}}",
+              next_node_key: "fd_success_msg"
+            },
+            position_x: 280,
+            position_y: 460
+          },
+          {
+            node_key: "fd_success_msg",
+            node_type: "send_message",
+            config: {
+              text: "✅ Congratulations! Your Instant FD request has been initiated. Our relationship manager will verify your details within 15 minutes.\n\nReference ID: #FD-{{date}}-8891",
+              next_node_key: "end"
+            },
+            position_x: 280,
+            position_y: 600
+          },
+          {
+            node_key: "card_bill_flow",
+            node_type: "interactive_menu",
+            config: {
+              text: "💳 *Credit Card Bill Status*\n\nCard: *Platinum Rewards (ending 9021)*\n• Total Due: *₹18,450.00*\n• Minimum Due: *₹1,200.00*\n• Due Date: *10th of this month*",
+              sections: [
+                {
+                  title: "Payment Options",
+                  buttons: [
+                    { id: "pay_now", label: "Pay Total Due (UPI)", nextNodeId: "send_pay_link" },
+                    { id: "pay_min", label: "Pay Min Due", nextNodeId: "send_pay_link" },
+                    { id: "back_main3", label: "🏠 Main Menu", nextNodeId: "banking_menu" }
+                  ]
+                }
+              ]
+            },
+            position_x: 500,
+            position_y: 320
+          },
+          {
+            node_key: "send_pay_link",
+            node_type: "send_message",
+            config: {
+              text: "⚡ Instant UPI Payment Link: https://pay.madhurabank.example.com/bill/9021\n\nInstant confirmation will be sent upon payment receipt.",
+              next_node_key: "end"
+            },
+            position_x: 500,
+            position_y: 460
+          },
+          {
+            node_key: "card_fd_flow",
+            node_type: "send_message",
+            config: {
+              text: "🌟 *Credit Card Against FD*\nGet 90% credit limit against your fixed deposit with zero CIBIL checks and instant activation!\n\nLink to apply: https://cards.madhurabank.example.com/card-on-fd",
+              next_node_key: "end"
+            },
+            position_x: 720,
+            position_y: 320
+          },
+          {
+            node_key: "apply_card_flow",
+            node_type: "collect_input",
+            config: {
+              prompt_text: "Please enter your monthly take-home income (e.g. 50000):",
+              var_key: "income",
+              next_node_key: "check_card_eligibility"
+            },
+            position_x: 720,
+            position_y: 460
+          },
+          {
+            node_key: "check_card_eligibility",
+            node_type: "condition",
+            config: {
+              subject_key: "income",
+              operator: "greater_or_equal",
+              value: "25000",
+              true_next: "card_eligible_msg",
+              false_next: "card_fd_flow"
+            },
+            position_x: 720,
+            position_y: 600
+          },
+          {
+            node_key: "card_eligible_msg",
+            node_type: "send_message",
+            config: {
+              text: "🎉 You are pre-approved for our *Lifetime Free Titanium Card* with ₹1,50,000 credit limit!\n\nComplete your KYC in 2 mins: https://cards.madhurabank.example.com/kyc",
+              next_node_key: "end"
+            },
+            position_x: 720,
+            position_y: 740
+          },
+          {
+            node_key: "check_loan_eligibility",
+            node_type: "interactive_menu",
+            config: {
+              text: "🏡 *Instant Loan Offers for {{customer.name}}*\n\nSelect a loan type to check customized interest rates & eligibility:",
+              sections: [
+                {
+                  title: "Loan Types",
+                  buttons: [
+                    { id: "home_loan", label: "Home Loan @ 8.40%", nextNodeId: "lead_home_loan" },
+                    { id: "personal_loan", label: "Personal Loan @ 10.5%", nextNodeId: "lead_personal_loan" },
+                    { id: "car_loan", label: "Car Loan @ 8.75%", nextNodeId: "lead_car_loan" }
+                  ]
+                }
+              ]
+            },
+            position_x: 940,
+            position_y: 320
+          },
+          {
+            node_key: "lead_home_loan",
+            node_type: "create_lead",
+            config: {
+              default_service: "Home Loan Inquiry",
+              notes: "Customer checked Home Loan offers via WhatsApp interactive bot",
+              next_node_key: "loan_ack_msg"
+            },
+            position_x: 940,
+            position_y: 460
+          },
+          {
+            node_key: "lead_personal_loan",
+            node_type: "create_lead",
+            config: {
+              default_service: "Personal Loan Inquiry",
+              notes: "Customer checked Personal Loan offers via WhatsApp interactive bot",
+              next_node_key: "loan_ack_msg"
+            },
+            position_x: 940,
+            position_y: 540
+          },
+          {
+            node_key: "lead_car_loan",
+            node_type: "create_lead",
+            config: {
+              default_service: "Car Loan Inquiry",
+              notes: "Customer checked Car Loan offers via WhatsApp interactive bot",
+              next_node_key: "loan_ack_msg"
+            },
+            position_x: 940,
+            position_y: 620
+          },
+          {
+            node_key: "loan_ack_msg",
+            node_type: "send_message",
+            config: {
+              text: "✅ Thank you! Our loan expert will call you within 30 minutes with customized sanction terms & EMI schedule.",
+              next_node_key: "end"
+            },
+            position_x: 940,
+            position_y: 740
+          },
+          {
+            node_key: "agent_transfer",
+            node_type: "handoff",
+            config: {
+              note: "Customer selected Live Agent handoff from interactive banking menu"
+            },
+            position_x: 1160,
+            position_y: 320
+          },
+          {
+            node_key: "end",
+            node_type: "end",
+            config: {},
+            position_x: 600,
+            position_y: 900
+          }
+        ]
+      },
       {
         name: "Interactive Main Business & Services Menu",
         description: "24/7 Universal WhatsApp receptionist: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer for all inbound chats.",

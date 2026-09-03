@@ -171,7 +171,7 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
   const formattedAmount = amountVal ? (String(amountVal).startsWith("₹") ? String(amountVal) : `₹${amountVal}`) : "";
 
   const known = {
-    // 👤 Contact Person
+    // 👤 Contact Person & Customer
     name: rawName,
     first_name: firstName,
     firstname: firstName,
@@ -179,6 +179,12 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     lastname: lastName,
     customer_name: rawName,
     client_name: rawName,
+    "customer.name": rawName,
+    "customer.first_name": firstName,
+    "customer.phone": data.phone || data.mobile || "",
+    "customer.email": data.email || data.email_id || "",
+    "customer.city": data.city || data.location_city || "our city",
+    "customer.company": data.company || data.company_name || data.business_name || "Madhura Tech",
     
     // 🏢 Business & Company
     company: data.company || data.company_name || data.business_name || "Madhura Tech",
@@ -209,6 +215,7 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     notes: data.notes || data.remarks || "",
     assigned_agent: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
     agent_name: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
+    "agent.name": data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
 
     // 🧾 Invoicing & Payments
     invoice_no: data.invoice_no || data.invoice_number || data.bill_no || "",
@@ -229,6 +236,7 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     current_time: formattedTime,
     date: formattedDate,
     current_date: formattedDate,
+    "current.date": formattedDate,
     today: formattedDate,
     day: dayName,
     day_of_week: dayName,
@@ -237,6 +245,13 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     month: now.toLocaleDateString("en-IN", { month: "long" }),
     start_time: data.start_time || "09:00 AM",
     end_time: data.end_time || "08:00 PM",
+
+    // 💬 Conversation & State Variables
+    "conversation.id": data.conversation_id || data.conversationId || data.run_id || "",
+    "selected.option": data.selected_option || data.selectedOption || data.last_input || "",
+    "last.message": data.last_message || data.last_input || data.input || "",
+    selected_option: data.selected_option || data.selectedOption || "",
+    last_input: data.last_input || data.input || "",
 
     // 🏷️ Custom Fields
     custom_1: data.custom_1 || "",
@@ -249,19 +264,61 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
   const dataLookup = {};
   for (const key of Object.keys(data)) {
     dataLookup[key.toLowerCase()] = data[key];
+    dataLookup[key.toLowerCase().replace(/_/g, ".")] = data[key];
   }
 
   // 1. Resolve {{placeholder}} and {placeholder} tokens (case-insensitive & whitespace-tolerant)
   let resolved = msg.replace(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g, (match, rawToken) => {
-    const parts = rawToken.split(".");
-    const cleanKey = (parts.length > 1 ? parts[1] : parts[0]).toLowerCase();
+    const rawLower = rawToken.toLowerCase().trim();
+    const dotNormalized = rawLower.replace(/_/g, ".");
+    const underscoreNormalized = rawLower.replace(/\./g, "_");
 
-    if (Object.prototype.hasOwnProperty.call(known, cleanKey) && known[cleanKey] !== "") {
-      return String(known[cleanKey]);
+    // Exact match in known
+    if (Object.prototype.hasOwnProperty.call(known, rawLower) && known[rawLower] !== "") {
+      return String(known[rawLower]);
     }
-    if (Object.prototype.hasOwnProperty.call(dataLookup, cleanKey) && dataLookup[cleanKey] != null && dataLookup[cleanKey] !== "") {
-      return String(dataLookup[cleanKey]);
+    if (Object.prototype.hasOwnProperty.call(known, dotNormalized) && known[dotNormalized] !== "") {
+      return String(known[dotNormalized]);
     }
+    if (Object.prototype.hasOwnProperty.call(known, underscoreNormalized) && known[underscoreNormalized] !== "") {
+      return String(known[underscoreNormalized]);
+    }
+
+    // Direct lookup in dataLookup
+    if (Object.prototype.hasOwnProperty.call(dataLookup, rawLower) && dataLookup[rawLower] != null && dataLookup[rawLower] !== "") {
+      return String(dataLookup[rawLower]);
+    }
+    if (Object.prototype.hasOwnProperty.call(dataLookup, dotNormalized) && dataLookup[dotNormalized] != null && dataLookup[dotNormalized] !== "") {
+      return String(dataLookup[dotNormalized]);
+    }
+    if (Object.prototype.hasOwnProperty.call(dataLookup, underscoreNormalized) && dataLookup[underscoreNormalized] != null && dataLookup[underscoreNormalized] !== "") {
+      return String(dataLookup[underscoreNormalized]);
+    }
+
+    // Deep dot path in data (e.g. data.customer.name)
+    if (rawToken.includes(".")) {
+      const parts = rawToken.split(".");
+      let val = data;
+      for (const p of parts) {
+        if (val && typeof val === "object" && Object.prototype.hasOwnProperty.call(val, p)) {
+          val = val[p];
+        } else {
+          val = undefined;
+          break;
+        }
+      }
+      if (val != null && val !== "") return String(val);
+
+      // Fallback: match last part of dot path (e.g., customer.name -> name)
+      const lastPart = parts[parts.length - 1].toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(known, lastPart) && known[lastPart] !== "") {
+        return String(known[lastPart]);
+      }
+      if (Object.prototype.hasOwnProperty.call(dataLookup, lastPart) && dataLookup[lastPart] != null && dataLookup[lastPart] !== "") {
+        return String(dataLookup[lastPart]);
+      }
+    }
+
     return match; // Unknown variable — leave as-is
   });
 
