@@ -351,6 +351,22 @@ router.post("/create", verifyToken, (req, res) => {
                         company: ex.client_company || customer.customer_name,
                       }
                     }).catch(() => {});
+
+                    // Emit to CRM Universal Event Bus
+                    try {
+                      const crmEventBus = require("../services/crmEventBus");
+                      crmEventBus.emit("quotation_created", {
+                        quotation_id: quotationId,
+                        reference_no: refNo,
+                        customer_name: customer.customer_name,
+                        phone: customer.mobile_number,
+                        email: customer.email,
+                        amount: q.grand_total || 0,
+                        date: quotationDate,
+                        company: ex.client_company || customer.customer_name,
+                        created_by: req.user?.id
+                      });
+                    } catch (_) {}
                   } catch (_) {}
 
                   res.status(201).json({ message: "Quotation Created Successfully", quotationId, reference_no: refNo });

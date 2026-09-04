@@ -66,6 +66,7 @@ const UserSidebar = ({ onNavigate, collapsed, onExpand }) => {
         { label: "Contact Groups", path: "/dashboard/whatsapp/groups" },
         { label: "Broadcast Campaigns", path: "/dashboard/whatsapp/campaigns" },
         { label: "Automations", path: "/dashboard/whatsapp/automations" },
+        { label: "Reminders & Confirmations", path: "/dashboard/whatsapp/reminders" },
         { label: "Chatbot Flows", path: "/dashboard/whatsapp/flows" },
         { label: "Analytics", path: "/dashboard/whatsapp/analytics" },
         { label: "Accounts & Settings", path: "/dashboard/whatsapp/accounts" },

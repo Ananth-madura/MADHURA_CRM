@@ -75,11 +75,24 @@ router.post("/new", decodeOptionalToken, (req, res) => {
                 contactName: cRows[0].name,
                 data: {
                   amount: Number(amount),
-                  date: payment_date,
-                  invoice_no: `INV-${invoiceIdNum}`,
                   company: cRows[0].client_company
                 }
               }).catch(e => console.error("WA Automation error:", e.message));
+
+              // Emit to CRM Universal Event Bus
+              try {
+                const crmEventBus = require("../services/crmEventBus");
+                crmEventBus.emit("payment_received", {
+                  payment_id: newPaymentId,
+                  invoice_id: invoiceIdNum,
+                  amount: Number(amount),
+                  payment_date,
+                  payment_method,
+                  transaction_id: Transaction_ID,
+                  phone: cRows[0].phone,
+                  customer_name: cRows[0].name
+                });
+              } catch (_) {}
             }
           }
         );

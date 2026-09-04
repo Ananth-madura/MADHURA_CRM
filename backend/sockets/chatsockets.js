@@ -3,6 +3,8 @@ const db = require("../config/database");
 
 const onlineUsers = new Map();
 
+let globalIO = null;
+
 function initSocket(server, corsOrigin = "*") {
   const io = new Server(server, {
     cors: {
@@ -10,6 +12,7 @@ function initSocket(server, corsOrigin = "*") {
       methods: ["GET", "POST", "PUT", "DELETE"]
     }
   });
+  globalIO = io;
 
   io.on("connection", (socket) => {
     socket.on("join", (userId) => {
@@ -87,4 +90,4 @@ function initSocket(server, corsOrigin = "*") {
   return io;
 }
 
-module.exports = { initSocket };
+module.exports = { initSocket, getIO: () => globalIO };

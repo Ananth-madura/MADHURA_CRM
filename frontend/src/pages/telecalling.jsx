@@ -13,12 +13,14 @@ import {
   Bell,
   Clock,
   MessageCircle,
+  Sparkles,
 } from "lucide-react";
 import axios from "axios";
 import { getToday } from "../utils/leadutil";
 import { useAuth } from "../auth/AuthContext";
 import { API } from "../config";
 import socket, { notificationSocket } from "../socket/socket";
+import SendWhatsAppReminderModal from "../components/SendWhatsAppReminderModal";
 
 const Telecall = () => {
   const { user } = useAuth();
@@ -205,6 +207,7 @@ const Telecall = () => {
   const [newFollowupTime, setNewFollowupTime] = useState("");
   const [newFollowupNote, setNewFollowupNote] = useState("");
   const [leadFollowups, setLeadFollowups] = useState([]);
+  const [waModal, setWaModal] = useState({ open: false, telecall: null });
 
   // Fetch all data
 
@@ -1682,6 +1685,14 @@ const Telecall = () => {
                         </a>
                         <button
                           type="button"
+                          onClick={() => setWaModal({ open: true, telecall: T })}
+                          title="Send 2-Way Interactive WhatsApp Confirmation"
+                          className="text-amber-600 hover:text-amber-800 p-1.5 rounded-lg hover:bg-amber-50 transition-all"
+                        >
+                          <Sparkles size={16} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openReminderPanel(T)}
                           title="Reminders"
                           className="relative text-yellow-500 hover:text-yellow-700 p-1.5 rounded-lg hover:bg-yellow-50 transition-all"
@@ -2299,6 +2310,20 @@ const Telecall = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* 1-Click WhatsApp Interactive Appointment / Visit Reminder Modal */}
+      {waModal.open && (
+        <SendWhatsAppReminderModal
+          isOpen={waModal.open}
+          onClose={() => setWaModal({ open: false, telecall: null })}
+          defaultPhone={waModal.telecall?.mobile_number || ""}
+          defaultContactName={waModal.telecall?.customer_name || "Customer"}
+          reminderType="appointment_reminder"
+          refTable="telecalls"
+          refId={waModal.telecall?.id}
+          refTitle={`Service: ${waModal.telecall?.service_name || "Appointment Visit"} (${waModal.telecall?.customer_name || ""})`}
+        />
       )}
     </div>
   );

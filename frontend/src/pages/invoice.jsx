@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import "../Styles/tailwind.css";
-import { Search, Plus, X, Edit2, Trash2 } from "lucide-react";
+import { Search, Plus, X, Edit2, Trash2, MessageCircle } from "lucide-react";
 import { getToday } from "../utils/leadutil";
 import axios from "axios";
 import { useAuth } from "../auth/AuthContext";
+import SendWhatsAppReminderModal from "../components/SendWhatsAppReminderModal";
 
 import { API } from "../config";
 
@@ -12,6 +13,7 @@ const Invoice = () => {
   const canEditDelete = user?.role === "admin" || user?.role === "subadmin";
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [waModal, setWaModal] = useState({ open: false, inv: null });
 
   const [clientSearch, setClientSearch] = useState("");
   const [clientList, setClientList] = useState([]);
@@ -278,6 +280,14 @@ const Invoice = () => {
                   <td className="px-4 py-3 border">{inv.project_names || "---"}</td>
                   <td className="px-4 py-3 border text-center">
                     <div className="flex justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setWaModal({ open: true, inv })}
+                        title="Send Interactive WhatsApp Payment Reminder"
+                        className="text-emerald-600 hover:text-emerald-800 transition"
+                      >
+                        <MessageCircle size={16} />
+                      </button>
                       <button onClick={() => openEdit(inv)} className="text-amber-600 hover:text-amber-800 transition">
                         <Edit2 size={16} />
                       </button>
@@ -292,6 +302,20 @@ const Invoice = () => {
           </tbody>
         </table>
       </div>
+
+      {/* 1-Click WhatsApp Interactive Payment Reminder Modal */}
+      {waModal.open && (
+        <SendWhatsAppReminderModal
+          isOpen={waModal.open}
+          onClose={() => setWaModal({ open: false, inv: null })}
+          defaultPhone={waModal.inv?.client_phone || ""}
+          defaultContactName={waModal.inv?.contact_name || waModal.inv?.client_company || "Customer"}
+          reminderType="payment_due"
+          refTable="clientinvoices"
+          refId={waModal.inv?.id}
+          refTitle={`Invoice INV-${String(waModal.inv?.id).padStart(6, "0")} (${waModal.inv?.client_company || "Pending"})`}
+        />
+      )}
     </div>
   );
 };

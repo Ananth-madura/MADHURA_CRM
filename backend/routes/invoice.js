@@ -12,17 +12,34 @@ router.post("/new", verifyToken, (req, res) => {
     (err, result) => {
       const newInvoiceId = result.insertId;
 
-      // Auto-trigger WhatsApp invoice_created automation
+      // Auto-trigger WhatsApp invoice_created automation & CRM Event Bus
       try {
         db.query(
           "SELECT name, phone FROM clients WHERE company_name = ? OR name = ? LIMIT 1",
           [client_company, client_company],
           (cErr, cRows) => {
-            if (!cErr && cRows.length > 0 && cRows[0].phone) {
+            const clientPhone = cRows?.[0]?.phone;
+            const clientName = cRows?.[0]?.name;
+
+            // 1. Emit on Universal CRM Event Bus
+            const crmEventBus = require("../services/crmEventBus");
+            crmEventBus.emit("invoice_created", {
+              id: newInvoiceId,
+              client_company,
+              project_names,
+              invoice_date,
+              invoice_duedate,
+              category,
+              client_phone: clientPhone,
+              client_name: clientName,
+            });
+
+            // 2. Trigger Rule Automations
+            if (clientPhone) {
               const { triggerAutomation } = require("../services/waAutomationService");
               triggerAutomation("invoice_created", {
-                phone: cRows[0].phone,
-                contactName: cRows[0].name,
+                phone: clientPhone,
+                contactName: clientName,
                 data: {
                   invoice_no: `INV-${newInvoiceId}`,
                   company: client_company,
@@ -45,7 +62,9 @@ router.get("/with-payments", verifyToken, (req, res) => {
   const { id: user_id, role } = req.user;
   const sql = `
     SELECT i.id, i.client_company, DATE_FORMAT(i.invoice_date, '%Y-%m-%d') AS invoice_date, DATE_FORMAT(i.invoice_duedate, '%Y-%m-%d') AS invoice_duedate, i.project_names, i.category,
-      IFNULL(SUM(p.amount), 0) AS paid_amount
+      IFNULL(SUM(p.amount), 0) AS paid_amount,
+      (SELECT c.phone FROM clients c WHERE (c.company_name = i.client_company OR c.name = i.client_company) AND c.phone IS NOT NULL AND c.phone != '' LIMIT 1) AS client_phone,
+      (SELECT c.name FROM clients c WHERE (c.company_name = i.client_company OR c.name = i.client_company) LIMIT 1) AS contact_name
     FROM clientinvoices i
     LEFT JOIN payments p ON p.invoice_id = i.id
     ${role === 'employee' ? `WHERE (

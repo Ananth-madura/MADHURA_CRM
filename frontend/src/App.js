@@ -45,6 +45,7 @@ import WAContacts from "./pages/whatsappContacts";
 import WAAutomations from "./pages/whatsappAutomations";
 import WAFlows from "./pages/whatsappFlows";
 import WAAccounts from "./pages/whatsappAccounts";
+import WAReminders from "./pages/whatsappReminders";
 import Profile from "./pages/profile";
 import Settings from "./pages/settings";
 import UserManagement from "./pages/usermanagement";
@@ -186,6 +187,7 @@ export default function App() {
                 <Route path="whatsapp/flows" element={<WAFlows />} />
                 <Route path="whatsapp/analytics" element={<WAAnalytics />} />
                 <Route path="whatsapp/accounts" element={<WAAccounts />} />
+                <Route path="whatsapp/reminders" element={<WAReminders />} />
               </Route>
             </Routes>
           </BrowserRouter>

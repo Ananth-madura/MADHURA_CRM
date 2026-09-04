@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
+import socket from "../socket/socket";
 
 const REMINDER_TYPES = [
   {
@@ -151,6 +152,14 @@ export default function WhatsAppInteractiveReminders() {
 
   useEffect(() => {
     fetchData();
+    socket.on("data_changed", fetchData);
+    socket.on("wa_message_received", fetchData);
+    socket.on("wa_reminder_updated", fetchData);
+    return () => {
+      socket.off("data_changed", fetchData);
+      socket.off("wa_message_received", fetchData);
+      socket.off("wa_reminder_updated", fetchData);
+    };
   }, []);
 
   const handleReminderTypeChange = (typeVal) => {

@@ -19,6 +19,7 @@ import {
   CreditCard,
   RefreshCw,
   LogOut,
+  Bell,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
@@ -174,6 +175,12 @@ export default function WhatsAppNav({ onAccountBalance, onSyncWhatsApp, onLogout
       label: "Automations",
       path: "/dashboard/whatsapp/automations",
       icon: Zap,
+    },
+    {
+      id: "reminders",
+      label: "Reminders",
+      path: "/dashboard/whatsapp/reminders",
+      icon: Bell,
     },
     {
       id: "flows",

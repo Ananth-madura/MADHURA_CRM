@@ -292,6 +292,26 @@ async function handleInboundConfirmation(phone, messageText, interactiveReplyId 
     [responseStatus, rawText || actionLabel, action, reminder.id]
   );
 
+  // Real-time broadcast to connected CRM clients
+  try {
+    const { getIO } = require("../sockets/chatsockets");
+    const io = getIO();
+    if (io) {
+      io.emit("wa_reminder_updated", {
+        reminderId: reminder.id,
+        status: responseStatus,
+        phone: normalizedPhone,
+        action,
+        at: new Date().toISOString()
+      });
+      io.emit("data_changed", {
+        resource: "reminders",
+        action: "update",
+        id: reminder.id
+      });
+    }
+  } catch (_) {}
+
   // 2. Notify staff / admin via Socket & DB notification
   if (settings.notify_staff_on_response) {
     const notifMsg = `WhatsApp Reminder Response: ${reminder.contact_name || `+${normalizedPhone}`} marked "${actionLabel}" for ${reminder.reminder_type}`;

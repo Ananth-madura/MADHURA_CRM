@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, Search, Download, X, Edit2, MinusCircle, PlusCircle, Trash2, Mail, MapPin, History, FileText, Eye, Clock } from "lucide-react";
+import { Plus, Search, Download, X, Edit2, MinusCircle, PlusCircle, Trash2, Mail, MapPin, History, FileText, Eye, Clock, MessageCircle } from "lucide-react";
 import ClientSearchDropdown from "../components/ClientSearchDropdown";
 import { calculateItemTotal } from "../utils/invoicecal";
 import { downloadAsHtml } from "../utils/downloadHtml";
@@ -8,6 +8,7 @@ import Invoice from "../components/invoicetemplate";
 import { API } from "../config";
 import { BRANCH_DATA, BRANCH_OPTIONS, BANK_DETAILS } from "../config/branchConfig";
 import SMTPConfigPrompt from "../components/SMTPConfigPrompt";
+import SendWhatsAppReminderModal from "../components/SendWhatsAppReminderModal";
 
 const parseName = (fullName = "") => {
   const prefixes = ["Mr.", "Mrs.", "M/S."];
@@ -86,6 +87,7 @@ const Quotation = () => {
   const [editId, setEditId] = useState(null);
   const [viewId, setViewId] = useState(null);
   const [showinvoice, setShowInvoice] = useState(false);
+  const [waModal, setWaModal] = useState({ open: false, quote: null });
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -583,6 +585,7 @@ const Quotation = () => {
                       <div className="flex gap-2 justify-center flex-wrap">
                         <button onClick={e => { e.stopPropagation(); setViewId(p.id); setTimeout(() => setShowInvoice(true), 50); }} title="View" className="px-2 py-1 rounded text-xs font-bold bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1"><Eye size={12} /> View</button>
                         <button onClick={e => { e.stopPropagation(); handleEdit(p.id); }} title="Edit" className="px-2 py-1 rounded text-xs font-bold bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition flex items-center gap-1"><Edit2 size={12} /> Edit</button>
+                        <button onClick={e => { e.stopPropagation(); setWaModal({ open: true, quote: p }); }} title="Send Interactive WhatsApp Proposal Reminder" className="px-2 py-1 rounded text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1"><MessageCircle size={12} /> WhatsApp</button>
                         <button onClick={e => { e.stopPropagation(); setSelectedId(p.id); openHistory(e, p.id, p.customer_name); }} title="History" className="px-2 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1"><History size={12} /> History</button>
                         <button onClick={e => openFollowupPanel(e, p)} title="Follow-ups"
                           className={`px-2 py-1 rounded text-xs font-bold border transition flex items-center gap-1 ${followupSummaryMap[p.id]?.today_count > 0 ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" : followupSummaryMap[p.id]?.pending_count > 0 ? "bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-100" : "bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100"}`}>
@@ -1108,6 +1111,7 @@ const Quotation = () => {
                         <div className="flex items-center justify-center gap-2">
                           <button onClick={e => { e.stopPropagation(); setViewId(q.id); setTimeout(() => setShowInvoice(true), 50); setHistoryOpen(false); }} title="View" className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center hover:bg-blue-100"><Eye size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); handleEdit(q.id); setHistoryOpen(false); }} title="Edit" className="w-8 h-8 bg-green-50 text-green-600 rounded-lg flex items-center justify-center hover:bg-green-100"><Edit2 size={14} /></button>
+                          <button onClick={e => { e.stopPropagation(); setWaModal({ open: true, quote: q }); setHistoryOpen(false); }} title="Send Interactive WhatsApp" className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center hover:bg-emerald-100"><MessageCircle size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); setSelectedId(q.id); openMailModal(); setHistoryOpen(false); }} title="Email" className="w-8 h-8 bg-orange-50 text-orange-500 rounded-lg flex items-center justify-center hover:bg-orange-100"><Mail size={14} /></button>
                           {canEditDelete && (
                             <button onClick={e => deleteHistoryVersion(e, q.id)} title="Delete" className="w-8 h-8 bg-red-50 text-red-500 rounded-lg flex items-center justify-center hover:bg-red-100"><Trash2 size={14} /></button>
@@ -1172,6 +1176,20 @@ const Quotation = () => {
         <SMTPConfigPrompt
           email={(() => { try { return JSON.parse(localStorage.getItem("user") || "{}").email || ""; } catch { return ""; } })()}
           onClose={() => setShowSMTPPrompt(false)}
+        />
+      )}
+
+      {/* 1-Click WhatsApp Interactive Proposal Reminder Modal */}
+      {waModal.open && (
+        <SendWhatsAppReminderModal
+          isOpen={waModal.open}
+          onClose={() => setWaModal({ open: false, quote: null })}
+          defaultPhone={waModal.quote?.mobile_number || ""}
+          defaultContactName={waModal.quote?.customer_name || waModal.quote?.client_company || "Customer"}
+          reminderType="quotation_followup"
+          refTable="quotations"
+          refId={waModal.quote?.id}
+          refTitle={`Quotation #${waModal.quote?.id} (₹${waModal.quote?.grand_total?.toLocaleString() || "0"})`}
         />
       )}
     </div>

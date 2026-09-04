@@ -146,16 +146,18 @@ async function runQuotationFollowupCheck() {
     // Check quotations created 3 days ago with status 'Pending' or NULL
     const [quotes] = await db.promise().query(`
       SELECT q.id, q.reference_no, q.grand_total, q.customer_id,
-        c.customer_name, c.mobile_number, c.email
+        COALESCE(c.customer_name, q.client_company, 'Customer') AS customer_name,
+        COALESCE(c.mobile_number, (SELECT phone FROM clients cl WHERE (cl.company_name = q.client_company OR cl.name = q.client_company) AND cl.phone IS NOT NULL AND cl.phone != '' LIMIT 1)) AS mobile_number,
+        c.email
       FROM quotations q
-      JOIN customers c ON c.id = q.customer_id
+      LEFT JOIN customers c ON c.id = q.customer_id
       WHERE (q.status = 'Pending' OR q.status IS NULL OR q.status = '')
         AND q.quotation_date = DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-        AND c.mobile_number IS NOT NULL AND c.mobile_number != ''
         AND NOT EXISTS (
           SELECT 1 FROM wa_interactive_reminders r 
           WHERE r.reference_table = 'quotations' AND r.reference_id = q.id
         )
+      HAVING mobile_number IS NOT NULL AND mobile_number != ''
     `).catch(() => [[]]);
 
     for (const q of quotes) {
