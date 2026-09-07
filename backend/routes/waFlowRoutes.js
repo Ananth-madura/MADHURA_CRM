@@ -448,10 +448,229 @@ router.get("/:id/analytics", auth, async (req, res) => {
   }
 });
 
+// ── Trigger Main Menu / Flow directly for a Phone Number (CRM Integration) ────
+router.post("/send-menu", async (req, res) => {
+  try {
+    const { phone, flow_id, flowId } = req.body || {};
+    if (!phone) return res.status(400).json({ error: "Phone number is required" });
+    const cleanPhone = String(phone).replace(/\D/g, "");
+
+    let targetFlow = null;
+    const requestedId = flow_id || flowId;
+    if (requestedId) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ? LIMIT 1", [requestedId]);
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE status = 'active' ORDER BY id ASC LIMIT 1");
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows ORDER BY id ASC LIMIT 1");
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      return res.status(404).json({ error: "No WhatsApp flow found" });
+    }
+    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone);
+    res.json({ success: true, message: `Flow "${targetFlow.name}" triggered for +${cleanPhone}`, flowId: targetFlow.id, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Seed Comprehensive Prebuilt Business Chatbot Flows ───────────────────────
 router.post("/seed", auth, async (req, res) => {
   try {
     const seedFlows = [
+      {
+        name: "Food & Products Flow Bot (Interactive Catalog & Orders)",
+        description: "Official WhatsApp Cloud API interactive flow bot: Quick reply buttons -> Category List ('View All Categories') -> Product details -> Instant Ordering, Bulk Quote Inquiry capture to CRM, and Sales team handoff.",
+        trigger_type: "all_inbound",
+        trigger_config: { keywords: ["hi", "hello", "food", "menu", "order", "price", "products", "catalog", "start"] },
+        entry_node_key: "start",
+        nodes: [
+          { node_key: "start", node_type: "start", config: { next_node_key: "welcome_menu" }, position_x: 260, position_y: 40 },
+          {
+            node_key: "welcome_menu",
+            node_type: "send_buttons",
+            config: {
+              header_text: "Fresh Foods Trading 🍲",
+              text: "Welcome to Fresh Foods Trading! 🍲\nWe have all food items - Retail & Wholesale.\n\nWhat do you want?",
+              footer_text: "Tap an option or reply with number",
+              buttons: [
+                { reply_id: "VIEW_MENU", title: "📦 View Full Menu", next_node_key: "category_list" },
+                { reply_id: "GET_PRICE", title: "💰 Get Bulk Price", next_node_key: "ask_bulk_details" },
+                { reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", next_node_key: "sales_handoff" }
+              ]
+            },
+            position_x: 260,
+            position_y: 160
+          },
+          {
+            node_key: "category_list",
+            node_type: "send_list",
+            config: {
+              text: "Select a category to see products 👇",
+              button_text: "View All Categories",
+              title: "Our Categories",
+              rows: [
+                { id: "CAT_DRYFRUITS", reply_id: "CAT_DRYFRUITS", title: "Dry Fruits & Nuts", description: "Premium quality 1kg packs", next_node_key: "dryfruits_products" },
+                { id: "CAT_PICKLE", reply_id: "CAT_PICKLE", title: "Pickles & Podi", description: "Homemade 500g glass jars", next_node_key: "pickles_products" },
+                { id: "CAT_RICE", reply_id: "CAT_RICE", title: "Rice & Grains", description: "Basmati, Millets & Ponni", next_node_key: "rice_products" },
+                { id: "CAT_MASALA", reply_id: "CAT_MASALA", title: "Masala & Spices", description: "Fresh ground spice kit", next_node_key: "masala_products" }
+              ]
+            },
+            position_x: 60,
+            position_y: 340
+          },
+          {
+            node_key: "dryfruits_products",
+            node_type: "send_buttons",
+            config: {
+              header_text: "🌰 Dry Fruits & Nuts",
+              text: "🌰 *Best Dry Fruits & Nuts:*\n\n1. Premium Almonds (Badam) - ₹720/kg\n2. Cashews (Kaju) W320 - ₹850/kg\n3. Walnut Kernels - ₹980/kg\n4. Golden Raisins - ₹320/kg\n\n100% fresh stock with airtight packaging.",
+              footer_text: "Click below to order or get bulk rate",
+              buttons: [
+                { reply_id: "ORDER_NOW", title: "🛒 Order Now", next_node_key: "ask_order_address" },
+                { reply_id: "GET_PRICE", title: "💰 Bulk Price", next_node_key: "ask_bulk_details" },
+                { reply_id: "BACK_MENU", title: "🔙 Back to Menu", next_node_key: "welcome_menu" }
+              ]
+            },
+            position_x: -180,
+            position_y: 520
+          },
+          {
+            node_key: "pickles_products",
+            node_type: "send_buttons",
+            config: {
+              header_text: "🌶️ Pickles & Podi",
+              text: "🌶️ *Homemade Pickles & Podi:*\n\n1. Andhra Mango Avakaya (500g) - ₹180\n2. Lemon Pickle (500g) - ₹150\n3. Garlic Spicy Pickle (500g) - ₹210\n4. Traditional Idli/Dosa Podi (250g) - ₹120\n\nAuthentic grandma recipe with zero preservatives.",
+              footer_text: "Click below to order or return to menu",
+              buttons: [
+                { reply_id: "ORDER_NOW", title: "🛒 Order Now", next_node_key: "ask_order_address" },
+                { reply_id: "GET_PRICE", title: "💰 Bulk Price", next_node_key: "ask_bulk_details" },
+                { reply_id: "BACK_MENU", title: "🔙 Back to Menu", next_node_key: "welcome_menu" }
+              ]
+            },
+            position_x: 60,
+            position_y: 520
+          },
+          {
+            node_key: "rice_products",
+            node_type: "send_buttons",
+            config: {
+              header_text: "🌾 Rice & Grains",
+              text: "🌾 *Premium Rice & Grains:*\n\n1. Royal XXL Basmati Rice - ₹110/kg\n2. Sona Masoori Raw Rice - ₹58/kg\n3. Organic Foxtail Millet - ₹75/kg\n4. Unpolished Red/Brown Rice - ₹68/kg\n\nAvailable in retail 5kg/10kg and wholesale 25kg bags.",
+              buttons: [
+                { reply_id: "ORDER_NOW", title: "🛒 Order Now", next_node_key: "ask_order_address" },
+                { reply_id: "GET_PRICE", title: "💰 Bulk Price", next_node_key: "ask_bulk_details" },
+                { reply_id: "BACK_MENU", title: "🔙 Back to Menu", next_node_key: "welcome_menu" }
+              ]
+            },
+            position_x: 300,
+            position_y: 520
+          },
+          {
+            node_key: "masala_products",
+            node_type: "send_buttons",
+            config: {
+              header_text: "🌿 Masala & Spices",
+              text: "🌿 *Pure Ground Spices:*\n\n1. Guntur Red Chilli Powder (1kg) - ₹340\n2. Salem Turmeric Powder (1kg) - ₹280\n3. Malabar Black Pepper (500g) - ₹420\n4. Garam Masala Blend (500g) - ₹290\n\nCold-ground for maximum aroma and flavor.",
+              buttons: [
+                { reply_id: "ORDER_NOW", title: "🛒 Order Now", next_node_key: "ask_order_address" },
+                { reply_id: "GET_PRICE", title: "💰 Bulk Price", next_node_key: "ask_bulk_details" },
+                { reply_id: "BACK_MENU", title: "🔙 Back to Menu", next_node_key: "welcome_menu" }
+              ]
+            },
+            position_x: 540,
+            position_y: 520
+          },
+          {
+            node_key: "ask_bulk_details",
+            node_type: "collect_input",
+            config: {
+              prompt_text: "Great! Please reply with:\n1. Product Name\n2. Quantity you need (e.g. 10kg, 50kg)\n3. Your City\n\nOur team will send wholesale discounted price in 2 mins.",
+              var_key: "bulk_enquiry",
+              validation_type: "none",
+              next_node_key: "save_bulk_lead"
+            },
+            position_x: 480,
+            position_y: 260
+          },
+          {
+            node_key: "save_bulk_lead",
+            node_type: "create_lead",
+            config: {
+              default_service: "Wholesale Food Enquiry",
+              notes: "Bulk Requirement: {{bulk_enquiry}}",
+              next_node_key: "confirm_bulk"
+            },
+            position_x: 480,
+            position_y: 380
+          },
+          {
+            node_key: "confirm_bulk",
+            node_type: "send_buttons",
+            config: {
+              header_text: "Quotation Requested ✅",
+              text: "Thank you! We received your bulk requirement:\n\n\"{{bulk_enquiry}}\"\n\nOur wholesale executive is preparing your best quote right now.",
+              buttons: [
+                { reply_id: "BACK_MENU", title: "🏠 Main Menu", next_node_key: "welcome_menu" },
+                { reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", next_node_key: "sales_handoff" }
+              ]
+            },
+            position_x: 480,
+            position_y: 490
+          },
+          {
+            node_key: "ask_order_address",
+            node_type: "collect_input",
+            config: {
+              prompt_text: "Perfect! Please reply with your full delivery address and quantity.\nExample: 2kg Dry Fruits Mix, 1kg Pickle - Avinashi, Tiruppur",
+              var_key: "order_details",
+              validation_type: "none",
+              next_node_key: "save_order_lead"
+            },
+            position_x: 180,
+            position_y: 720
+          },
+          {
+            node_key: "save_order_lead",
+            node_type: "create_lead",
+            config: {
+              default_service: "Direct Food Order",
+              notes: "Customer Order: {{order_details}}",
+              next_node_key: "confirm_order"
+            },
+            position_x: 180,
+            position_y: 840
+          },
+          {
+            node_key: "confirm_order",
+            node_type: "send_buttons",
+            config: {
+              header_text: "Order Received 🎉",
+              text: "Thank you for ordering! 📦\n\n*Delivery Details:*\n{{order_details}}\n\nOur team has registered your order and will message invoice & dispatch tracker in 10 mins.",
+              buttons: [
+                { reply_id: "BACK_MENU", title: "🏠 Main Menu", next_node_key: "welcome_menu" },
+                { reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", next_node_key: "sales_handoff" }
+              ]
+            },
+            position_x: 180,
+            position_y: 960
+          },
+          {
+            node_key: "sales_handoff",
+            node_type: "handoff",
+            config: {
+              note: "Connecting you to sales team... 👨💼\nOur executive will call you in 10 mins. Or call us directly: +91 9876543210"
+            },
+            position_x: 740,
+            position_y: 260
+          }
+        ]
+      },
       {
         name: "Interactive Banking & Account Services Bot",
         description: "Multi-section interactive banking menu with structured button options, instant FD, account balance lookup, card applications, loan eligibility checks, and live agent handoff.",

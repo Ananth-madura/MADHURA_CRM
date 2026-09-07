@@ -146,6 +146,7 @@ export default function WhatsAppFlows() {
 
   // WhatsApp Smartphone Mockup Simulator State
   const [simDarkTheme, setSimDarkTheme] = useState(true);
+  const [simListPopup, setSimListPopup] = useState(null); // { title, rows, buttonText }
   const [simMessages, setSimMessages] = useState([]);
   const [simVars, setSimVars] = useState({
     name: "ANANTH",
@@ -267,16 +268,16 @@ export default function WhatsAppFlows() {
         setSelectedNodeKey("start");
       }
     } else {
-      // Create new flow
+      // Create new flow - Default to Food & Products interactive catalog bot
       setEditingFlowId(null);
-      setFlowName("New Conversational Flow");
-      setFlowDesc("Visual WhatsApp interactive state machine");
+      setFlowName("Food & Products Flow Bot");
+      setFlowDesc("Interactive flow bot: Quick buttons -> Category List (View All Categories) -> Products -> Instant Orders & Bulk Quote");
       setFlowTriggerType("all_inbound");
-      setFlowKeywords("hi, hello, menu, start, help");
+      setFlowKeywords("hi, hello, food, menu, order, price, start");
       setFlowEntryNode("start");
-      const defaultNodes = getDefaultStarterNodes();
+      const defaultNodes = getFoodBotStarterNodes();
       setNodes(defaultNodes);
-      setSelectedNodeKey("start");
+      setSelectedNodeKey("welcome_menu");
     }
 
     // Reset Canvas and Simulation
@@ -285,6 +286,210 @@ export default function WhatsAppFlows() {
     setShowStudio(true);
     resetSimulation();
   };
+
+  const triggerFlowForPhone = async (phone) => {
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const targetFlowId = editingFlowId || flows[0]?.id;
+      const res = await axios.post(`${API}/api/wa-flows/send-menu`, {
+        phone,
+        flow_id: targetFlowId
+      }, { headers });
+      alert(`✅ WhatsApp menu sent to ${phone}!\nResult: ${res.data.message}`);
+    } catch (err) {
+      alert(`❌ Error sending to WhatsApp: ${err.response?.data?.error || err.message}`);
+    }
+  };
+
+  // ── Food & Products Flow Bot Template (Catalog, "View All" List, Orders & CRM Leads) ──
+  const getFoodBotStarterNodes = () => [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: { next_node_key: "welcome_menu" },
+      position_x: 260,
+      position_y: 40
+    },
+    {
+      node_key: "welcome_menu",
+      node_type: "send_buttons",
+      config: {
+        header_text: "Fresh Foods Trading 🍲",
+        text: "Welcome to Fresh Foods Trading! 🍲\nWe have all food items - Retail & Wholesale.\n\nWhat do you want?",
+        footer_text: "Tap an option or reply with number",
+        buttons: [
+          { id: "btn_menu", reply_id: "VIEW_MENU", title: "📦 View Full Menu", label: "📦 View Full Menu", next_node_key: "category_list", nextNodeId: "category_list" },
+          { id: "btn_price", reply_id: "GET_PRICE", title: "💰 Get Bulk Price", label: "💰 Get Bulk Price", next_node_key: "ask_bulk_details", nextNodeId: "ask_bulk_details" },
+          { id: "btn_sales", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
+        ]
+      },
+      position_x: 260,
+      position_y: 160
+    },
+    {
+      node_key: "category_list",
+      node_type: "send_list",
+      config: {
+        text: "Select a category to see products 👇",
+        button_text: "View All Categories",
+        title: "Our Categories",
+        rows: [
+          { id: "CAT_DRYFRUITS", reply_id: "CAT_DRYFRUITS", title: "Dry Fruits & Nuts", description: "Premium quality 1kg packs", next_node_key: "dryfruits_products", nextNodeId: "dryfruits_products" },
+          { id: "CAT_PICKLE", reply_id: "CAT_PICKLE", title: "Pickles & Podi", description: "Homemade 500g glass jars", next_node_key: "pickles_products", nextNodeId: "pickles_products" },
+          { id: "CAT_RICE", reply_id: "CAT_RICE", title: "Rice & Grains", description: "Basmati, Millets & Ponni", next_node_key: "rice_products", nextNodeId: "rice_products" },
+          { id: "CAT_MASALA", reply_id: "CAT_MASALA", title: "Masala & Spices", description: "Fresh ground spice kit", next_node_key: "masala_products", nextNodeId: "masala_products" }
+        ]
+      },
+      position_x: 60,
+      position_y: 340
+    },
+    {
+      node_key: "dryfruits_products",
+      node_type: "send_buttons",
+      config: {
+        header_text: "🌰 Dry Fruits & Nuts",
+        text: "🌰 *Best Dry Fruits & Nuts:*\n\n1. Premium Almonds (Badam) - ₹720/kg\n2. Cashews (Kaju) W320 - ₹850/kg\n3. Walnut Kernels - ₹980/kg\n4. Golden Raisins - ₹320/kg\n\n100% fresh stock with airtight packaging.",
+        footer_text: "Click below to order or get bulk rate",
+        buttons: [
+          { id: "btn_ord_df", reply_id: "ORDER_NOW", title: "🛒 Order Now", label: "🛒 Order Now", next_node_key: "ask_order_address", nextNodeId: "ask_order_address" },
+          { id: "btn_prc_df", reply_id: "GET_PRICE", title: "💰 Bulk Price", label: "💰 Bulk Price", next_node_key: "ask_bulk_details", nextNodeId: "ask_bulk_details" },
+          { id: "btn_bck_df", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
+        ]
+      },
+      position_x: -180,
+      position_y: 540
+    },
+    {
+      node_key: "pickles_products",
+      node_type: "send_buttons",
+      config: {
+        header_text: "🌶️ Pickles & Podi",
+        text: "🌶️ *Homemade Pickles & Podi:*\n\n1. Andhra Mango Avakaya (500g) - ₹180\n2. Lemon Pickle (500g) - ₹150\n3. Garlic Spicy Pickle (500g) - ₹210\n4. Traditional Idli/Dosa Podi (250g) - ₹120\n\nAuthentic grandma recipe with zero preservatives.",
+        footer_text: "Click below to order or return to menu",
+        buttons: [
+          { id: "btn_ord_pk", reply_id: "ORDER_NOW", title: "🛒 Order Now", label: "🛒 Order Now", next_node_key: "ask_order_address", nextNodeId: "ask_order_address" },
+          { id: "btn_prc_pk", reply_id: "GET_PRICE", title: "💰 Bulk Price", label: "💰 Bulk Price", next_node_key: "ask_bulk_details", nextNodeId: "ask_bulk_details" },
+          { id: "btn_bck_pk", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
+        ]
+      },
+      position_x: 80,
+      position_y: 540
+    },
+    {
+      node_key: "rice_products",
+      node_type: "send_buttons",
+      config: {
+        header_text: "🌾 Rice & Grains",
+        text: "🌾 *Premium Rice & Grains:*\n\n1. Royal XXL Basmati Rice - ₹110/kg\n2. Sona Masoori Raw Rice - ₹58/kg\n3. Organic Foxtail Millet - ₹75/kg\n4. Unpolished Red/Brown Rice - ₹68/kg\n\nAvailable in retail 5kg/10kg and wholesale 25kg bags.",
+        buttons: [
+          { id: "btn_ord_rc", reply_id: "ORDER_NOW", title: "🛒 Order Now", label: "🛒 Order Now", next_node_key: "ask_order_address", nextNodeId: "ask_order_address" },
+          { id: "btn_prc_rc", reply_id: "GET_PRICE", title: "💰 Bulk Price", label: "💰 Bulk Price", next_node_key: "ask_bulk_details", nextNodeId: "ask_bulk_details" },
+          { id: "btn_bck_rc", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
+        ]
+      },
+      position_x: 340,
+      position_y: 540
+    },
+    {
+      node_key: "masala_products",
+      node_type: "send_buttons",
+      config: {
+        header_text: "🌿 Masala & Spices",
+        text: "🌿 *Pure Ground Spices:*\n\n1. Guntur Red Chilli Powder (1kg) - ₹340\n2. Salem Turmeric Powder (1kg) - ₹280\n3. Malabar Black Pepper (500g) - ₹420\n4. Garam Masala Blend (500g) - ₹290\n\nCold-ground for maximum aroma and flavor.",
+        buttons: [
+          { id: "btn_ord_ms", reply_id: "ORDER_NOW", title: "🛒 Order Now", label: "🛒 Order Now", next_node_key: "ask_order_address", nextNodeId: "ask_order_address" },
+          { id: "btn_prc_ms", reply_id: "GET_PRICE", title: "💰 Bulk Price", label: "💰 Bulk Price", next_node_key: "ask_bulk_details", nextNodeId: "ask_bulk_details" },
+          { id: "btn_bck_ms", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
+        ]
+      },
+      position_x: 600,
+      position_y: 540
+    },
+    {
+      node_key: "ask_bulk_details",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Great! Please reply with:\n1. Product Name\n2. Quantity you need (e.g. 10kg, 50kg)\n3. Your City\n\nOur team will send wholesale discounted price in 2 mins.",
+        var_key: "bulk_enquiry",
+        validation_type: "none",
+        next_node_key: "save_bulk_lead"
+      },
+      position_x: 520,
+      position_y: 260
+    },
+    {
+      node_key: "save_bulk_lead",
+      node_type: "create_lead",
+      config: {
+        default_service: "Wholesale Food Enquiry",
+        notes: "Bulk Requirement: {{bulk_enquiry}}",
+        next_node_key: "confirm_bulk"
+      },
+      position_x: 520,
+      position_y: 380
+    },
+    {
+      node_key: "confirm_bulk",
+      node_type: "send_buttons",
+      config: {
+        header_text: "Quotation Requested ✅",
+        text: "Thank you! We received your bulk requirement:\n\n\"{{bulk_enquiry}}\"\n\nOur wholesale executive is preparing your best quote right now.",
+        buttons: [
+          { id: "btn_bm", reply_id: "BACK_MENU", title: "🏠 Main Menu", label: "🏠 Main Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" },
+          { id: "btn_th", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
+        ]
+      },
+      position_x: 520,
+      position_y: 490
+    },
+    {
+      node_key: "ask_order_address",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Perfect! Please reply with your full delivery address and quantity.\nExample: 2kg Dry Fruits Mix, 1kg Pickle - Avinashi, Tiruppur",
+        var_key: "order_details",
+        validation_type: "none",
+        next_node_key: "save_order_lead"
+      },
+      position_x: 220,
+      position_y: 720
+    },
+    {
+      node_key: "save_order_lead",
+      node_type: "create_lead",
+      config: {
+        default_service: "Direct Food Order",
+        notes: "Customer Order: {{order_details}}",
+        next_node_key: "confirm_order"
+      },
+      position_x: 220,
+      position_y: 840
+    },
+    {
+      node_key: "confirm_order",
+      node_type: "send_buttons",
+      config: {
+        header_text: "Order Received 🎉",
+        text: "Thank you for ordering! 📦\n\n*Delivery Details:*\n{{order_details}}\n\nOur team has registered your order and will message invoice & dispatch tracker in 10 mins.",
+        buttons: [
+          { id: "btn_mno", reply_id: "BACK_MENU", title: "🏠 Main Menu", label: "🏠 Main Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" },
+          { id: "btn_tso", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
+        ]
+      },
+      position_x: 220,
+      position_y: 960
+    },
+    {
+      node_key: "sales_handoff",
+      node_type: "handoff",
+      config: {
+        note: "Connecting you to sales team... 👨💼\nOur executive will call you in 10 mins. Or call us directly: +91 9876543210"
+      },
+      position_x: 780,
+      position_y: 260
+    }
+  ];
 
   // ── Starter Nodes Template (Default Banking / Interactive Menu) ─────────────
   const getDefaultStarterNodes = () => [
@@ -763,7 +968,8 @@ export default function WhatsAppFlows() {
           cfg.sections = secs;
         }
       } else if (portType === "button" && (n.node_type === "send_buttons" || n.node_type === "send_list")) {
-        const btns = [...(cfg.buttons || cfg.rows || [])];
+        const isList = n.node_type === "send_list";
+        const btns = [...(isList ? (cfg.rows || cfg.buttons || []) : (cfg.buttons || cfg.rows || []))];
         if (btns[buttonIdx]) {
           btns[buttonIdx] = {
             ...btns[buttonIdx],
@@ -771,6 +977,7 @@ export default function WhatsAppFlows() {
             nextNodeId: targetNodeKey
           };
           cfg.buttons = btns;
+          cfg.rows = btns;
         }
       } else if (portType === "true") {
         cfg.true_next = targetNodeKey;
@@ -1020,12 +1227,19 @@ export default function WhatsAppFlows() {
             btnOffset += 34;
           });
         }
-      } else if (src.node_type === "send_buttons" || src.node_type === "send_list") {
+      } else if (src.node_type === "send_buttons") {
         let btnOffset = 95;
-        (cfg.buttons || cfg.rows || []).forEach(b => {
+        (cfg.buttons || []).forEach(b => {
           const target = b.next_node_key || b.nextNodeId;
-          if (target) addWire(target, b.title || b.label, "#0D9488", btnOffset);
+          if (target) addWire(target, b.title || b.label || "Option", "#0D9488", btnOffset);
           btnOffset += 34;
+        });
+      } else if (src.node_type === "send_list") {
+        let btnOffset = 118;
+        (cfg.rows || cfg.buttons || []).forEach(b => {
+          const target = b.next_node_key || b.nextNodeId;
+          if (target) addWire(target, b.title || b.label || "Option", "#06B6D4", btnOffset);
+          btnOffset += 38;
         });
       } else if (src.node_type === "condition") {
         if (cfg.true_next) addWire(cfg.true_next, "YES (True)", "#10B981", 85);
@@ -1179,21 +1393,60 @@ export default function WhatsAppFlows() {
           )}
 
           {/* Quick Reply Buttons Preview */}
-          {(node.node_type === "send_buttons" || node.node_type === "send_list") && (
+          {node.node_type === "send_buttons" && (
             <div className="space-y-1.5">
+              {node.config?.header_text && (
+                <div className="text-[10px] font-bold text-teal-700 uppercase tracking-wide truncate">
+                  {node.config.header_text}
+                </div>
+              )}
               <p className="text-slate-600 text-[11px] line-clamp-2 italic bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                "{node.config?.text || "Choose:"}"
+                "{node.config?.text || "Please choose:"}"
               </p>
               <div className="space-y-1">
-                {(node.config?.buttons || node.config?.rows || []).map((b, bIdx) => (
+                {(node.config?.buttons || []).map((b, bIdx) => (
                   <div
                     key={bIdx}
-                    className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border border-teal-200 text-teal-900 rounded-lg text-[11px] font-semibold"
+                    className="flex items-center justify-between px-2 py-1.5 bg-teal-50 border border-teal-200 text-teal-900 rounded-lg text-[11px] font-semibold shadow-xs"
                   >
                     <span className="truncate">{b.title || b.label || `Option ${bIdx + 1}`}</span>
                     <div
                       onMouseDown={(e) => startConnecting(node.node_key, b.reply_id || b.id || `btn_${bIdx}`, "button", { buttonIdx: bIdx }, e)}
-                      className="w-4 h-4 rounded-full bg-teal-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                      className="w-4 h-4 rounded-full bg-teal-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                      title="Connect target node"
+                    >
+                      <ChevronRight size={10} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* WhatsApp List Menu ("View All") Preview */}
+          {node.node_type === "send_list" && (
+            <div className="space-y-1.5">
+              <p className="text-slate-600 text-[11px] line-clamp-2 italic bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                "{node.config?.text || node.config?.body || "Select an item:"}"
+              </p>
+              <div className="px-2 py-1 bg-cyan-100/80 border border-cyan-300 text-cyan-950 rounded-lg text-[10px] font-bold flex items-center gap-1.5">
+                <ListOrdered size={12} className="text-cyan-700 shrink-0" />
+                <span className="truncate">Button: "{node.config?.button_text || "View All Categories"}"</span>
+              </div>
+              <div className="space-y-1">
+                {(node.config?.rows || node.config?.buttons || []).map((r, rIdx) => (
+                  <div
+                    key={rIdx}
+                    className="flex items-center justify-between px-2 py-1.5 bg-cyan-50 border border-cyan-200 text-cyan-950 rounded-lg text-[11px] font-semibold shadow-xs"
+                  >
+                    <div className="truncate pr-1.5">
+                      <span className="block truncate">{r.title || `Item ${rIdx + 1}`}</span>
+                      {r.description && <span className="block text-[9px] text-cyan-700 font-normal truncate">{r.description}</span>}
+                    </div>
+                    <div
+                      onMouseDown={(e) => startConnecting(node.node_key, r.id || r.reply_id || `row_${rIdx}`, "button", { buttonIdx: rIdx }, e)}
+                      className="w-4 h-4 rounded-full bg-cyan-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                      title="Connect target node"
                     >
                       <ChevronRight size={10} />
                     </div>
@@ -1493,6 +1746,379 @@ export default function WhatsAppFlows() {
           </div>
         )}
 
+        {/* ── QUICK REPLY BUTTONS CONFIGURATION ─────────────────────── */}
+        {selectedNode.node_type === "send_buttons" && (
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Header Text (Optional)</label>
+              <input
+                type="text"
+                value={cfg.header_text || ""}
+                onChange={(e) => updateConfig({ header_text: e.target.value })}
+                placeholder="e.g. Fresh Foods Trading 🍲"
+                className="w-full px-3 py-1.5 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Message Body Text *</label>
+                <span className="text-[10px] text-slate-400">Supports variables</span>
+              </div>
+              <textarea
+                value={cfg.text || ""}
+                onChange={(e) => updateConfig({ text: e.target.value })}
+                rows={3}
+                placeholder="Welcome to Fresh Foods Trading! What do you want?"
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+              />
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {PLACEHOLDERS.slice(0, 6).map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => updateConfig({ text: `${cfg.text || ""} ${p.tag}` })}
+                    className="px-1.5 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded text-[10px] font-mono transition"
+                  >
+                    + {p.tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Footer Text (Optional)</label>
+              <input
+                type="text"
+                value={cfg.footer_text || ""}
+                onChange={(e) => updateConfig({ footer_text: e.target.value })}
+                placeholder="e.g. Tap an option or reply with number"
+                className="w-full px-3 py-1.5 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 uppercase">Quick Reply Buttons</h4>
+                  <p className="text-[10px] text-slate-400">Max 3 buttons (WhatsApp Cloud API rule)</p>
+                </div>
+                {(cfg.buttons || []).length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const btns = [...(cfg.buttons || [])];
+                      const idx = btns.length + 1;
+                      btns.push({
+                        id: `btn_${Date.now()}`,
+                        reply_id: `BTN_${idx}`,
+                        title: `Option ${idx}`,
+                        label: `Option ${idx}`,
+                        next_node_key: "",
+                        nextNodeId: ""
+                      });
+                      updateConfig({ buttons: btns });
+                    }}
+                    className="px-2 py-1 bg-teal-100 text-teal-800 text-[10px] font-bold rounded-lg hover:bg-teal-200 flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Add Button
+                  </button>
+                )}
+              </div>
+
+              {(cfg.buttons || []).map((btn, bIdx) => (
+                <div key={bIdx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-100 w-5 h-5 rounded-full flex items-center justify-center shrink-0">
+                      {bIdx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={btn.title || btn.label || ""}
+                      onChange={(e) => {
+                        const btns = [...cfg.buttons];
+                        btns[bIdx] = { ...btns[bIdx], title: e.target.value, label: e.target.value };
+                        updateConfig({ buttons: btns });
+                      }}
+                      placeholder="Button Title (e.g. 📦 View Full Menu)"
+                      className="flex-1 px-2.5 py-1 text-xs font-semibold bg-white border rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const btns = cfg.buttons.filter((_, i) => i !== bIdx);
+                        updateConfig({ buttons: btns });
+                      }}
+                      className="text-slate-400 hover:text-rose-500 p-1"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 shrink-0">Button ID:</span>
+                    <input
+                      type="text"
+                      value={btn.reply_id || btn.id || ""}
+                      onChange={(e) => {
+                        const btns = [...cfg.buttons];
+                        btns[bIdx] = { ...btns[bIdx], reply_id: e.target.value, id: e.target.value };
+                        updateConfig({ buttons: btns });
+                      }}
+                      placeholder="VIEW_MENU"
+                      className="flex-1 px-2 py-0.5 text-[11px] font-mono bg-white border rounded"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 font-semibold shrink-0">Next Step:</span>
+                    <select
+                      value={btn.next_node_key || btn.nextNodeId || ""}
+                      onChange={(e) => {
+                        const btns = [...cfg.buttons];
+                        btns[bIdx] = { ...btns[bIdx], next_node_key: e.target.value, nextNodeId: e.target.value };
+                        updateConfig({ buttons: btns });
+                      }}
+                      className="flex-1 px-2 py-1 text-xs bg-white border rounded font-mono font-bold text-teal-800"
+                    >
+                      <option value="">-- Connect Next Node --</option>
+                      {nodes.map(n => (
+                        <option key={n.node_key} value={n.node_key}>
+                          {n.node_key} ({n.node_type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── LIST MENU ("VIEW ALL") CONFIGURATION ───────────────────── */}
+        {selectedNode.node_type === "send_list" && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Message Body Text *</label>
+                <span className="text-[10px] text-slate-400">Supports variables</span>
+              </div>
+              <textarea
+                value={cfg.text || cfg.body || ""}
+                onChange={(e) => updateConfig({ text: e.target.value, body: e.target.value })}
+                rows={2}
+                placeholder="Select a category to see products 👇"
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">"View All" Button Text</label>
+                <input
+                  type="text"
+                  value={cfg.button_text || ""}
+                  onChange={(e) => updateConfig({ button_text: e.target.value })}
+                  placeholder="View All Categories"
+                  className="w-full px-2.5 py-1.5 text-xs border rounded-lg outline-none font-bold text-cyan-800"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Popup List Title</label>
+                <input
+                  type="text"
+                  value={cfg.title || ""}
+                  onChange={(e) => updateConfig({ title: e.target.value })}
+                  placeholder="Our Categories"
+                  className="w-full px-2.5 py-1.5 text-xs border rounded-lg outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 uppercase">List Rows / Categories</h4>
+                  <p className="text-[10px] text-slate-400">Max 10 items (WhatsApp Cloud API rule)</p>
+                </div>
+                {(cfg.rows || []).length < 10 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rows = [...(cfg.rows || [])];
+                      const idx = rows.length + 1;
+                      rows.push({
+                        id: `CAT_${idx}`,
+                        reply_id: `CAT_${idx}`,
+                        title: `Category ${idx}`,
+                        description: `Description ${idx}`,
+                        next_node_key: "",
+                        nextNodeId: ""
+                      });
+                      updateConfig({ rows, buttons: rows });
+                    }}
+                    className="px-2 py-1 bg-cyan-100 text-cyan-800 text-[10px] font-bold rounded-lg hover:bg-cyan-200 flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Add Item
+                  </button>
+                )}
+              </div>
+
+              {(cfg.rows || []).map((row, rIdx) => (
+                <div key={rIdx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-cyan-700 bg-cyan-100 w-5 h-5 rounded-full flex items-center justify-center shrink-0">
+                      {rIdx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={row.title || ""}
+                      onChange={(e) => {
+                        const rows = [...cfg.rows];
+                        rows[rIdx] = { ...rows[rIdx], title: e.target.value };
+                        updateConfig({ rows, buttons: rows });
+                      }}
+                      placeholder="Title (e.g. Dry Fruits & Nuts)"
+                      className="flex-1 px-2.5 py-1 text-xs font-semibold bg-white border rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const rows = cfg.rows.filter((_, i) => i !== rIdx);
+                        updateConfig({ rows, buttons: rows });
+                      }}
+                      className="text-slate-400 hover:text-rose-500 p-1"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={row.description || ""}
+                      onChange={(e) => {
+                        const rows = [...cfg.rows];
+                        rows[rIdx] = { ...rows[rIdx], description: e.target.value };
+                        updateConfig({ rows, buttons: rows });
+                      }}
+                      placeholder="Short Description (e.g. Premium quality 1kg packs)"
+                      className="w-full px-2 py-1 text-[11px] bg-white border rounded"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 font-semibold shrink-0">Next Step:</span>
+                    <select
+                      value={row.next_node_key || row.nextNodeId || ""}
+                      onChange={(e) => {
+                        const rows = [...cfg.rows];
+                        rows[rIdx] = { ...rows[rIdx], next_node_key: e.target.value, nextNodeId: e.target.value };
+                        updateConfig({ rows, buttons: rows });
+                      }}
+                      className="flex-1 px-2 py-1 text-xs bg-white border rounded font-mono font-bold text-cyan-800"
+                    >
+                      <option value="">-- Connect Next Node --</option>
+                      {nodes.map(n => (
+                        <option key={n.node_key} value={n.node_key}>
+                          {n.node_key} ({n.node_type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── TEXT MESSAGE CONFIGURATION ────────────────────────────── */}
+        {selectedNode.node_type === "send_message" && (
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Message Text *</label>
+                <span className="text-[10px] text-slate-400">Supports variables</span>
+              </div>
+              <textarea
+                value={cfg.text || ""}
+                onChange={(e) => updateConfig({ text: e.target.value })}
+                rows={4}
+                placeholder="Thank you for contacting Fresh Foods Trading!..."
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+              />
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {PLACEHOLDERS.slice(0, 6).map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => updateConfig({ text: `${cfg.text || ""} ${p.tag}` })}
+                    className="px-1.5 py-0.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded text-[10px] font-mono transition"
+                  >
+                    + {p.tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- End Flow or Stop --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── MEDIA / PDF CATALOG CONFIGURATION ─────────────────────── */}
+        {selectedNode.node_type === "send_media" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Media URL or Catalog Link</label>
+              <input
+                type="text"
+                value={cfg.url || ""}
+                onChange={(e) => updateConfig({ url: e.target.value })}
+                placeholder="https://yourdomain.com/catalog.pdf"
+                className="w-full p-2 text-xs border rounded-lg font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Media Type</label>
+              <select
+                value={cfg.media_type || "document"}
+                onChange={(e) => updateConfig({ media_type: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white"
+              >
+                <option value="document">Document / PDF Catalog</option>
+                <option value="image">Product Image (JPEG / PNG)</option>
+                <option value="video">Product Video (MP4)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Caption Text</label>
+              <input
+                type="text"
+                value={cfg.caption || ""}
+                onChange={(e) => updateConfig({ caption: e.target.value })}
+                placeholder="Here is our wholesale catalog!"
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* ── CONDITION BRANCHING CONFIGURATION ─────────────────────── */}
         {selectedNode.node_type === "condition" && (
           <div className="space-y-3">
@@ -1653,6 +2279,117 @@ export default function WhatsAppFlows() {
             </div>
           </div>
         )}
+
+        {/* ── CREATE CRM LEAD CONFIGURATION ─────────────────────────── */}
+        {selectedNode.node_type === "create_lead" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Product or Service Category</label>
+              <input
+                type="text"
+                value={cfg.default_service || ""}
+                onChange={(e) => updateConfig({ default_service: e.target.value })}
+                placeholder="e.g. Wholesale Food Order / Direct Order"
+                className="w-full p-2 text-xs border rounded-lg font-semibold"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Lead Notes Template (supports variables)</label>
+              <textarea
+                value={cfg.notes || ""}
+                onChange={(e) => updateConfig({ notes: e.target.value })}
+                rows={2}
+                placeholder="Order: {{order_details}} / City: {{city}}"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
+              <p className="font-bold flex items-center gap-1">💼 Auto CRM Lead Capture</p>
+              <p className="text-[10px] text-blue-800 leading-relaxed">
+                Automatically registers customer phone number, name, inquiry details &amp; city straight into your CRM Telecalls &amp; Leads table.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── API WEBHOOK REST CALL CONFIGURATION ────────────────────── */}
+        {selectedNode.node_type === "api_webhook" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Method</label>
+                <select
+                  value={cfg.method || "GET"}
+                  onChange={(e) => updateConfig({ method: e.target.value })}
+                  className="w-full p-2 text-xs border rounded-lg bg-white font-mono font-bold"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-700 block mb-1">Endpoint URL</label>
+                <input
+                  type="text"
+                  value={cfg.url || ""}
+                  onChange={(e) => updateConfig({ url: e.target.value })}
+                  placeholder="https://api.example.com/order"
+                  className="w-full p-2 text-xs border rounded-lg font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── PACING DELAY CONFIGURATION ────────────────────────────── */}
+        {selectedNode.node_type === "delay" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Typing Delay Duration (Seconds)</label>
+              <input
+                type="number"
+                min="1"
+                max="30"
+                value={cfg.delay_seconds || 2}
+                onChange={(e) => updateConfig({ delay_seconds: parseInt(e.target.value, 10) || 1 })}
+                className="w-full p-2 text-xs border rounded-lg font-mono font-bold"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.map(n => <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>)}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1785,6 +2522,28 @@ export default function WhatsAppFlows() {
                     </div>
                   )}
 
+                  {/* WhatsApp Interactive List Menu Display ("View All Categories" / "View Options") */}
+                  {msg.type === "list" && Array.isArray(msg.rows) && (
+                    <div className="mt-2 border-t border-slate-600/30 pt-1.5 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => setSimListPopup({
+                          title: msg.title || "Our Categories",
+                          rows: msg.rows || [],
+                          buttonText: msg.button_text || "View Options"
+                        })}
+                        className={`w-full py-2 px-3 rounded-xl text-center text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 ${
+                          simDarkTheme
+                            ? "bg-[#00a884] hover:bg-[#008f6f] text-white"
+                            : "bg-[#008069] hover:bg-[#006a57] text-white"
+                        }`}
+                      >
+                        <ListOrdered size={14} />
+                        <span>{msg.button_text || "View All Categories"}</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Timestamp & Double Checkmarks */}
                   <div className="flex items-center justify-end gap-1 mt-1 text-[9px] opacity-60">
                     <span>{timeStr}</span>
@@ -1837,6 +2596,52 @@ export default function WhatsAppFlows() {
             <Send size={12} />
           </button>
         </form>
+
+        {/* List Selector Popup Drawer in Phone Mockup */}
+        {simListPopup && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs z-40 flex flex-col justify-end animate-in fade-in duration-150">
+            <div className={`rounded-t-3xl p-3.5 max-h-[75%] flex flex-col shadow-2xl border-t ${
+              simDarkTheme ? "bg-[#1f2c34] border-[#2a3942] text-white" : "bg-white border-slate-200 text-slate-900"
+            }`}>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-700/30 mb-2">
+                <div>
+                  <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">{simListPopup.title || "Our Categories"}</h4>
+                  <p className="text-[10px] text-slate-400">Tap an option to view details</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSimListPopup(null)}
+                  className="p-1 rounded-full text-slate-400 hover:text-white"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="overflow-y-auto space-y-1.5 pr-1 max-h-56">
+                {simListPopup.rows.map((row, rIdx) => (
+                  <button
+                    key={rIdx}
+                    type="button"
+                    onClick={() => {
+                      setSimListPopup(null);
+                      executeSimStep(row.title || row.id);
+                    }}
+                    className={`w-full p-2.5 rounded-xl text-left transition-all border flex items-center justify-between ${
+                      simDarkTheme
+                        ? "bg-[#111b21] hover:bg-[#202c33] border-[#2a3942] text-white"
+                        : "bg-slate-50 hover:bg-emerald-50 border-slate-200 text-slate-900 hover:border-emerald-300"
+                    }`}
+                  >
+                    <div className="pr-2">
+                      <div className="text-xs font-bold text-emerald-500">{row.title}</div>
+                      {row.description && <div className="text-[10px] text-slate-400 line-clamp-1">{row.description}</div>}
+                    </div>
+                    <ChevronRight size={13} className="text-emerald-500 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1907,8 +2712,73 @@ export default function WhatsAppFlows() {
             </button>
           </div>
 
-          {/* Save & Publish Buttons */}
+          {/* Templates & Action Buttons */}
           <div className="flex items-center gap-2">
+            {/* Quick Template Switcher */}
+            <div className="relative group">
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+              >
+                <Sparkles size={13} className="text-amber-400" />
+                <span>Templates</span>
+                <ChevronDown size={11} />
+              </button>
+              <div className="absolute right-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 hidden group-hover:block z-50 animate-in fade-in duration-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFlowName("Food & Products Flow Bot");
+                    setFlowDesc("Interactive flow bot: Buttons -> View All Categories -> Products -> Orders & Inquiries");
+                    setFlowTriggerType("all_inbound");
+                    setFlowKeywords("hi, hello, food, menu, order, price, start");
+                    setNodes(getFoodBotStarterNodes());
+                    setSelectedNodeKey("welcome_menu");
+                    resetSimulation();
+                  }}
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-500/20 text-xs font-semibold text-white flex items-start gap-2.5 transition"
+                >
+                  <span className="text-lg">🍲</span>
+                  <div>
+                    <div className="font-bold text-emerald-400">Food &amp; Products Flow</div>
+                    <div className="text-[10px] text-slate-400">Buttons &rarr; View All Categories &rarr; Products &rarr; Order</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFlowName("Interactive Banking & Account Services Bot");
+                    setFlowDesc("Multi-section interactive banking menu");
+                    setFlowTriggerType("all_inbound");
+                    setFlowKeywords("bank, account, balance, card, loan, hi, hello, menu");
+                    setNodes(getDefaultStarterNodes());
+                    setSelectedNodeKey("banking_menu");
+                    resetSimulation();
+                  }}
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-slate-800 text-xs font-semibold text-white flex items-start gap-2.5 transition mt-1"
+                >
+                  <span className="text-lg">🏦</span>
+                  <div>
+                    <div className="font-bold text-slate-200">Banking &amp; Finance Bot</div>
+                    <div className="text-[10px] text-slate-400">Multi-section balance &amp; loan menu</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Test on real WhatsApp Phone */}
+            <button
+              onClick={() => {
+                const phone = prompt("Enter customer phone number to test-send WhatsApp menu (e.g. 919876543210):");
+                if (phone) triggerFlowForPhone(phone);
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 flex items-center gap-1.5 transition"
+              title="Send flow menu directly to WhatsApp phone"
+            >
+              <Send size={13} />
+              <span>Test Phone</span>
+            </button>
+
             <button
               onClick={() => setShowSimDrawer(!showSimDrawer)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${

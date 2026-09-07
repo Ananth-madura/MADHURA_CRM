@@ -630,7 +630,7 @@ class WaFlowEngine {
       
       // 8. Resolve target next node key with flexible property name support
       if (matchedBtn) {
-        const targetNext = matchedBtn.next_node_key || matchedBtn.next_node || matchedBtn.target_node || matchedBtn.next;
+        const targetNext = matchedBtn.next_node_key || matchedBtn.nextNodeId || matchedBtn.next_node || matchedBtn.target_node || matchedBtn.next;
         if (targetNext) {
           if (!vars._nav_history.includes(run.current_node_key)) {
             vars._nav_history.push(run.current_node_key);
@@ -1432,7 +1432,7 @@ class WaFlowEngine {
             vars.selected_option = matched.title;
             vars.selected_option_id = matched.reply_id || matched.id;
             vars._reprompt_count = 0;
-            nextNodeKey = matched.next_node_key || matched.next_node || matched.target_node || matched.next;
+            nextNodeKey = matched.next_node_key || matched.nextNodeId || matched.next_node || matched.target_node || matched.next;
           } else if (!nextNodeKey) {
             // Mirror the live bot: re-show the numbered menu once before falling
             // through, instead of silently selecting option 1.

@@ -125,14 +125,49 @@ app.use("/api/wa/groups", require("./routes/waGroupRoutes"));
 app.use("/api/wa/campaigns", require("./routes/waCampaignRoutes"));
 app.use("/api/wa/analytics", require("./routes/waAnalyticsRoutes"));
 app.use("/api/wa/config", require("./routes/waConfigRoutes"));
+app.use("/webhook", require("./routes/waWebhookRoutes"));
 app.use("/api/wa/webhook", require("./routes/waWebhookRoutes"));
 app.use("/api/wa/contacts", require("./routes/waContactRoutes"));
 app.use("/api/wa/automations", require("./routes/waAutomationRoutes"));
 app.use("/api/wa/flows", require("./routes/waFlowRoutes"));
+app.use("/api/wa-flows", require("./routes/waFlowRoutes"));
 app.use("/api/wa/ai", require("./routes/waAiRoutes"));
 app.use("/api/wa/payments", require("./routes/waPaymentsRoutes"));
 app.use("/api/wa/drip", require("./routes/waDripRoutes"));
 app.use("/api/wa/reminders", require("./routes/waReminderRoutes"));
+
+// Direct CRM trigger route for external webhooks or CRM WhatsApp triggers
+app.post("/send-menu", async (req, res) => {
+  try {
+    const { phone, flow_id, flowId } = req.body || {};
+    if (!phone) return res.status(400).json({ error: "Phone number is required" });
+    const cleanPhone = String(phone).replace(/\D/g, "");
+    const waFlowEngine = require("./services/waFlowEngine");
+    const db = require("./config/database");
+
+    let targetFlow = null;
+    const requestedId = flow_id || flowId;
+    if (requestedId) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ? LIMIT 1", [requestedId]);
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE status = 'active' ORDER BY id ASC LIMIT 1");
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      const [flows] = await db.promise().query("SELECT * FROM wa_flows ORDER BY id ASC LIMIT 1");
+      if (flows.length) targetFlow = flows[0];
+    }
+    if (!targetFlow) {
+      return res.status(404).json({ error: "No WhatsApp flow found in system" });
+    }
+    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone);
+    res.json({ success: true, message: `Menu triggered for +${cleanPhone}`, flow: targetFlow.name, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Ensure Runtime Directories Exist ──────────────────────────────────────────
 // Ensures application runs cleanly on fresh setups/clones where folders are gitignored
