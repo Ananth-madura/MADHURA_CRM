@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
@@ -12,7 +14,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Minimize2, Grid, RotateCcw, Copy,
   ArrowDownRight, CheckSquare, Settings2, Sliders, MessageSquare,
   AlertCircle, Compass, Share2, Tag, Shield, Terminal, ArrowUpRight,
-  Sun, Moon, CornerDownRight, HelpCircle as QuestionIcon
+  Sun, Moon, CornerDownRight, HelpCircle as QuestionIcon, ChevronLeft
 } from "lucide-react";
 
 // Standard & Advanced WhatsApp Flow Placeholders
@@ -111,14 +113,20 @@ const PALETTE_CATEGORIES = [
 ];
 
 export default function WhatsAppFlows() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { flowId } = useParams();
+  const [searchParams] = useSearchParams();
+  const isBuildRoute = location.pathname.includes("/flows/build") || location.pathname.includes("/flows/builder");
+
   const [flows, setFlows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("flows"); // "flows" | "runs"
   const [searchQuery, setSearchQuery] = useState("");
 
   // Visual Studio / Editor State
-  const [showStudio, setShowStudio] = useState(false);
-  const [editingFlowId, setEditingFlowId] = useState(null);
+  const [showStudio, setShowStudio] = useState(isBuildRoute);
+  const [editingFlowId, setEditingFlowId] = useState(flowId || searchParams.get("id") || null);
   const [flowName, setFlowName] = useState("");
   const [flowDesc, setFlowDesc] = useState("");
   const [flowTriggerType, setFlowTriggerType] = useState("keyword");
@@ -165,7 +173,9 @@ export default function WhatsAppFlows() {
   const [simTyping, setSimTyping] = useState(false);
   const [simInputText, setSimInputText] = useState("");
   const [simEnded, setSimEnded] = useState(false);
-  const [showSimDrawer, setShowSimDrawer] = useState(true);
+  const [showPalette, setShowPalette] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(false);
+  const [paletteFilter, setPaletteFilter] = useState("");
   const simChatBottomRef = useRef(null);
 
   // Auto-scroll phone simulator chat bottom on new message or typing
@@ -264,9 +274,87 @@ export default function WhatsAppFlows() {
     }
   }, [activeTab]);
 
+  // ── Sync Route with Visual Studio State ─────────────────────────────────────
+  useEffect(() => {
+    if (isBuildRoute) {
+      const targetId = flowId || searchParams.get("id");
+      if (targetId) {
+        openStudio({ id: targetId });
+      } else {
+        openStudio(null);
+      }
+    } else {
+      setShowStudio(false);
+    }
+  }, [location.pathname, flowId]);
+
+  const handleCloseStudio = () => {
+    setShowStudio(false);
+    navigate("/dashboard/whatsapp/flows");
+  };
+
+  // ── Auto-Fit & Center Flow Canvas ───────────────────────────────────────────
+  const fitToScreen = useCallback((targetNodes = null) => {
+    const list = targetNodes || nodes;
+    if (!list || list.length === 0) {
+      setZoom(1);
+      setPan({ x: 80, y: 50 });
+      return;
+    }
+    const canvasEl = canvasRef.current;
+    const canvasWidth = canvasEl ? canvasEl.clientWidth : (window.innerWidth - (showPalette ? 260 : 0) - (showRightPanel ? 400 : 0));
+    const canvasHeight = canvasEl ? canvasEl.clientHeight : (window.innerHeight - 56);
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    list.forEach(n => {
+      const x = Number(n.position_x) || 0;
+      const y = Number(n.position_y) || 0;
+      if (x < minX) minX = x;
+      if (x + 280 > maxX) maxX = x + 280;
+      if (y < minY) minY = y;
+      if (y + 200 > maxY) maxY = y + 200;
+    });
+
+    const flowWidth = Math.max(300, maxX - minX);
+    const flowHeight = Math.max(300, maxY - minY);
+    const paddingX = 80;
+    const paddingY = 60;
+
+    const scaleX = (canvasWidth - paddingX * 2) / flowWidth;
+    const scaleY = (canvasHeight - paddingY * 2) / flowHeight;
+    const computedZoom = Math.min(1.15, Math.max(0.45, Math.min(scaleX, scaleY)));
+
+    const newPanX = (canvasWidth - flowWidth * computedZoom) / 2 - minX * computedZoom;
+    const newPanY = Math.max(30, (canvasHeight - flowHeight * computedZoom) / 2 - minY * computedZoom);
+
+    setZoom(Number(computedZoom.toFixed(2)));
+    setPan({ x: Math.round(newPanX), y: Math.round(newPanY) });
+  }, [nodes, showPalette, showRightPanel]);
+
+  const togglePreview = () => {
+    if (showRightPanel && activeInspectorTab === "preview") {
+      setShowRightPanel(false);
+    } else {
+      setShowRightPanel(true);
+      setActiveInspectorTab("preview");
+    }
+  };
+
+  const toggleInspector = () => {
+    if (showRightPanel && activeInspectorTab === "config") {
+      setShowRightPanel(false);
+    } else {
+      setShowRightPanel(true);
+      setActiveInspectorTab("config");
+    }
+  };
+
   // ── Open Visual Studio for a Flow ───────────────────────────────────────────
   const openStudio = async (flow = null) => {
-    if (flow) {
+    setShowRightPanel(false);
+    setSelectedNodeKey(null);
+
+    if (flow && flow.id) {
       setEditingFlowId(flow.id);
       setFlowName(flow.name || "Untitled Flow");
       setFlowDesc(flow.description || "");
@@ -285,11 +373,13 @@ export default function WhatsAppFlows() {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await axios.get(`${API}/api/wa-flows/${flow.id}`, { headers });
         const fetchedNodes = res.data?.nodes || [];
-        setNodes(fetchedNodes.length > 0 ? fetchedNodes : getDefaultStarterNodes());
-        setSelectedNodeKey(fetchedNodes[0]?.node_key || "start");
+        const loaded = fetchedNodes.length > 0 ? fetchedNodes : getDefaultStarterNodes();
+        setNodes(loaded);
+        setTimeout(() => fitToScreen(loaded), 150);
       } catch (e) {
-        setNodes(getDefaultStarterNodes());
-        setSelectedNodeKey("start");
+        const fallback = getDefaultStarterNodes();
+        setNodes(fallback);
+        setTimeout(() => fitToScreen(fallback), 150);
       }
     } else {
       // Create new flow - Default to Food & Products interactive catalog bot
@@ -302,11 +392,9 @@ export default function WhatsAppFlows() {
       const defaultNodes = getFoodBotStarterNodes();
       setNodes(defaultNodes);
       setSelectedNodeKey("welcome_menu");
+      setTimeout(() => fitToScreen(defaultNodes), 150);
     }
 
-    // Reset Canvas and Simulation
-    setZoom(1);
-    setPan({ x: 50, y: 50 });
     setShowStudio(true);
     resetSimulation();
   };
@@ -332,7 +420,7 @@ export default function WhatsAppFlows() {
       node_key: "start",
       node_type: "start",
       config: { next_node_key: "welcome_menu" },
-      position_x: 260,
+      position_x: 520,
       position_y: 40
     },
     {
@@ -348,8 +436,8 @@ export default function WhatsAppFlows() {
           { id: "btn_sales", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
         ]
       },
-      position_x: 260,
-      position_y: 160
+      position_x: 520,
+      position_y: 180
     },
     {
       node_key: "category_list",
@@ -365,8 +453,8 @@ export default function WhatsAppFlows() {
           { id: "CAT_MASALA", reply_id: "CAT_MASALA", title: "Masala & Spices", description: "Fresh ground spice kit", next_node_key: "masala_products", nextNodeId: "masala_products" }
         ]
       },
-      position_x: 60,
-      position_y: 340
+      position_x: 200,
+      position_y: 420
     },
     {
       node_key: "dryfruits_products",
@@ -381,8 +469,8 @@ export default function WhatsAppFlows() {
           { id: "btn_bck_df", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
         ]
       },
-      position_x: -180,
-      position_y: 540
+      position_x: 40,
+      position_y: 680
     },
     {
       node_key: "pickles_products",
@@ -397,8 +485,8 @@ export default function WhatsAppFlows() {
           { id: "btn_bck_pk", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
         ]
       },
-      position_x: 80,
-      position_y: 540
+      position_x: 360,
+      position_y: 680
     },
     {
       node_key: "rice_products",
@@ -412,8 +500,8 @@ export default function WhatsAppFlows() {
           { id: "btn_bck_rc", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
         ]
       },
-      position_x: 340,
-      position_y: 540
+      position_x: 680,
+      position_y: 680
     },
     {
       node_key: "masala_products",
@@ -427,8 +515,8 @@ export default function WhatsAppFlows() {
           { id: "btn_bck_ms", reply_id: "BACK_MENU", title: "🔙 Back to Menu", label: "🔙 Back to Menu", next_node_key: "welcome_menu", nextNodeId: "welcome_menu" }
         ]
       },
-      position_x: 600,
-      position_y: 540
+      position_x: 1000,
+      position_y: 680
     },
     {
       node_key: "ask_bulk_details",
@@ -439,8 +527,8 @@ export default function WhatsAppFlows() {
         validation_type: "none",
         next_node_key: "save_bulk_lead"
       },
-      position_x: 520,
-      position_y: 260
+      position_x: 600,
+      position_y: 420
     },
     {
       node_key: "save_bulk_lead",
@@ -450,8 +538,8 @@ export default function WhatsAppFlows() {
         notes: "Bulk Requirement: {{bulk_enquiry}}",
         next_node_key: "confirm_bulk"
       },
-      position_x: 520,
-      position_y: 380
+      position_x: 600,
+      position_y: 580
     },
     {
       node_key: "confirm_bulk",
@@ -464,8 +552,8 @@ export default function WhatsAppFlows() {
           { id: "btn_th", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
         ]
       },
-      position_x: 520,
-      position_y: 490
+      position_x: 600,
+      position_y: 740
     },
     {
       node_key: "ask_order_address",
@@ -476,8 +564,8 @@ export default function WhatsAppFlows() {
         validation_type: "none",
         next_node_key: "save_order_lead"
       },
-      position_x: 220,
-      position_y: 720
+      position_x: 200,
+      position_y: 940
     },
     {
       node_key: "save_order_lead",
@@ -487,8 +575,8 @@ export default function WhatsAppFlows() {
         notes: "Customer Order: {{order_details}}",
         next_node_key: "confirm_order"
       },
-      position_x: 220,
-      position_y: 840
+      position_x: 200,
+      position_y: 1100
     },
     {
       node_key: "confirm_order",
@@ -501,8 +589,8 @@ export default function WhatsAppFlows() {
           { id: "btn_tso", reply_id: "TALK_HUMAN", title: "👨💼 Talk to Sales", label: "👨💼 Talk to Sales", next_node_key: "sales_handoff", nextNodeId: "sales_handoff" }
         ]
       },
-      position_x: 220,
-      position_y: 960
+      position_x: 200,
+      position_y: 1260
     },
     {
       node_key: "sales_handoff",
@@ -510,8 +598,8 @@ export default function WhatsAppFlows() {
       config: {
         note: "Connecting you to sales team... 👨💼\nOur executive will call you in 10 mins. Or call us directly: +91 9876543210"
       },
-      position_x: 780,
-      position_y: 260
+      position_x: 980,
+      position_y: 420
     }
   ];
 
@@ -1382,6 +1470,8 @@ export default function WhatsAppFlows() {
             completeConnection(node.node_key, e);
           } else {
             setSelectedNodeKey(node.node_key);
+            setShowRightPanel(true);
+            setActiveInspectorTab("config");
           }
         }}
         onMouseUp={(e) => {
@@ -3266,82 +3356,128 @@ export default function WhatsAppFlows() {
     );
   };
 
-  // ── Render Fullscreen Studio Workspace ──────────────────────────────────────
+  // ── Render Fullscreen Studio Workspace (Portal directly into document.body) ─
   if (showStudio) {
     const wires = getWirePaths();
 
-    return (
-      <div className="fixed inset-0 w-full h-full z-50 bg-slate-900 text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+    const filteredPaletteCategories = PALETTE_CATEGORIES.map(cat => ({
+      ...cat,
+      items: cat.items.filter(item =>
+        paletteFilter ? (item.label.toLowerCase().includes(paletteFilter.toLowerCase()) || item.desc.toLowerCase().includes(paletteFilter.toLowerCase())) : true
+      )
+    })).filter(cat => cat.items.length > 0);
+
+    const studioContent = (
+      <div
+        id="madhura-visual-flow-studio"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100vw",
+          height: "100vh",
+          zIndex: 99999,
+          margin: 0,
+          padding: 0
+        }}
+        className="bg-slate-900 text-slate-100 flex flex-col font-sans select-none overflow-hidden"
+      >
         {/* Top Studio Action Bar */}
-        <div className="h-14 w-full bg-slate-950 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-30 relative">
-          <div className="flex items-center gap-3 shrink-0">
+        <div className="h-14 w-full bg-slate-950 border-b border-slate-800 px-3 sm:px-4 flex items-center justify-between shrink-0 z-30 relative gap-2">
+          {/* Left: Exit + Title + Trigger Info + Blocks Toggle */}
+          <div className="flex items-center gap-2.5 shrink-0 min-w-0">
             <button
-              onClick={() => setShowStudio(false)}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-              title="Close Visual Studio"
+              onClick={handleCloseStudio}
+              className="px-2.5 py-1.5 text-slate-300 hover:text-white rounded-xl hover:bg-slate-800 transition flex items-center gap-1.5 text-xs font-semibold shrink-0"
+              title="Close Studio & Return to Flows"
             >
-              <X size={18} />
+              <ChevronLeft size={16} />
+              <span className="hidden sm:inline">Exit</span>
             </button>
 
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            <div className="flex items-center gap-2 border-l border-slate-800 pl-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold shrink-0">
                 <GitFork size={16} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <input
                   type="text"
                   value={flowName}
                   onChange={(e) => setFlowName(e.target.value)}
                   placeholder="Flow Name..."
-                  className="bg-transparent text-sm font-bold text-white outline-none hover:bg-slate-800/60 px-1.5 py-0.5 rounded focus:ring-1 focus:ring-emerald-500"
+                  className="bg-transparent text-xs sm:text-sm font-bold text-white outline-none hover:bg-slate-800/60 px-1.5 py-0.5 rounded focus:ring-1 focus:ring-emerald-500 max-w-[140px] sm:max-w-xs truncate"
                 />
-                <div className="flex items-center gap-2 text-[10px] text-slate-400 px-1.5">
-                  <span>Trigger: <b>{flowTriggerType}</b></span>
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 px-1.5 truncate">
+                  <span>Trigger: <b className="text-emerald-400">{flowTriggerType}</b></span>
                   <span>•</span>
                   <span>{nodes.length} Nodes</span>
                 </div>
               </div>
             </div>
+
+            <button
+              onClick={() => setShowPalette(p => !p)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 shrink-0 ${
+                showPalette
+                  ? "bg-slate-800 text-white border-slate-700"
+                  : "bg-slate-900 text-slate-400 border-slate-800 hover:text-white"
+              }`}
+              title="Toggle Component Palette"
+            >
+              <Grid size={13} className={showPalette ? "text-emerald-400" : ""} />
+              <span className="hidden md:inline">Blocks</span>
+            </button>
           </div>
 
-          {/* Canvas Controls Toolbar - Centered */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl absolute left-1/2 -translate-x-1/2">
+          {/* Center: Canvas View Controls Toolbar */}
+          <div className="hidden lg:flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl shrink-0">
             <button
-              onClick={() => setZoom(z => Math.max(0.4, z - 0.1))}
-              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              onClick={() => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(2))))}
+              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
               title="Zoom Out"
             >
               <ZoomOut size={14} />
             </button>
-            <span className="text-[10px] font-mono font-bold px-1.5 text-slate-300">
+            <span className="text-[11px] font-mono font-bold px-1.5 text-slate-300 min-w-[42px] text-center">
               {Math.round(zoom * 100)}%
             </span>
             <button
-              onClick={() => setZoom(z => Math.min(1.8, z + 0.1))}
-              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              onClick={() => setZoom(z => Math.min(1.8, Number((z + 0.1).toFixed(2))))}
+              className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
               title="Zoom In"
             >
               <ZoomIn size={14} />
             </button>
+            <div className="h-3.5 w-px bg-slate-800 mx-0.5" />
             <button
-              onClick={() => { setZoom(1); setPan({ x: 50, y: 50 }); }}
-              className="px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800"
+              onClick={() => fitToScreen()}
+              className="px-2 py-1 text-[10px] font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40 rounded flex items-center gap-1 transition"
+              title="Auto-Fit All Flow Nodes to Screen"
+            >
+              <Maximize2 size={11} />
+              <span>Fit Screen</span>
+            </button>
+            <button
+              onClick={() => { setZoom(1); setPan({ x: 80, y: 80 }); }}
+              className="px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
               title="Reset View"
             >
               Reset
             </button>
           </div>
 
-          {/* Templates & Action Buttons - Right Aligned */}
-          <div className="flex items-center gap-2 ml-auto shrink-0 z-10">
+          {/* Right: Actions (Templates, Simulator, Inspector, Save, Publish) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Quick Template Switcher */}
             <div className="relative group">
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
               >
                 <Sparkles size={13} className="text-amber-400" />
-                <span>Templates</span>
+                <span className="hidden sm:inline">Templates</span>
                 <ChevronDown size={11} />
               </button>
               <div className="absolute right-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 hidden group-hover:block z-50 animate-in fade-in duration-100">
@@ -3352,9 +3488,11 @@ export default function WhatsAppFlows() {
                     setFlowDesc("Interactive flow bot: Buttons -> View All Categories -> Products -> Orders & Inquiries");
                     setFlowTriggerType("all_inbound");
                     setFlowKeywords("hi, hello, food, menu, order, price, start");
-                    setNodes(getFoodBotStarterNodes());
+                    const starter = getFoodBotStarterNodes();
+                    setNodes(starter);
                     setSelectedNodeKey("welcome_menu");
                     resetSimulation();
+                    setTimeout(() => fitToScreen(starter), 150);
                   }}
                   className="w-full text-left p-2.5 rounded-xl hover:bg-emerald-500/20 text-xs font-semibold text-white flex items-start gap-2.5 transition"
                 >
@@ -3371,9 +3509,11 @@ export default function WhatsAppFlows() {
                     setFlowDesc("Multi-section interactive banking menu");
                     setFlowTriggerType("all_inbound");
                     setFlowKeywords("bank, account, balance, card, loan, hi, hello, menu");
-                    setNodes(getDefaultStarterNodes());
+                    const starter = getDefaultStarterNodes();
+                    setNodes(starter);
                     setSelectedNodeKey("banking_menu");
                     resetSimulation();
+                    setTimeout(() => fitToScreen(starter), 150);
                   }}
                   className="w-full text-left p-2.5 rounded-xl hover:bg-slate-800 text-xs font-semibold text-white flex items-start gap-2.5 transition mt-1"
                 >
@@ -3392,48 +3532,67 @@ export default function WhatsAppFlows() {
                 const phone = prompt("Enter customer phone number to test-send WhatsApp menu (e.g. 919876543210):");
                 if (phone) triggerFlowForPhone(phone);
               }}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 flex items-center gap-1.5 transition"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/60 flex items-center gap-1.5 transition"
               title="Send flow menu directly to WhatsApp phone"
             >
               <Send size={13} />
-              <span>Test Phone</span>
+              <span className="hidden md:inline">Test Phone</span>
             </button>
 
+            {/* WhatsApp Phone Simulator Toggle */}
             <button
-              onClick={() => setShowSimDrawer(!showSimDrawer)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
-                showSimDrawer ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-slate-800 text-slate-300 border-slate-700"
+              onClick={togglePreview}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                showRightPanel && activeInspectorTab === "preview"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm ring-1 ring-emerald-500/30"
+                  : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
               }`}
+              title="Toggle WhatsApp Phone Simulator"
             >
-              <Smartphone size={14} />
-              <span>WhatsApp Preview</span>
+              <Smartphone size={14} className={showRightPanel && activeInspectorTab === "preview" ? "text-emerald-400 animate-pulse" : "text-slate-400"} />
+              <span className="hidden sm:inline">WhatsApp Preview</span>
+            </button>
+
+            {/* Node Inspector Toggle */}
+            <button
+              onClick={toggleInspector}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                showRightPanel && activeInspectorTab === "config"
+                  ? "bg-slate-700 text-white border-slate-600 shadow-sm"
+                  : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+              }`}
+              title="Toggle Node Inspector"
+            >
+              <Sliders size={13} />
+              <span className="hidden sm:inline">Inspector</span>
             </button>
 
             {editingFlowId && (
               <button
                 onClick={() => openVersions(editingFlowId)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
+                title="Version History"
               >
-                <Layers size={14} />
-                <span>Versions</span>
+                <Layers size={13} />
+                <span className="hidden lg:inline">Versions</span>
               </button>
             )}
 
             <button
               onClick={() => handleSaveFlow(false)}
               disabled={saving}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
             >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              <span>Save Draft</span>
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              <span className="hidden sm:inline">Save Draft</span>
             </button>
 
             <button
               onClick={() => handleSaveFlow(true)}
               disabled={saving}
-              className="px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 transition hover:scale-105"
             >
-              <Play size={14} />
+              <Play size={13} />
               <span>Publish Live</span>
             </button>
           </div>
@@ -3441,52 +3600,88 @@ export default function WhatsAppFlows() {
 
         {/* Studio Workspace Layout */}
         <div className="flex-1 flex w-full min-h-0 relative overflow-hidden">
-          {/* Left Component Palette Sidebar */}
-          <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 z-20 select-none">
-            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
-                Component Palette
-              </span>
-              <span className="text-[10px] text-slate-500">Click to add</span>
-            </div>
+          {/* Left Component Palette Sidebar (Collapsible) */}
+          {showPalette && (
+            <div className="w-72 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 z-20 select-none transition-all duration-150">
+              <div className="p-3 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider">
+                    Component Palette
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-md font-bold">
+                    Click to add
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowPalette(false)}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                  title="Collapse Palette"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+              </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2">
-              {PALETTE_CATEGORIES.map(cat => (
-                <div key={cat.id} className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-900/40">
-                  <button
-                    type="button"
-                    onClick={() => toggleCategory(cat.id)}
-                    className="w-full px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-300 hover:bg-slate-800/60"
-                  >
-                    <span className="flex items-center gap-2">
-                      <cat.icon size={13} className={cat.color} />
-                      {cat.name}
-                    </span>
-                    {openCategories[cat.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </button>
-
-                  {openCategories[cat.id] && (
-                    <div className="p-1.5 grid grid-cols-1 gap-1 border-t border-slate-800/60 bg-slate-950/60">
-                      {cat.items.map((item, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => addNodeFromPalette(item)}
-                          className="w-full text-left p-2 rounded-lg hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition flex items-center gap-2.5 group"
-                        >
-                          <span className="text-base group-hover:scale-110 transition-transform">{item.icon}</span>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-slate-200 truncate">{item.label}</div>
-                            <div className="text-[10px] text-slate-500 truncate">{item.desc}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+              {/* Palette Search Input */}
+              <div className="p-2 border-b border-slate-800/80">
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    value={paletteFilter}
+                    onChange={(e) => setPaletteFilter(e.target.value)}
+                    placeholder="Search blocks..."
+                    className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 outline-none focus:border-emerald-500"
+                  />
+                  {paletteFilter && (
+                    <button
+                      onClick={() => setPaletteFilter("")}
+                      className="absolute right-2 top-2 text-slate-500 hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
-              ))}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {filteredPaletteCategories.map(cat => (
+                  <div key={cat.id} className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-900/40">
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(cat.id)}
+                      className="w-full px-3 py-2 flex items-center justify-between text-xs font-bold text-slate-300 hover:bg-slate-800/60 transition"
+                    >
+                      <span className="flex items-center gap-2">
+                        <cat.icon size={13} className={cat.color} />
+                        {cat.name}
+                      </span>
+                      {openCategories[cat.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+
+                    {(openCategories[cat.id] || paletteFilter) && (
+                      <div className="p-1.5 grid grid-cols-1 gap-1 border-t border-slate-800/60 bg-slate-950/60">
+                        {cat.items.map((item, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => addNodeFromPalette(item)}
+                            className="w-full text-left p-2 rounded-lg hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition flex items-center gap-2.5 group"
+                          >
+                            <span className="text-base group-hover:scale-110 transition-transform">{item.icon}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-semibold text-slate-200 truncate">{item.label}</div>
+                              <div className="text-[10px] text-slate-500 truncate">{item.desc}</div>
+                            </div>
+                            <Plus size={12} className="text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ── 2D Canvas Graph Area ───────────────────────────────── */}
           <div
@@ -3494,12 +3689,24 @@ export default function WhatsAppFlows() {
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            className="flex-1 min-w-0 h-full bg-[#0f172a] relative overflow-hidden cursor-crosshair canvas-grid"
+            className="flex-1 min-w-0 h-full bg-[#090d16] relative overflow-hidden cursor-crosshair canvas-grid"
             style={{
               backgroundImage: "radial-gradient(#1e293b 1.5px, transparent 1.5px)",
               backgroundSize: `${24 * zoom}px ${24 * zoom}px`
             }}
           >
+            {/* Floating Re-open Palette Button when Palette is collapsed */}
+            {!showPalette && (
+              <button
+                onClick={() => setShowPalette(true)}
+                className="absolute top-4 left-4 z-20 px-3 py-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl shadow-xl flex items-center gap-2 backdrop-blur transition hover:scale-105"
+                title="Open Component Palette"
+              >
+                <Plus size={14} className="text-emerald-400" />
+                <span>Add Blocks</span>
+              </button>
+            )}
+
             {/* SVG Connector Wires Layer */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none z-0"
@@ -3620,88 +3827,134 @@ export default function WhatsAppFlows() {
                 {nodes.map(node => renderCanvasNode(node))}
               </div>
             </div>
+
+            {/* Floating Bottom Center Canvas Quick Toolbar */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-slate-900/90 border border-slate-800/80 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-2xl text-xs text-slate-300 select-none">
+              <button
+                onClick={() => fitToScreen()}
+                className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold rounded-lg transition flex items-center gap-1.5"
+                title="Fit all flow nodes to screen view"
+              >
+                <Maximize2 size={13} />
+                <span>Fit View</span>
+              </button>
+              <div className="h-3 w-px bg-slate-700" />
+              <button
+                onClick={() => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(2))))}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Zoom Out"
+              >
+                <ZoomOut size={13} />
+              </button>
+              <span className="font-mono text-[11px] font-bold text-slate-200 min-w-[36px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                onClick={() => setZoom(z => Math.min(1.8, Number((z + 0.1).toFixed(2))))}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Zoom In"
+              >
+                <ZoomIn size={13} />
+              </button>
+              <div className="h-3 w-px bg-slate-700" />
+              <span className="text-[10px] text-slate-400 hidden sm:inline">
+                Drag canvas to pan • Click node to edit • Drag dots to wire
+              </span>
+            </div>
           </div>
 
-          {/* Right Node Inspector / WhatsApp Simulator Panel */}
-          <div className="w-[380px] shrink-0 h-full bg-slate-950 border-l border-slate-800 flex flex-col z-30 select-none shadow-2xl">
-            {/* Inspector Top Tabs */}
-            <div className="flex border-b border-slate-800 bg-slate-900/60 p-1">
-              <button
-                onClick={() => setActiveInspectorTab("config")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                  activeInspectorTab === "config" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Sliders size={13} />
-                <span>Inspector</span>
-              </button>
-              <button
-                onClick={() => setActiveInspectorTab("preview")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                  activeInspectorTab === "preview" ? "bg-emerald-600/30 text-emerald-300 shadow" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Smartphone size={13} />
-                <span>Test Phone</span>
-              </button>
-              <button
-                onClick={() => setActiveInspectorTab("audit")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-                  activeInspectorTab === "audit" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Terminal size={13} />
-                <span>Logs ({simLogs.length})</span>
-              </button>
-            </div>
-
-            {/* Tab Contents */}
-            <div className="flex-1 overflow-y-auto min-h-0 bg-white text-slate-900 w-full">
-              {activeInspectorTab === "config" && renderNodeInspector()}
-
-              {activeInspectorTab === "preview" && (
-                <div className="p-4 flex items-center justify-center bg-slate-900 min-h-full">
-                  {renderWhatsAppPhoneSimulator()}
+          {/* Right Node Inspector / WhatsApp Simulator Panel (Dockable & Collapsible) */}
+          {showRightPanel && (
+            <div className="w-[420px] max-w-[92vw] shrink-0 h-full bg-slate-950 border-l border-slate-800 flex flex-col z-30 select-none shadow-2xl animate-in slide-in-from-right duration-150">
+              {/* Inspector Top Tabs + Close ✕ */}
+              <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 p-1.5">
+                <div className="flex items-center gap-1 flex-1">
+                  <button
+                    onClick={() => setActiveInspectorTab("config")}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      activeInspectorTab === "config" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Sliders size={13} />
+                    <span>Inspector</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveInspectorTab("preview")}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      activeInspectorTab === "preview" ? "bg-emerald-600/30 text-emerald-300 shadow" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Smartphone size={13} />
+                    <span>Preview</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveInspectorTab("audit")}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      activeInspectorTab === "audit" ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Terminal size={13} />
+                    <span>Logs ({simLogs.length})</span>
+                  </button>
                 </div>
-              )}
 
-              {activeInspectorTab === "audit" && (
-                <div className="p-4 space-y-4 bg-slate-900 text-slate-100 min-h-full font-mono text-xs">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                    <span className="font-bold text-emerald-400">⚡ Execution State</span>
-                    <button onClick={resetSimulation} className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1">
-                      <RotateCcw size={10} /> Reset
-                    </button>
+                <button
+                  onClick={() => setShowRightPanel(false)}
+                  className="ml-2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0"
+                  title="Close Inspector / Simulator Panel"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Tab Contents */}
+              <div className="flex-1 overflow-y-auto min-h-0 bg-white text-slate-900 w-full">
+                {activeInspectorTab === "config" && renderNodeInspector()}
+
+                {activeInspectorTab === "preview" && (
+                  <div className="p-4 flex items-center justify-center bg-slate-900 min-h-full">
+                    {renderWhatsAppPhoneSimulator()}
                   </div>
+                )}
 
-                  <div className="space-y-1">
-                    <div className="text-[11px] text-slate-400">Current Node: <b className="text-white">{simCurrentNode || "start"}</b></div>
-                    <div className="text-[11px] text-slate-400">Status: <b className={simEnded ? "text-rose-400" : "text-emerald-400"}>{simEnded ? "Completed" : "Waiting for reply"}</b></div>
-                  </div>
+                {activeInspectorTab === "audit" && (
+                  <div className="p-4 space-y-4 bg-slate-900 text-slate-100 min-h-full font-mono text-xs">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <span className="font-bold text-emerald-400">⚡ Execution State</span>
+                      <button onClick={resetSimulation} className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1">
+                        <RotateCcw size={10} /> Reset
+                      </button>
+                    </div>
 
-                  {/* Variables Inspector */}
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-300">Variables Snapshot:</span>
-                    <pre className="p-2 bg-slate-950 rounded-lg text-[10px] text-emerald-300 overflow-x-auto max-h-40">
-                      {JSON.stringify(simVars, null, 2)}
-                    </pre>
-                  </div>
+                    <div className="space-y-1">
+                      <div className="text-[11px] text-slate-400">Current Node: <b className="text-white">{simCurrentNode || "start"}</b></div>
+                      <div className="text-[11px] text-slate-400">Status: <b className={simEnded ? "text-rose-400" : "text-emerald-400"}>{simEnded ? "Completed" : "Waiting for reply"}</b></div>
+                    </div>
 
-                  {/* Execution Event Log */}
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-300">Event Trace:</span>
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {simLogs.map((log, idx) => (
-                        <div key={idx} className="p-1.5 bg-slate-950/80 rounded text-[10px] text-slate-300 border-l-2 border-emerald-500">
-                          {log}
-                        </div>
-                      ))}
+                    {/* Variables Snapshot */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-slate-300">Variables Snapshot:</span>
+                      <pre className="p-2 bg-slate-950 rounded-lg text-[10px] text-emerald-300 overflow-x-auto max-h-40">
+                        {JSON.stringify(simVars, null, 2)}
+                      </pre>
+                    </div>
+
+                    {/* Execution Event Log */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-slate-300">Event Trace:</span>
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {simLogs.map((log, idx) => (
+                          <div key={idx} className="p-1.5 bg-slate-950/80 rounded text-[10px] text-slate-300 border-l-2 border-emerald-500">
+                            {log}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* ── FLOW VERSIONS MODAL ────────────────────────────────────── */}
@@ -3771,6 +4024,8 @@ export default function WhatsAppFlows() {
         )}
       </div>
     );
+
+    return createPortal(studioContent, document.body);
   }
 
   // ── Main Flows Dashboard View ───────────────────────────────────────────────

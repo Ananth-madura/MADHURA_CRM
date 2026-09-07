@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Users, Plus, Trash2, Upload, Download, X, ChevronDown, ChevronRight, Loader2, UserPlus, Send } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Users, Plus, Trash2, Upload, Download, X, ChevronDown, ChevronRight, Loader2, UserPlus, Send, Search, CheckSquare, Square, Building2, Phone, Filter } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
@@ -16,8 +16,18 @@ export default function WAGroups() {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [importModal, setImportModal] = useState(null);
   const [bulkInput, setBulkInput] = useState("");
-  const [selectedGroupForBulk, setSelectedGroupForBulk] = useState(null);
+  const [selectedGroupForBulk, setSelectedGroupForBulk] = useState([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
+
+  // Contact picker state
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [pickerGroupId, setPickerGroupId] = useState(null);
+  const [allClients, setAllClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [selectedClients, setSelectedClients] = useState(new Set());
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("all");
+  const [addingContacts, setAddingContacts] = useState(false);
 
   const fetchGroups = async () => {
     try {
@@ -111,6 +121,90 @@ export default function WAGroups() {
     a.click();
   };
 
+  // Fetch all CRM clients for contact picker
+  const openContactPicker = async (groupId) => {
+    setPickerGroupId(groupId);
+    setSelectedClients(new Set());
+    setClientSearch("");
+    setClientFilter("all");
+    setShowContactPicker(true);
+    setClientsLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const { data } = await axios.get(`${API}/api/contacts`, { headers: { Authorization: `Bearer ${token}` } });
+      setAllClients(data.contacts || data || []);
+    } catch (err) {
+      console.error(err);
+      setAllClients([]);
+    }
+    setClientsLoading(false);
+  };
+
+  const filteredClients = useMemo(() => {
+    let list = allClients;
+    if (clientSearch.trim()) {
+      const q = clientSearch.toLowerCase();
+      list = list.filter(c =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.phone || "").includes(q) ||
+        (c.email || "").toLowerCase().includes(q) ||
+        (c.company || "").toLowerCase().includes(q)
+      );
+    }
+    if (clientFilter === "has_phone") {
+      list = list.filter(c => c.phone && c.phone.length >= 10);
+    }
+    return list;
+  }, [allClients, clientSearch, clientFilter]);
+
+  const toggleClientSelect = (id) => {
+    setSelectedClients(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedClients(new Set(filteredClients.map(c => c.id)));
+  };
+
+  const deselectAll = () => {
+    setSelectedClients(new Set());
+  };
+
+  const addSelectedToGroup = async () => {
+    if (selectedClients.size === 0 || !pickerGroupId) return;
+    setAddingContacts(true);
+    try {
+      const token = localStorage.getItem("token");
+      const contacts = filteredClients
+        .filter(c => selectedClients.has(c.id))
+        .map(c => ({
+          phone: (c.phone || "").replace(/[^0-9]/g, "").slice(-10),
+          name: c.name || null,
+          notes: c.company || c.email || null
+        }))
+        .filter(c => c.phone.length >= 10);
+
+      if (contacts.length === 0) {
+        alert("No valid phone numbers found in selected contacts.");
+        setAddingContacts(false);
+        return;
+      }
+
+      await axios.post(`${API}/api/wa/groups/${pickerGroupId}/contacts`, { contacts }, { headers: { Authorization: `Bearer ${token}` } });
+      setShowContactPicker(false);
+      toggleExpand(pickerGroupId);
+      fetchGroups();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add contacts");
+    }
+    setAddingContacts(false);
+  };
+
   return (
     <div className="w-full">
       <WhatsAppNav />
@@ -147,20 +241,27 @@ export default function WAGroups() {
                 </div>
                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                   <button
+                    onClick={() => openContactPicker(g.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] text-white rounded-lg text-xs font-semibold hover:bg-[#1ebe5d] transition shadow-sm"
+                    title="Add contacts from CRM"
+                  >
+                    <UserPlus size={14} />
+                    <span>Add Contacts</span>
+                  </button>
+                  <button
                     onClick={async () => {
                       const token = localStorage.getItem("token");
                       const { data } = await axios.get(`${API}/api/wa/groups/${g.id}`, { headers: { Authorization: `Bearer ${token}` } });
                       setSelectedGroupForBulk(data.contacts || []);
                       setShowBulkModal(true);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#25D366] text-white rounded-lg text-xs font-semibold hover:bg-[#1ebe5d] transition shadow-sm"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-semibold hover:bg-emerald-800 transition shadow-sm"
                     title="Launch WhatsApp broadcast wizard"
                   >
                     <Send size={14} />
                     <span>Send Bulk</span>
                   </button>
-                  <button onClick={() => { setImportModal(g.id); setBulkInput(""); }} className="p-2 hover:bg-gray-100 rounded-lg" title="Import contacts"><UserPlus size={16} className="text-gray-500" /></button>
-                  <button onClick={() => handleImportCustomers(g.id)} className="p-2 hover:bg-gray-100 rounded-lg" title="Import from CRM customers"><Upload size={16} className="text-gray-500" /></button>
+                  <button onClick={() => { setImportModal(g.id); setBulkInput(""); }} className="p-2 hover:bg-gray-100 rounded-lg" title="Manual import (paste numbers)"><Upload size={16} className="text-gray-500" /></button>
                   <button onClick={() => handleDelete(g.id)} className="p-2 hover:bg-red-50 rounded-lg"><Trash2 size={16} className="text-red-500" /></button>
                 </div>
               </div>
@@ -246,6 +347,160 @@ export default function WAGroups() {
             <div className="flex gap-3 p-5 border-t border-gray-100">
               <button onClick={() => setImportModal(null)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
               <button onClick={() => handleBulkImport(importModal)} disabled={!bulkInput.trim()} className="flex-1 px-4 py-2.5 bg-[#25D366] text-white rounded-lg text-sm hover:bg-[#1ebe5d] disabled:opacity-50">Import</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Picker Modal - Select from CRM Clients */}
+      {showContactPicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowContactPicker(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#25D366]/10 flex items-center justify-center">
+                  <UserPlus size={20} className="text-[#25D366]" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Add Contacts from CRM</h2>
+                  <p className="text-xs text-gray-500">{filteredClients.length} clients found {selectedClients.size > 0 && `— ${selectedClients.size} selected`}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowContactPicker(false)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+                <X size={20} className="text-gray-400" />
+              </button>
+            </div>
+
+            {/* Search & Filter Bar */}
+            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    placeholder="Search by name, phone, email, or company..."
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] transition bg-white"
+                  />
+                  {clientSearch && (
+                    <button onClick={() => setClientSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded">
+                      <X size={14} className="text-gray-400" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-0.5">
+                  <button
+                    onClick={() => setClientFilter("all")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${clientFilter === "all" ? "bg-[#25D366] text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setClientFilter("has_phone")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${clientFilter === "has_phone" ? "bg-[#25D366] text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                  >
+                    <Phone size={12} className="inline mr-1" />
+                    Has Phone
+                  </button>
+                </div>
+              </div>
+
+              {/* Select All / Deselect */}
+              <div className="flex items-center justify-between mt-2">
+                <div className="flex items-center gap-2">
+                  <button onClick={selectAllFiltered} className="text-xs text-[#25D366] hover:underline font-semibold">Select all ({filteredClients.length})</button>
+                  {selectedClients.size > 0 && (
+                    <button onClick={deselectAll} className="text-xs text-gray-400 hover:text-gray-600 hover:underline">Clear selection</button>
+                  )}
+                </div>
+                <span className="text-[10px] text-gray-400">{filteredClients.length} of {allClients.length} clients</span>
+              </div>
+            </div>
+
+            {/* Client List */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {clientsLoading ? (
+                <div className="flex justify-center py-12"><Loader2 size={28} className="animate-spin text-[#25D366]" /></div>
+              ) : filteredClients.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Users size={40} className="mx-auto mb-3 opacity-40" />
+                  <p className="text-sm font-medium">No clients found</p>
+                  <p className="text-xs mt-1">{clientSearch ? "Try a different search term" : "No CRM contacts available"}</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {filteredClients.map((client) => {
+                    const isSelected = selectedClients.has(client.id);
+                    const hasPhone = client.phone && client.phone.length >= 10;
+                    return (
+                      <div
+                        key={client.id}
+                        onClick={() => hasPhone && toggleClientSelect(client.id)}
+                        className={`flex items-center gap-3 px-5 py-3 transition cursor-pointer ${hasPhone ? "hover:bg-gray-50" : "opacity-50 cursor-not-allowed"} ${isSelected ? "bg-[#25D366]/5" : ""}`}
+                      >
+                        <div className="shrink-0">
+                          {isSelected ? (
+                            <CheckSquare size={18} className="text-[#25D366]" />
+                          ) : (
+                            <Square size={18} className={hasPhone ? "text-gray-300" : "text-gray-200"} />
+                          )}
+                        </div>
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#25D366]/20 to-emerald-100 flex items-center justify-center shrink-0">
+                          <span className="text-sm font-bold text-[#25D366]">{(client.name || "?")[0].toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-800 truncate">{client.name || "Unknown"}</span>
+                            {client.company && (
+                              <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
+                                <Building2 size={9} /> {client.company}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            {client.phone && (
+                              <span className="text-xs text-gray-500 flex items-center gap-1">
+                                <Phone size={10} /> +{client.phone}
+                              </span>
+                            )}
+                            {client.email && (
+                              <span className="text-xs text-gray-400 truncate">{client.email}</span>
+                            )}
+                          </div>
+                        </div>
+                        {hasPhone && (
+                          <div className="text-[10px] text-gray-400 shrink-0">
+                            {isSelected ? "Added" : "Click to add"}
+                          </div>
+                        )}
+                        {!hasPhone && (
+                          <span className="text-[10px] text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full shrink-0">No phone</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-between p-5 border-t border-gray-100 bg-gray-50/50 shrink-0">
+              <button onClick={() => setShowContactPicker(false)} className="px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-white transition font-medium">
+                Cancel
+              </button>
+              <button
+                onClick={addSelectedToGroup}
+                disabled={selectedClients.size === 0 || addingContacts}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#25D366] text-white rounded-xl text-sm font-bold hover:bg-[#1ebe5d] disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg shadow-[#25D366]/20"
+              >
+                {addingContacts ? (
+                  <><Loader2 size={14} className="animate-spin" /> Adding...</>
+                ) : (
+                  <><UserPlus size={14} /> Add {selectedClients.size} Contact{selectedClients.size !== 1 ? "s" : ""} to Group</>
+                )}
+              </button>
             </div>
           </div>
         </div>

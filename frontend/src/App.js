@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { ToastProvider, useToast } from "./components/Toast";
@@ -132,6 +132,17 @@ function DashboardRouter() {
   return user.role === "admin" ? <AdminDashboard /> : <UserDashboard />;
 }
 
+function ProtectedFlowBuilder() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" />;
+  return <WAFlows />;
+}
+
+function FlowParamRedirect() {
+  const { flowId } = useParams();
+  return <Navigate to={flowId ? `/dashboard/whatsapp/flows/build/${flowId}` : "/dashboard/whatsapp/flows/build"} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -151,6 +162,13 @@ export default function App() {
               <Route path="/login/admin" element={<LoginAdmin />} />
               <Route path="/register" element={<Register />} />
               <Route path="/invoice-preview/:type/:id" element={<InvoicePreview />} />
+              <Route path="/flows" element={<Navigate to="/dashboard/whatsapp/flows" replace />} />
+              <Route path="/flows/build" element={<Navigate to="/dashboard/whatsapp/flows/build" replace />} />
+              <Route path="/flows/build/:flowId" element={<FlowParamRedirect />} />
+              <Route path="/flows/builder" element={<Navigate to="/dashboard/whatsapp/flows/build" replace />} />
+              <Route path="/flows/builder/:flowId" element={<FlowParamRedirect />} />
+              <Route path="/dashboard/flows/build" element={<Navigate to="/dashboard/whatsapp/flows/build" replace />} />
+              <Route path="/dashboard/flows/build/:flowId" element={<FlowParamRedirect />} />
               <Route path="/dashboard" element={<DashboardLayout />}>
                 <Route index element={<DashboardRouter />} />
                 <Route path="telecalling" element={<Telecall />} />
@@ -185,6 +203,10 @@ export default function App() {
                 <Route path="whatsapp/campaigns" element={<WACampaigns />} />
                 <Route path="whatsapp/automations" element={<WAAutomations />} />
                 <Route path="whatsapp/flows" element={<WAFlows />} />
+                <Route path="whatsapp/flows/build" element={<WAFlows />} />
+                <Route path="whatsapp/flows/build/:flowId" element={<WAFlows />} />
+                <Route path="whatsapp/flows/builder" element={<WAFlows />} />
+                <Route path="whatsapp/flows/builder/:flowId" element={<WAFlows />} />
                 <Route path="whatsapp/analytics" element={<WAAnalytics />} />
                 <Route path="whatsapp/accounts" element={<WAAccounts />} />
                 <Route path="whatsapp/reminders" element={<WAReminders />} />
