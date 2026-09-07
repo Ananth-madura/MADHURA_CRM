@@ -166,6 +166,30 @@ export default function WhatsAppFlows() {
   const [simInputText, setSimInputText] = useState("");
   const [simEnded, setSimEnded] = useState(false);
   const [showSimDrawer, setShowSimDrawer] = useState(true);
+  const simChatBottomRef = useRef(null);
+
+  // Auto-scroll phone simulator chat bottom on new message or typing
+  useEffect(() => {
+    if (simChatBottomRef.current) {
+      simChatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [simMessages, simTyping]);
+
+  // Global keybindings: Escape cancels active port connection / popups
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        if (connectingFrom) {
+          setConnectingFrom(null);
+        }
+        if (simListPopup) {
+          setSimListPopup(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [connectingFrom, simListPopup]);
 
   // Versions Modal State
   const [showVersionsModal, setShowVersionsModal] = useState(false);
@@ -892,7 +916,12 @@ export default function WhatsAppFlows() {
 
   // ── Canvas Dragging & Node Manipulation ─────────────────────────────────────
   const handleCanvasMouseDown = (e) => {
-    if (e.target === canvasRef.current || e.target.tagName === "svg" || e.target.classList.contains("canvas-grid")) {
+    if (connectingFrom) {
+      // Clicking on empty canvas cancels the active port connection mode
+      setConnectingFrom(null);
+      return;
+    }
+    if (e.target === canvasRef.current || e.target.tagName === "svg" || e.target.classList?.contains("canvas-grid")) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -906,22 +935,29 @@ export default function WhatsAppFlows() {
       const newY = (e.clientY - pan.y - dragOffset.y) / zoom;
       setNodes(prev => prev.map(n => n.node_key === draggingNodeKey ? { ...n, position_x: Math.max(0, newX), position_y: Math.max(0, newY) } : n));
     } else if (connectingFrom) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      setConnectingMousePos({
-        x: (e.clientX - rect.left - pan.x) / zoom,
-        y: (e.clientY - rect.top - pan.y) / zoom
-      });
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        setConnectingMousePos({
+          x: (e.clientX - rect.left - pan.x) / zoom,
+          y: (e.clientY - rect.top - pan.y) / zoom
+        });
+      }
     }
   };
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
     setDraggingNodeKey(null);
-    setConnectingFrom(null);
+    // Keep connectingFrom active so user can click-to-connect by clicking the destination node
   };
 
   const handleNodeMouseDown = (nodeKey, e) => {
     e.stopPropagation();
+    if (connectingFrom && connectingFrom.nodeKey !== nodeKey) {
+      // Connect to this node on click
+      completeConnection(nodeKey, e);
+      return;
+    }
     setSelectedNodeKey(nodeKey);
     setDraggingNodeKey(nodeKey);
     const node = nodes.find(n => n.node_key === nodeKey);
@@ -935,23 +971,25 @@ export default function WhatsAppFlows() {
 
   // ── Port Connection Logic ───────────────────────────────────────────────────
   const startConnecting = (nodeKey, portId, portType, extra = {}, e) => {
-    e.stopPropagation();
-    const rect = canvasRef.current.getBoundingClientRect();
-    setConnectingFrom({ nodeKey, portId, portType, ...extra });
-    setConnectingMousePos({
-      x: (e.clientX - rect.left - pan.x) / zoom,
-      y: (e.clientY - rect.top - pan.y) / zoom
-    });
+    if (e?.stopPropagation) e.stopPropagation();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const clientX = e?.clientX ?? (e?.touches && e.touches[0]?.clientX) ?? 0;
+    const clientY = e?.clientY ?? (e?.touches && e.touches[0]?.clientY) ?? 0;
+    const startX = rect ? (clientX - rect.left - pan.x) / zoom : 0;
+    const startY = rect ? (clientY - rect.top - pan.y) / zoom : 0;
+
+    setConnectingFrom({ nodeKey, portId, portType, x: startX, y: startY, ...extra });
+    setConnectingMousePos({ x: startX, y: startY });
   };
 
   const completeConnection = (targetNodeKey, e) => {
-    e.stopPropagation();
+    if (e?.stopPropagation) e.stopPropagation();
     if (!connectingFrom || connectingFrom.nodeKey === targetNodeKey) {
       setConnectingFrom(null);
       return;
     }
 
-    const { nodeKey: srcKey, portType, buttonId, sectionIdx, buttonIdx } = connectingFrom;
+    const { nodeKey: srcKey, portType, sectionIdx, buttonIdx, intentKey } = connectingFrom;
 
     setNodes(prev => prev.map(n => {
       if (n.node_key !== srcKey) return n;
@@ -959,13 +997,21 @@ export default function WhatsAppFlows() {
 
       if (portType === "button" && n.node_type === "interactive_menu") {
         const secs = [...(cfg.sections || [])];
-        if (secs[sectionIdx] && secs[sectionIdx].buttons && secs[sectionIdx].buttons[buttonIdx]) {
+        if (sectionIdx !== undefined && secs[sectionIdx] && secs[sectionIdx].buttons && secs[sectionIdx].buttons[buttonIdx]) {
           secs[sectionIdx].buttons[buttonIdx] = {
             ...secs[sectionIdx].buttons[buttonIdx],
             nextNodeId: targetNodeKey,
             next_node_key: targetNodeKey
           };
           cfg.sections = secs;
+        } else if (cfg.buttons && cfg.buttons[buttonIdx]) {
+          const btns = [...cfg.buttons];
+          btns[buttonIdx] = {
+            ...btns[buttonIdx],
+            nextNodeId: targetNodeKey,
+            next_node_key: targetNodeKey
+          };
+          cfg.buttons = btns;
         }
       } else if (portType === "button" && (n.node_type === "send_buttons" || n.node_type === "send_list")) {
         const isList = n.node_type === "send_list";
@@ -985,8 +1031,12 @@ export default function WhatsAppFlows() {
         cfg.false_next = targetNodeKey;
       } else if (portType === "intent") {
         const branches = { ...(cfg.branches || {}) };
-        branches[connectingFrom.intentKey] = targetNodeKey;
+        branches[intentKey || "intent"] = targetNodeKey;
         cfg.branches = branches;
+      } else if (portType === "found") {
+        cfg.found_next = targetNodeKey;
+      } else if (portType === "not_found") {
+        cfg.not_found_next = targetNodeKey;
       } else {
         cfg.next_node_key = targetNodeKey;
       }
@@ -995,6 +1045,48 @@ export default function WhatsAppFlows() {
     }));
 
     setConnectingFrom(null);
+  };
+
+  // Disconnect / detach wire link directly from canvas
+  const disconnectWire = (wire) => {
+    if (!wire || !wire.srcKey) return;
+    setNodes(prev => prev.map(n => {
+      if (n.node_key !== wire.srcKey) return n;
+      const cfg = JSON.parse(JSON.stringify(n.config || {}));
+
+      if (wire.portType === "button" && n.node_type === "interactive_menu") {
+        if (wire.sectionIdx !== undefined && cfg.sections?.[wire.sectionIdx]?.buttons?.[wire.buttonIdx]) {
+          cfg.sections[wire.sectionIdx].buttons[wire.buttonIdx].nextNodeId = "";
+          cfg.sections[wire.sectionIdx].buttons[wire.buttonIdx].next_node_key = "";
+        } else if (cfg.buttons?.[wire.buttonIdx]) {
+          cfg.buttons[wire.buttonIdx].nextNodeId = "";
+          cfg.buttons[wire.buttonIdx].next_node_key = "";
+        }
+      } else if (wire.portType === "button" && (n.node_type === "send_buttons" || n.node_type === "send_list")) {
+        const isList = n.node_type === "send_list";
+        const arr = isList ? (cfg.rows || cfg.buttons || []) : (cfg.buttons || cfg.rows || []);
+        if (arr[wire.buttonIdx]) {
+          arr[wire.buttonIdx].next_node_key = "";
+          arr[wire.buttonIdx].nextNodeId = "";
+          if (isList) { cfg.rows = arr; cfg.buttons = arr; }
+          else { cfg.buttons = arr; cfg.rows = arr; }
+        }
+      } else if (wire.portType === "true") {
+        cfg.true_next = "";
+      } else if (wire.portType === "false") {
+        cfg.false_next = "";
+      } else if (wire.portType === "intent") {
+        if (cfg.branches) delete cfg.branches[wire.intentKey];
+      } else if (wire.portType === "found") {
+        cfg.found_next = "";
+      } else if (wire.portType === "not_found") {
+        cfg.not_found_next = "";
+      } else {
+        cfg.next_node_key = "";
+      }
+
+      return { ...n, config: cfg };
+    }));
   };
 
   // ── Add Node to Canvas ──────────────────────────────────────────────────────
@@ -1185,77 +1277,81 @@ export default function WhatsAppFlows() {
       const srcY = src.position_y || 0;
       const cfg = src.config || {};
 
-      const addWire = (targetKey, portLabel, portColor = "#10B981", offsetY = 60) => {
+      const addWire = (targetKey, portLabel, portColor = "#10B981", offsetY = 60, extra = {}) => {
         if (!targetKey || !nodeMap[targetKey]) return;
         const tgt = nodeMap[targetKey];
         const tgtX = tgt.position_x || 0;
         const tgtY = tgt.position_y || 0;
 
-        const startX = srcX + 260; // right side of source card
+        const startX = srcX + 270; // right side of source card (270px width)
         const startY = srcY + offsetY;
         const endX = tgtX; // left side of target card
         const endY = tgtY + 45;
 
-        // Bezier control points
-        const dx = Math.abs(endX - startX) * 0.5;
-        const pathD = `M ${startX} ${startY} C ${startX + Math.max(60, dx)} ${startY}, ${endX - Math.max(60, dx)} ${endY}, ${endX} ${endY}`;
+        // Bezier control points for smooth routing
+        const dx = Math.abs(endX - startX) * 0.55;
+        const pathD = `M ${startX} ${startY} C ${startX + Math.max(50, dx)} ${startY}, ${endX - Math.max(50, dx)} ${endY}, ${endX} ${endY}`;
 
         wires.push({
-          id: `${src.node_key}->${targetKey}-${portLabel}`,
+          id: `${src.node_key}->${targetKey}-${portLabel}-${offsetY}`,
+          srcKey: src.node_key,
+          targetKey,
           pathD,
           color: portColor,
           label: portLabel,
-          startX, startY, endX, endY
+          startX, startY, endX, endY,
+          ...extra
         });
       };
 
       if (src.node_type === "interactive_menu") {
-        let btnOffset = 95;
-        if (Array.isArray(cfg.sections)) {
-          cfg.sections.forEach(sec => {
-            btnOffset += 24; // section title header space
-            (sec.buttons || []).forEach(b => {
+        let btnOffset = 85;
+        if (Array.isArray(cfg.sections) && cfg.sections.length > 0) {
+          cfg.sections.forEach((sec, sIdx) => {
+            btnOffset += 24; // section title space
+            (sec.buttons || []).forEach((b, bIdx) => {
               const target = b.nextNodeId || b.next_node_key;
-              if (target) addWire(target, b.label || b.title || "Option", "#10B981", btnOffset);
+              if (target) addWire(target, b.label || b.title || "Option", "#10B981", btnOffset, { portType: "button", sectionIdx: sIdx, buttonIdx: bIdx });
               btnOffset += 34;
             });
           });
         } else if (Array.isArray(cfg.buttons)) {
-          cfg.buttons.forEach(b => {
+          cfg.buttons.forEach((b, bIdx) => {
             const target = b.nextNodeId || b.next_node_key;
-            if (target) addWire(target, b.label || b.title, "#10B981", btnOffset);
+            if (target) addWire(target, b.label || b.title || "Option", "#10B981", btnOffset, { portType: "button", buttonIdx: bIdx });
             btnOffset += 34;
           });
         }
       } else if (src.node_type === "send_buttons") {
-        let btnOffset = 95;
-        (cfg.buttons || []).forEach(b => {
+        let btnOffset = 85;
+        (cfg.buttons || []).forEach((b, bIdx) => {
           const target = b.next_node_key || b.nextNodeId;
-          if (target) addWire(target, b.title || b.label || "Option", "#0D9488", btnOffset);
+          if (target) addWire(target, b.title || b.label || "Option", "#0D9488", btnOffset, { portType: "button", buttonIdx: bIdx });
           btnOffset += 34;
         });
       } else if (src.node_type === "send_list") {
-        let btnOffset = 118;
-        (cfg.rows || cfg.buttons || []).forEach(b => {
+        let btnOffset = 110;
+        (cfg.rows || cfg.buttons || []).forEach((b, rIdx) => {
           const target = b.next_node_key || b.nextNodeId;
-          if (target) addWire(target, b.title || b.label || "Option", "#06B6D4", btnOffset);
+          if (target) addWire(target, b.title || b.label || "Option", "#06B6D4", btnOffset, { portType: "button", buttonIdx: rIdx, rowIdx: rIdx });
           btnOffset += 38;
         });
       } else if (src.node_type === "condition") {
-        if (cfg.true_next) addWire(cfg.true_next, "YES (True)", "#10B981", 85);
-        if (cfg.false_next) addWire(cfg.false_next, "NO (False)", "#F59E0B", 125);
+        if (cfg.true_next) addWire(cfg.true_next, "YES (True)", "#10B981", 90, { portType: "true" });
+        if (cfg.false_next) addWire(cfg.false_next, "NO (False)", "#F59E0B", 130, { portType: "false" });
       } else if (src.node_type === "ai_intent") {
-        let branchOffset = 90;
-        Object.entries(cfg.branches || {}).forEach(([intent, tgt]) => {
-          if (tgt) addWire(tgt, intent, "#A855F7", branchOffset);
+        let branchOffset = 75;
+        const branchObj = cfg.branches || { sales: "", support: "", pricing: "", fallback: "" };
+        Object.entries(branchObj).forEach(([intent, tgt]) => {
+          if (tgt) addWire(tgt, intent, "#A855F7", branchOffset, { portType: "intent", intentKey: intent });
           branchOffset += 28;
         });
       } else if (src.node_type === "crm_lookup") {
-        if (cfg.found_next) addWire(cfg.found_next, "Found", "#10B981", 80);
-        if (cfg.not_found_next) addWire(cfg.not_found_next, "Not Found", "#EF4444", 110);
-        if (cfg.next_node_key) addWire(cfg.next_node_key, "Next", "#3B82F6", 80);
+        if (cfg.found_next) addWire(cfg.found_next, "Found", "#10B981", 80, { portType: "found" });
+        if (cfg.not_found_next) addWire(cfg.not_found_next, "Not Found", "#EF4444", 110, { portType: "not_found" });
+        if (cfg.next_node_key) addWire(cfg.next_node_key, "Next", "#3B82F6", 80, { portType: "next" });
       } else if (src.config?.next_node_key) {
-        addWire(src.config.next_node_key, "Next", "#6B7280", 75);
+        addWire(src.config.next_node_key, "Next", "#3B82F6", 75, { portType: "next" });
       }
     });
 
@@ -1266,6 +1362,8 @@ export default function WhatsAppFlows() {
   const renderCanvasNode = (node) => {
     const isSelected = selectedNodeKey === node.node_key;
     const isEntry = flowEntryNode === node.node_key || node.node_key === "start";
+    const isConnectingTarget = connectingFrom && connectingFrom.nodeKey !== node.node_key;
+    const isConnectingSource = connectingFrom && connectingFrom.nodeKey === node.node_key;
 
     // Palette metadata icon and color
     let typeMeta = { icon: "⚡", label: node.node_type, color: "bg-slate-50 border-slate-300 text-slate-800" };
@@ -1278,28 +1376,60 @@ export default function WhatsAppFlows() {
       <div
         key={node.node_key}
         onMouseDown={(e) => handleNodeMouseDown(node.node_key, e)}
-        onClick={(e) => { e.stopPropagation(); setSelectedNodeKey(node.node_key); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (connectingFrom && connectingFrom.nodeKey !== node.node_key) {
+            completeConnection(node.node_key, e);
+          } else {
+            setSelectedNodeKey(node.node_key);
+          }
+        }}
+        onMouseUp={(e) => {
+          if (connectingFrom && connectingFrom.nodeKey !== node.node_key) {
+            completeConnection(node.node_key, e);
+          }
+        }}
         style={{
           transform: `translate(${node.position_x}px, ${node.position_y}px)`,
           width: "270px"
         }}
-        className={`absolute rounded-2xl bg-white shadow-lg border-2 transition-shadow select-none cursor-move z-10 ${
-          isSelected ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-2xl" : "border-slate-200 hover:border-slate-300"
+        className={`absolute rounded-2xl bg-white shadow-lg border-2 transition-all select-none cursor-move z-10 ${
+          isConnectingTarget
+            ? "border-emerald-500 ring-4 ring-emerald-400/80 shadow-2xl cursor-pointer hover:scale-[1.02]"
+            : isConnectingSource
+              ? "border-blue-500 ring-4 ring-blue-400/70 shadow-xl"
+              : isSelected
+                ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-2xl"
+                : "border-slate-200 hover:border-slate-300 hover:shadow-md"
         }`}
       >
+        {/* Click to Connect Top Banner Cue */}
+        {isConnectingTarget && (
+          <div className="bg-emerald-600 text-white text-[9px] font-bold text-center py-0.5 rounded-t-xl animate-pulse flex items-center justify-center gap-1">
+            <span>✦ Click to Connect Step Here</span>
+          </div>
+        )}
+
         {/* Input Port Anchor (Left) */}
         {node.node_key !== "start" && (
           <div
+            onClick={(e) => completeConnection(node.node_key, e)}
             onMouseUp={(e) => completeConnection(node.node_key, e)}
-            className="absolute -left-3 top-10 w-6 h-6 rounded-full bg-white border-2 border-emerald-500 flex items-center justify-center shadow hover:scale-125 transition-transform z-20 cursor-pointer"
-            title="Connect here"
+            className={`absolute -left-3.5 top-10 w-7 h-7 rounded-full bg-white border-2 flex items-center justify-center shadow-md transition-all z-20 cursor-pointer ${
+              isConnectingTarget
+                ? "border-emerald-500 bg-emerald-100 scale-125 ring-4 ring-emerald-400/50"
+                : "border-slate-300 hover:border-emerald-500 hover:scale-125"
+            }`}
+            title="Drop or click here to connect"
           >
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
           </div>
         )}
 
         {/* Node Header */}
-        <div className="px-3.5 py-2.5 rounded-t-2xl border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
+        <div className={`px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between ${
+          isConnectingTarget ? "" : "rounded-t-2xl"
+        }`}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-base">{typeMeta.icon || "⚡"}</span>
             <div className="min-w-0">
@@ -1337,6 +1467,33 @@ export default function WhatsAppFlows() {
 
         {/* Node Body Content Preview */}
         <div className="p-3 text-xs space-y-2">
+          {/* Triggers (start, keyword_trigger, all_inbound_trigger, first_inbound_trigger) */}
+          {(node.node_type === "start" || node.node_type?.includes("trigger")) && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-amber-50/80 border border-amber-200 rounded-lg text-[11px]">
+                <div className="font-bold text-amber-900 flex items-center gap-1">
+                  <span>🚀</span>
+                  <span>{node.node_type === "start" ? "Entry Kickoff Point" : (node.config?.trigger_label || "Inbound Trigger")}</span>
+                </div>
+                {node.config?.keywords && (
+                  <p className="text-[10px] text-amber-700 mt-1 font-mono line-clamp-1">
+                    Keywords: {Array.isArray(node.config.keywords) ? node.config.keywords.join(", ") : node.config.keywords}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-600 font-semibold">
+                <span>Start Flow ➔</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-5 h-5 rounded-full bg-amber-500 hover:bg-amber-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shadow-sm shrink-0"
+                  title="Drag or click to connect next step"
+                >
+                  <ChevronRight size={12} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Interactive Menu multi-section display */}
           {node.node_type === "interactive_menu" && (
             <div className="space-y-2">
@@ -1361,8 +1518,8 @@ export default function WhatsAppFlows() {
                           <span className="truncate">{b.label || b.title || `Option ${bIdx + 1}`}</span>
                           <div
                             onMouseDown={(e) => startConnecting(node.node_key, b.id || `btn_${bIdx}`, "button", { sectionIdx: sIdx, buttonIdx: bIdx }, e)}
-                            className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition-transform"
-                            title="Drag to connect"
+                            className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition-transform shrink-0"
+                            title="Drag or click to connect target node"
                           >
                             <ChevronRight size={10} />
                           </div>
@@ -1381,7 +1538,8 @@ export default function WhatsAppFlows() {
                       <span className="truncate">{b.label || b.title || `Option ${bIdx + 1}`}</span>
                       <div
                         onMouseDown={(e) => startConnecting(node.node_key, b.id || `btn_${bIdx}`, "button", { buttonIdx: bIdx }, e)}
-                        className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                        className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 shrink-0"
+                        title="Drag or click to connect target node"
                       >
                         <ChevronRight size={10} />
                       </div>
@@ -1413,7 +1571,7 @@ export default function WhatsAppFlows() {
                     <div
                       onMouseDown={(e) => startConnecting(node.node_key, b.reply_id || b.id || `btn_${bIdx}`, "button", { buttonIdx: bIdx }, e)}
                       className="w-4 h-4 rounded-full bg-teal-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
-                      title="Connect target node"
+                      title="Drag or click to connect target node"
                     >
                       <ChevronRight size={10} />
                     </div>
@@ -1446,7 +1604,7 @@ export default function WhatsAppFlows() {
                     <div
                       onMouseDown={(e) => startConnecting(node.node_key, r.id || r.reply_id || `row_${rIdx}`, "button", { buttonIdx: rIdx }, e)}
                       className="w-4 h-4 rounded-full bg-cyan-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
-                      title="Connect target node"
+                      title="Drag or click to connect target node"
                     >
                       <ChevronRight size={10} />
                     </div>
@@ -1467,6 +1625,52 @@ export default function WhatsAppFlows() {
                 <div
                   onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
                   className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Media / PDF Catalog Preview */}
+          {node.node_type === "send_media" && (
+            <div className="space-y-1.5">
+              <div className="p-1.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded text-[11px] flex items-center gap-1.5">
+                <FileText size={12} className="text-indigo-600 shrink-0" />
+                <span className="font-semibold uppercase">{node.config?.media_type || "image"}</span>
+                <span className="text-[10px] text-slate-500 truncate">{node.config?.media_url ? "URL configured" : "No URL"}</span>
+              </div>
+              {node.config?.caption && (
+                <p className="text-[10px] text-slate-600 line-clamp-2 italic bg-slate-50 p-1.5 rounded border border-slate-100">
+                  "{node.config.caption}"
+                </p>
+              )}
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-indigo-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* WhatsApp Approved Template Preview */}
+          {node.node_type === "send_template" && (
+            <div className="space-y-1.5">
+              <div className="p-1.5 bg-lime-50 border border-lime-200 text-lime-900 rounded text-[11px] font-semibold truncate">
+                🧾 HSM: {node.config?.template_name || "welcome_hsm"}
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-lime-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
                 >
                   <ChevronRight size={10} />
                 </div>
@@ -1484,6 +1688,7 @@ export default function WhatsAppFlows() {
                 <div
                   onMouseDown={(e) => startConnecting(node.node_key, "true", "true", {}, e)}
                   className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px] flex items-center justify-between cursor-crosshair hover:bg-emerald-200"
+                  title="Connect YES outcome"
                 >
                   <span>YES (True)</span>
                   <ChevronRight size={12} />
@@ -1491,9 +1696,62 @@ export default function WhatsAppFlows() {
                 <div
                   onMouseDown={(e) => startConnecting(node.node_key, "false", "false", {}, e)}
                   className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-bold text-[10px] flex items-center justify-between cursor-crosshair hover:bg-amber-200"
+                  title="Connect NO outcome"
                 >
                   <span>NO (False)</span>
                   <ChevronRight size={12} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Intent Router Preview */}
+          {node.node_type === "ai_intent" && (
+            <div className="space-y-1.5">
+              <div className="p-1.5 bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-900 rounded text-[11px] font-semibold flex items-center gap-1.5">
+                <Sparkles size={12} className="text-fuchsia-600" />
+                <span>AI Intent Branches</span>
+              </div>
+              <div className="space-y-1">
+                {Object.keys(node.config?.branches || { sales: "", support: "", pricing: "", fallback: "" }).map((intent, iIdx) => (
+                  <div
+                    key={iIdx}
+                    className="flex items-center justify-between px-2 py-1 bg-fuchsia-50/70 border border-fuchsia-200 text-fuchsia-950 rounded text-[10px] font-bold"
+                  >
+                    <span className="truncate uppercase">{intent}</span>
+                    <div
+                      onMouseDown={(e) => startConnecting(node.node_key, `intent_${intent}`, "intent", { intentKey: intent }, e)}
+                      className="w-3.5 h-3.5 rounded-full bg-fuchsia-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                      title={`Connect branch: ${intent}`}
+                    >
+                      <ChevronRight size={9} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Smart Dynamic Response */}
+          {node.node_type === "ai_generate" && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-900 rounded-lg text-[11px]">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Cpu size={12} className="text-fuchsia-600" />
+                  <span>AI Smart Dynamic Response</span>
+                </div>
+                <p className="text-[10px] text-fuchsia-700 italic line-clamp-2 mt-0.5">
+                  "{node.config?.prompt || "Answer customer queries naturally"}"
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-fuchsia-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
                 </div>
               </div>
             </div>
@@ -1511,6 +1769,7 @@ export default function WhatsAppFlows() {
                 <div
                   onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
                   className="w-4 h-4 rounded-full bg-sky-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                  title="Connect next step"
                 >
                   <ChevronRight size={10} />
                 </div>
@@ -1529,6 +1788,102 @@ export default function WhatsAppFlows() {
                 <div
                   onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
                   className="w-4 h-4 rounded-full bg-purple-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Create CRM Lead Preview */}
+          {node.node_type === "create_lead" && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg text-[11px]">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Database size={12} className="text-blue-600" />
+                  <span>Create CRM Lead</span>
+                </div>
+                <div className="text-[10px] text-blue-700 mt-1">
+                  Status: <span className="font-bold">{node.config?.status || "hot"}</span> • Source: {node.config?.source || "WhatsApp Bot"}
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pacing Typing Delay */}
+          {node.node_type === "delay" && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-orange-50 border border-orange-200 text-orange-900 rounded-lg text-[11px] flex items-center gap-1.5">
+                <Clock size={12} className="text-orange-600" />
+                <span>Typing Delay: <b>{node.config?.delay_seconds || 2}s</b></span>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-orange-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* API Webhook */}
+          {node.node_type === "api_webhook" && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-violet-50 border border-violet-200 text-violet-900 rounded-lg text-[11px]">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Globe size={12} className="text-violet-600" />
+                  <span>{node.config?.method || "POST"} Webhook</span>
+                </div>
+                <p className="text-[10px] text-violet-700 truncate font-mono mt-0.5">
+                  {node.config?.url || "https://api.example.com/hook"}
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Set Variable */}
+          {node.node_type === "set_variable" && (
+            <div className="space-y-1.5">
+              <div className="p-2 bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-[11px]">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Settings2 size={12} className="text-slate-600" />
+                  <span>Set: <code>{node.config?.var_key || "custom_var"}</code></span>
+                </div>
+                <p className="text-[10px] text-slate-500 truncate mt-0.5 font-mono">
+                  = "{node.config?.var_value || ""}"
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
                 >
                   <ChevronRight size={10} />
                 </div>
@@ -1553,6 +1908,23 @@ export default function WhatsAppFlows() {
               🛑 End of Conversation
             </div>
           )}
+
+          {/* Generic fallback for any other node with next_node_key */}
+          {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(node.node_type) && !node.node_type?.includes("trigger") && (
+            <div className="space-y-1.5">
+              <p className="text-slate-500 text-[10px] italic">Custom node configuration</p>
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                <span>Next Step</span>
+                <div
+                  onMouseDown={(e) => startConnecting(node.node_key, "next", "next", {}, e)}
+                  className="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-white cursor-crosshair hover:scale-125 transition shrink-0"
+                  title="Connect next step"
+                >
+                  <ChevronRight size={10} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1575,7 +1947,7 @@ export default function WhatsAppFlows() {
     };
 
     return (
-      <div className="p-4 space-y-5 overflow-y-auto max-h-[calc(100vh-140px)]">
+      <div className="p-4 space-y-5">
         {/* Node Identifier */}
         <div className="space-y-2 pb-3 border-b border-slate-100">
           <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -2390,6 +2762,227 @@ export default function WhatsAppFlows() {
             </div>
           </div>
         )}
+
+        {/* ── FLOW TRIGGERS CONFIGURATION (Start / Inbound / Keywords) ── */}
+        {(selectedNode.node_type === "start" || selectedNode.node_type?.includes("trigger")) && (
+          <div className="space-y-3">
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+              <span className="font-bold flex items-center gap-1">
+                <span>🚀</span>
+                <span>Flow Entry Trigger Point</span>
+              </span>
+              <p className="text-[10px] text-amber-700">
+                This is the entry node where incoming WhatsApp messages begin this automated journey.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Trigger Description / Label</label>
+              <input
+                type="text"
+                value={cfg.trigger_label || ""}
+                onChange={(e) => updateConfig({ trigger_label: e.target.value })}
+                placeholder="e.g. Welcome Greeting & Menu"
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Trigger Keywords (comma-separated)</label>
+              <input
+                type="text"
+                value={Array.isArray(cfg.keywords) ? cfg.keywords.join(", ") : (cfg.keywords || "")}
+                onChange={(e) => updateConfig({ keywords: e.target.value.split(",").map(k => k.trim()) })}
+                placeholder="e.g. hi, hello, food, menu, order, amc, catalog"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node *</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono font-semibold"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                  <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── WHATSAPP HSM TEMPLATE CONFIGURATION ─────────────────────── */}
+        {selectedNode.node_type === "send_template" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Approved Template Name *</label>
+              <input
+                type="text"
+                value={cfg.template_name || ""}
+                onChange={(e) => updateConfig({ template_name: e.target.value })}
+                placeholder="e.g. order_confirmation_v1"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Language Code</label>
+              <input
+                type="text"
+                value={cfg.language_code || "en"}
+                onChange={(e) => updateConfig({ language_code: e.target.value })}
+                placeholder="e.g. en or hi"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                  <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── SET SESSION VARIABLE CONFIGURATION ──────────────────────── */}
+        {selectedNode.node_type === "set_variable" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Variable Key Name *</label>
+              <input
+                type="text"
+                value={cfg.var_key || ""}
+                onChange={(e) => updateConfig({ var_key: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") })}
+                placeholder="e.g. selected_category / order_item"
+                className="w-full p-2 text-xs font-mono border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Variable Value *</label>
+              <input
+                type="text"
+                value={cfg.var_value || ""}
+                onChange={(e) => updateConfig({ var_value: e.target.value })}
+                placeholder="e.g. Spices & Masala or {{input}}"
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                  <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── AI INTENT ROUTER CONFIGURATION ──────────────────────────── */}
+        {selectedNode.node_type === "ai_intent" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700">Intent Branches</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const intentName = prompt("Enter new intent branch key (e.g. pricing, catalog, help):");
+                  if (intentName) {
+                    const branches = { ...(cfg.branches || {}) };
+                    branches[intentName.toLowerCase().trim()] = "";
+                    updateConfig({ branches });
+                  }
+                }}
+                className="text-[10px] text-fuchsia-600 font-bold hover:underline flex items-center gap-1"
+              >
+                + Add Intent
+              </button>
+            </div>
+            <div className="space-y-2">
+              {Object.entries(cfg.branches || { sales: "", support: "", pricing: "", fallback: "" }).map(([intent, targetKey], iIdx) => (
+                <div key={iIdx} className="p-2 bg-slate-50 border rounded-lg flex items-center justify-between gap-2">
+                  <span className="text-xs font-mono font-bold text-fuchsia-800 uppercase">{intent}</span>
+                  <select
+                    value={targetKey || ""}
+                    onChange={(e) => {
+                      const branches = { ...(cfg.branches || {}) };
+                      branches[intent] = e.target.value;
+                      updateConfig({ branches });
+                    }}
+                    className="flex-1 p-1 text-[11px] border rounded bg-white font-mono"
+                  >
+                    <option value="">-- Destination Node --</option>
+                    {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                      <option key={n.node_key} value={n.node_key}>{n.node_key}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── AI GENERATE CONFIGURATION ───────────────────────────────── */}
+        {selectedNode.node_type === "ai_generate" && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">System Instructions / Context</label>
+              <textarea
+                value={cfg.prompt || ""}
+                onChange={(e) => updateConfig({ prompt: e.target.value })}
+                rows={3}
+                placeholder="You are a helpful customer support assistant for Madhura..."
+                className="w-full p-2 text-xs border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                  <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* ── GENERIC FALLBACK FOR ANY NODE WITH NEXT STEP ────────────── */}
+        {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(selectedNode.node_type) && !selectedNode.node_type?.includes("trigger") && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- Select Next Step --</option>
+                {nodes.filter(n => n.node_key !== selectedNode.node_key).map(n => (
+                  <option key={n.node_key} value={n.node_key}>{n.node_key} ({n.node_type})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2563,6 +3156,33 @@ export default function WhatsAppFlows() {
               <span className="italic">typing</span>
             </div>
           )}
+          <div ref={simChatBottomRef} />
+        </div>
+
+        {/* Quick Test Chips Bar */}
+        <div className={`px-2 py-1.5 flex items-center gap-1.5 overflow-x-auto shrink-0 border-t ${
+          simDarkTheme ? "bg-[#1f2c34] border-[#2a3942]" : "bg-slate-100 border-slate-200"
+        }`}>
+          {["🍲 View All", "1", "2", "3", "📦 Order", "👤 Agent", "🔄 Restart"].map((chip, cIdx) => (
+            <button
+              key={cIdx}
+              type="button"
+              onClick={() => {
+                if (chip === "🔄 Restart") resetSimulation();
+                else if (chip === "🍲 View All") executeSimStep("View All Categories");
+                else if (chip === "📦 Order") executeSimStep("Place Order");
+                else if (chip === "👤 Agent") executeSimStep("Human Support");
+                else executeSimStep(chip);
+              }}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-colors shrink-0 shadow-xs ${
+                simDarkTheme
+                  ? "bg-[#2a3942] hover:bg-[#00a884] text-emerald-400 hover:text-white"
+                  : "bg-white hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-200"
+              }`}
+            >
+              {chip}
+            </button>
+          ))}
         </div>
 
         {/* WhatsApp Bottom Chat Input Bar */}
@@ -2651,10 +3271,10 @@ export default function WhatsAppFlows() {
     const wires = getWirePaths();
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-900 text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+      <div className="fixed inset-0 w-full h-full z-50 bg-slate-900 text-slate-100 flex flex-col font-sans select-none overflow-hidden">
         {/* Top Studio Action Bar */}
-        <div className="h-14 bg-slate-950 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-30">
-          <div className="flex items-center gap-3">
+        <div className="h-14 w-full bg-slate-950 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-30 relative">
+          <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={() => setShowStudio(false)}
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
@@ -2684,8 +3304,8 @@ export default function WhatsAppFlows() {
             </div>
           </div>
 
-          {/* Canvas Controls Toolbar */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+          {/* Canvas Controls Toolbar - Centered */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 p-1 rounded-xl absolute left-1/2 -translate-x-1/2">
             <button
               onClick={() => setZoom(z => Math.max(0.4, z - 0.1))}
               className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800"
@@ -2712,8 +3332,8 @@ export default function WhatsAppFlows() {
             </button>
           </div>
 
-          {/* Templates & Action Buttons */}
-          <div className="flex items-center gap-2">
+          {/* Templates & Action Buttons - Right Aligned */}
+          <div className="flex items-center gap-2 ml-auto shrink-0 z-10">
             {/* Quick Template Switcher */}
             <div className="relative group">
               <button
@@ -2820,7 +3440,7 @@ export default function WhatsAppFlows() {
         </div>
 
         {/* Studio Workspace Layout */}
-        <div className="flex-1 flex min-h-0 relative overflow-hidden">
+        <div className="flex-1 flex w-full min-h-0 relative overflow-hidden">
           {/* Left Component Palette Sidebar */}
           <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 z-20 select-none">
             <div className="p-3 border-b border-slate-800 flex items-center justify-between">
@@ -2874,7 +3494,7 @@ export default function WhatsAppFlows() {
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            className="flex-1 bg-[#0f172a] relative overflow-hidden cursor-crosshair canvas-grid"
+            className="flex-1 min-w-0 h-full bg-[#0f172a] relative overflow-hidden cursor-crosshair canvas-grid"
             style={{
               backgroundImage: "radial-gradient(#1e293b 1.5px, transparent 1.5px)",
               backgroundSize: `${24 * zoom}px ${24 * zoom}px`
@@ -2898,50 +3518,93 @@ export default function WhatsAppFlows() {
               </defs>
 
               {/* Render Existing Edges */}
-              {wires.map(w => (
-                <g key={w.id}>
-                  <path
-                    d={w.pathD}
-                    fill="none"
-                    stroke={w.color}
-                    strokeWidth={2.5}
-                    markerEnd="url(#arrow)"
-                    className="transition-all hover:stroke-emerald-400 hover:stroke-[4]"
-                  />
-                  {/* Wire Label pill */}
-                  <rect
-                    x={(w.startX + w.endX) / 2 - 25}
-                    y={(w.startY + w.endY) / 2 - 10}
-                    width={50}
-                    height={18}
-                    rx={6}
-                    fill="#0f172a"
-                    stroke={w.color}
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={(w.startX + w.endX) / 2}
-                    y={(w.startY + w.endY) / 2 + 3}
-                    fill="#e2e8f0"
-                    fontSize="9"
-                    fontWeight="bold"
-                    textAnchor="middle"
-                  >
-                    {w.label.slice(0, 8)}
-                  </text>
-                </g>
-              ))}
+              {wires.map(w => {
+                const midX = (w.startX + w.endX) / 2;
+                const midY = (w.startY + w.endY) / 2;
+                return (
+                  <g key={w.id} className="group pointer-events-auto">
+                    {/* Wider hit path for easy hover */}
+                    <path
+                      d={w.pathD}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={14}
+                      className="cursor-pointer"
+                    />
+                    <path
+                      d={w.pathD}
+                      fill="none"
+                      stroke={w.color}
+                      strokeWidth={2.5}
+                      markerEnd="url(#arrow)"
+                      className="transition-all group-hover:stroke-emerald-400 group-hover:stroke-[3.5]"
+                    />
+                    {/* Wire Label & Delete Click Pill */}
+                    <g
+                      transform={`translate(${midX}, ${midY})`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        disconnectWire(w);
+                      }}
+                      className="cursor-pointer group/pill"
+                    >
+                      <rect
+                        x={-34}
+                        y={-10}
+                        width={68}
+                        height={20}
+                        rx={10}
+                        fill="#0f172a"
+                        stroke={w.color}
+                        strokeWidth={1.5}
+                        className="transition-colors group-hover/pill:fill-rose-950 group-hover/pill:stroke-rose-500 shadow-md"
+                      />
+                      <text
+                        x={-4}
+                        y={3}
+                        fill="#e2e8f0"
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        className="group-hover/pill:fill-rose-200 select-none pointer-events-none"
+                      >
+                        {w.label.slice(0, 8)}
+                      </text>
+                      <text
+                        x={22}
+                        y={3.5}
+                        fill="#94a3b8"
+                        fontSize="10"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        className="group-hover/pill:fill-rose-400 select-none pointer-events-none"
+                      >
+                        ✕
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
 
-              {/* Render Dynamic Dragging Wire */}
+              {/* Render Dynamic Connecting Wire (Smooth Bezier curve) */}
               {connectingFrom && (
-                <path
-                  d={`M ${connectingFrom.x || 0} ${connectingFrom.y || 0} L ${connectingMousePos.x} ${connectingMousePos.y}`}
-                  fill="none"
-                  stroke="#3B82F6"
-                  strokeWidth={3}
-                  strokeDasharray="5,5"
-                  className="animate-pulse"
-                />
+                <g>
+                  <path
+                    d={`M ${connectingFrom.x || 0} ${connectingFrom.y || 0} C ${(connectingFrom.x || 0) + Math.max(50, Math.abs(connectingMousePos.x - (connectingFrom.x || 0)) * 0.55)} ${connectingFrom.y || 0}, ${connectingMousePos.x - Math.max(50, Math.abs(connectingMousePos.x - (connectingFrom.x || 0)) * 0.55)} ${connectingMousePos.y}, ${connectingMousePos.x} ${connectingMousePos.y}`}
+                    fill="none"
+                    stroke="#10B981"
+                    strokeWidth={3}
+                    strokeDasharray="6,4"
+                    markerEnd="url(#arrow-active)"
+                    className="animate-pulse"
+                  />
+                  <circle
+                    cx={connectingMousePos.x}
+                    cy={connectingMousePos.y}
+                    r={5}
+                    fill="#10B981"
+                  />
+                </g>
               )}
             </svg>
 
@@ -2960,7 +3623,7 @@ export default function WhatsAppFlows() {
           </div>
 
           {/* Right Node Inspector / WhatsApp Simulator Panel */}
-          <div className="w-[380px] bg-slate-950 border-l border-slate-800 flex flex-col shrink-0 z-20 select-none">
+          <div className="w-[380px] shrink-0 h-full bg-slate-950 border-l border-slate-800 flex flex-col z-30 select-none shadow-2xl">
             {/* Inspector Top Tabs */}
             <div className="flex border-b border-slate-800 bg-slate-900/60 p-1">
               <button
@@ -2993,7 +3656,7 @@ export default function WhatsAppFlows() {
             </div>
 
             {/* Tab Contents */}
-            <div className="flex-1 overflow-y-auto min-h-0 bg-white text-slate-900">
+            <div className="flex-1 overflow-y-auto min-h-0 bg-white text-slate-900 w-full">
               {activeInspectorTab === "config" && renderNodeInspector()}
 
               {activeInspectorTab === "preview" && (
