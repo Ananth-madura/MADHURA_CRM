@@ -167,8 +167,9 @@ export default function App() {
               <Route path="/flows/build/:flowId" element={<FlowParamRedirect />} />
               <Route path="/flows/builder" element={<Navigate to="/dashboard/whatsapp/flows/build" replace />} />
               <Route path="/flows/builder/:flowId" element={<FlowParamRedirect />} />
-              <Route path="/dashboard/flows/build" element={<Navigate to="/dashboard/whatsapp/flows/build" replace />} />
-              <Route path="/dashboard/flows/build/:flowId" element={<FlowParamRedirect />} />
+              <Route path="/notification" element={<Navigate to="/dashboard/notifications" replace />} />
+              <Route path="/notifications" element={<Navigate to="/dashboard/notifications" replace />} />
+              <Route path="/dashboard/notification" element={<Navigate to="/dashboard/notifications" replace />} />
               <Route path="/dashboard" element={<DashboardLayout />}>
                 <Route index element={<DashboardRouter />} />
                 <Route path="telecalling" element={<Telecall />} />
@@ -194,6 +195,7 @@ export default function App() {
                 <Route path="amc" element={<AMCService />} />
                 <Route path="users" element={<UserManagement />} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="notification" element={<Navigate to="/dashboard/notifications" replace />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="whatsapp" element={<WhatsAppPage />} />

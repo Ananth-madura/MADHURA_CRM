@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Bell, X, CheckCheck, Trash2 } from "lucide-react";
+import { Bell, X, CheckCheck, Trash2, ExternalLink } from "lucide-react";
 import { useNotifications } from "../context/NotificationContext";
 
 const NotificationPanel = () => {
@@ -114,6 +114,19 @@ const NotificationPanel = () => {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="p-3 border-t bg-gray-50 flex items-center justify-between">
+          <button
+            onClick={() => {
+              setShowPanel(false);
+              window.location.href = "/dashboard/notifications";
+            }}
+            className="w-full py-2 px-3 text-xs font-semibold text-center rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>Open Notification Center</span>
+            <ExternalLink size={13} />
+          </button>
         </div>
       </div>
     </div>
