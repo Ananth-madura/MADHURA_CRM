@@ -148,11 +148,10 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
     [contactProfileName || `+${phone}`, phone.slice(-10), messageText]
   ).catch(() => {});
 
-  // Mark as replied in any active campaign messages for this phone
-  await db.promise().query(
-    "UPDATE wa_campaign_messages SET reply_received=1 WHERE phone=? AND status IN ('sent','delivered','read')",
-    [phone]
-  ).catch(() => {});
+  // ── 3. Check if contact is replying to a bulk campaign (Campaign Isolation) ──
+  const waCampaignEngine = require("../services/waCampaignEngine");
+  const campaignReply = await waCampaignEngine.checkAndRecordCampaignReply(phone, messageText).catch(() => ({ isCampaignReply: false }));
+  const isCampaignReply = Boolean(campaignReply?.isCampaignReply);
 
   // ── Opt-out detection ─────────────────────────────────────────────────────
   const normalized = messageText.trim().toLowerCase();
@@ -188,6 +187,14 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
       console.error("Opt-out handling error:", e.message);
     }
   } else {
+    // ── Stale Webhook Replay Guard ───────────────────────────────────────────
+    const webhookTimestampSec = parseInt(msg.timestamp || Math.floor(Date.now() / 1000), 10);
+    const isStaleWebhook = (Date.now() - (webhookTimestampSec * 1000)) > 120000;
+    if (isStaleWebhook) {
+      console.log(`🛡️ [WA Webhook Guard] Stale webhook message from +${phone} (sent ${new Date(webhookTimestampSec * 1000).toISOString()}) — bypassed automations.`);
+      return;
+    }
+
     const buttonReplyId = msg.interactive?.button_reply?.id;
     const listReplyId = msg.interactive?.list_reply?.id;
     const interactiveId = buttonReplyId || listReplyId || null;
@@ -219,7 +226,7 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
         }
       : null;
 
-    waFlowEngine.dispatchInbound(phone, messageText, interactiveId, null, inboundMedia).then(async (flowHandled) => {
+    waFlowEngine.dispatchInbound(phone, messageText, interactiveId, null, inboundMedia, { isCampaignReply, isHistoric: false }).then(async (flowHandled) => {
       if (flowHandled) return;
 
       const waMenuHandler = require("../services/waMenuHandler");
@@ -230,8 +237,17 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
       };
       const menuHandled = await waMenuHandler.handleMenuReply(phone, menuMsg).catch(() => false);
       if (!menuHandled && messageText) {
-        const welcomeSent = await require("../services/waAutomationService").maybeSendWelcomeReply(phone, contactProfileName).catch(() => false);
-        if (!welcomeSent) return waAiReply.maybeAutoReply(phone, messageText);
+        // Welcome Auto-Reply (Guarded: only user-initiated, never on campaign replies)
+        const welcomeSent = await require("../services/waAutomationService").maybeSendWelcomeReply(
+          phone,
+          contactProfileName,
+          null,
+          { isCampaignReply }
+        ).catch(() => false);
+
+        if (!welcomeSent && !isCampaignReply) {
+          return waAiReply.maybeAutoReply(phone, messageText);
+        }
       }
     }).catch(() => {});
   }

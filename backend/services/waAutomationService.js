@@ -574,7 +574,7 @@ async function updateWelcomeSettings(settings) {
   return getWelcomeSettings();
 }
 
-async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) {
+async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey, options = {}) {
   if (!targetPhoneOrJid) return false;
   const rawTarget = String(targetPhoneOrJid).trim();
   if (rawTarget.includes("@g.us") || rawTarget.includes("@broadcast") || rawTarget.startsWith("status@")) {
@@ -584,10 +584,71 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
   const cleanPhone = cleanPhoneNumber(rawTarget) || rawTarget.replace(/\D/g, "");
   if (!cleanPhone && !rawTarget.includes("@")) return false;
 
+  // ── 🛡️ 1. Historic / Sync Replay Check ─────────────────────────────────────
+  if (options.isHistoric) {
+    return false;
+  }
+
+  // ── 🛡️ 2. Bulk Campaign Reply Isolation ────────────────────────────────────
+  // If the contact is replying to a bulk marketing campaign, NEVER send a general welcome message
+  if (options.isCampaignReply) {
+    console.log(`🛡️ [WA Welcome] Suppressed welcome reply for ${cleanPhone}: contact is replying to a campaign.`);
+    return false;
+  }
+
+  try {
+    const [recentCampaign] = await db.promise().query(
+      `SELECT id FROM wa_campaign_messages
+       WHERE (phone = ? OR phone LIKE ?) AND status IN ('sent', 'delivered', 'read')
+         AND sent_at >= NOW() - INTERVAL 48 HOUR
+       LIMIT 1`,
+      [cleanPhone, `%${cleanPhone.slice(-10)}`]
+    );
+    if (recentCampaign && recentCampaign.length > 0) {
+      console.log(`🛡️ [WA Welcome] Suppressed welcome reply for ${cleanPhone}: contact received a campaign message in the last 48h.`);
+      return false;
+    }
+  } catch (_) {}
+
+  // ── 🛡️ 3. User-Initiated Conversation Guard ───────────────────────────────
+  // A welcome message should ONLY be sent when the CUSTOMER initiates the conversation.
+  // If the company sent an outbound message (quotation, invoice, reminder, manual chat)
+  // in the last 24 hours, the customer is responding to us — NOT initiating contact.
+  try {
+    const [recentOutbound] = await db.promise().query(
+      `SELECT id, created_at, message_type FROM wa_message_logs
+       WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'outbound'
+         AND created_at >= NOW() - INTERVAL 24 HOUR
+       ORDER BY id DESC LIMIT 1`,
+      [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
+    );
+    if (recentOutbound && recentOutbound.length > 0) {
+      console.log(`🛡️ [WA Welcome] Suppressed welcome reply for ${cleanPhone}: company sent outbound message within last 24h (customer is replying, not initiating conversation).`);
+      return false;
+    }
+  } catch (_) {}
+
+  // ── 🛡️ 4. Active Flow Continuity Guard ─────────────────────────────────────
+  // If the contact is currently engaged in an active conversational flow run,
+  // let the flow engine handle their replies; do NOT interrupt with a welcome message.
+  try {
+    const [activeFlows] = await db.promise().query(
+      `SELECT id, flow_id FROM wa_flow_runs
+       WHERE phone LIKE ? AND status = 'active'
+         AND updated_at >= NOW() - INTERVAL 60 MINUTE
+       LIMIT 1`,
+      [`%${cleanPhone.slice(-10)}`]
+    );
+    if (activeFlows && activeFlows.length > 0) {
+      console.log(`🛡️ [WA Welcome] Suppressed welcome reply for ${cleanPhone}: customer is currently in active Flow #${activeFlows[0].flow_id}.`);
+      return false;
+    }
+  } catch (_) {}
+
   const settings = await getWelcomeSettings();
   if (!settings.enabled) return false; // Safe default: strictly requires user to enable it
 
-  // 1. Check working hours if enabled
+  // ── 5. Check working hours if enabled ─────────────────────────────────────
   if (settings.working_hours_only && settings.start_time && settings.end_time) {
     try {
       const now = new Date();
@@ -601,7 +662,7 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
     } catch (_) {}
   }
 
-  // 2. Check cooldown / deduplication: One-time welcome reply per contact
+  // ── 6. Check cooldown / deduplication: One-time welcome reply per contact ───
   const cooldownHours = parseInt(settings.cooldown_hours != null ? settings.cooldown_hours : 24, 10);
   try {
     const timeClause = cooldownHours > 0 ? "AND created_at >= NOW() - INTERVAL ? HOUR" : "";
@@ -635,11 +696,11 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
     console.error("[WA Welcome] Cooldown check error:", e.message);
   }
 
-  // 3. Resolve CRM Contact Info
+  // ── 7. Resolve CRM Contact Info ───────────────────────────────────────────
   const crmData = await lookupCrmDataByPhone(cleanPhone).catch(() => ({}));
   const resolvedName = contactName || crmData.name || crmData.customer_name || "Valued Customer";
 
-  // 4. Default fallback to wa_welcome_settings
+  // ── 8. Format Welcome Text ────────────────────────────────────────────────
   const rawWelcome = settings.welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?";
   const messageText = formatMessagePlaceholders(rawWelcome, resolvedName, crmData);
 
@@ -660,12 +721,26 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
 
     console.log(`👋 [WA Welcome] Sent Welcome Auto-Reply to ${rawTarget} via ${res?.engineUsed || "WA"}`);
 
-    // Log outbound welcome message in DB
-    await db.promise().query(
-      `INSERT INTO wa_message_logs (session_key, phone, direction, message_type, message_text, status, created_at)
-       VALUES (?, ?, 'outbound', 'welcome', ?, 'delivered', NOW())`,
-      [sessionKey || require("./whatsappService").defaultKey, cleanPhone, messageText]
-    ).catch(() => {});
+    const sentMsgId = res?.result?.id?.id || res?.result?.id?._serialized || res?.result?.messages?.[0]?.id || "welcome_" + Date.now();
+
+    // Log outbound welcome message in DB (or update message_type if already logged by session sender)
+    const [existingLog] = await db.promise().query(
+      "SELECT id FROM wa_message_logs WHERE wa_message_id = ? LIMIT 1",
+      [sentMsgId]
+    ).catch(() => [[]]);
+
+    if (existingLog && existingLog.length > 0) {
+      await db.promise().query(
+        "UPDATE wa_message_logs SET message_type = 'welcome' WHERE id = ?",
+        [existingLog[0].id]
+      ).catch(() => {});
+    } else {
+      await db.promise().query(
+        `INSERT INTO wa_message_logs (session_key, phone, direction, message_type, message_text, wa_message_id, status, created_at)
+         VALUES (?, ?, 'outbound', 'welcome', ?, ?, 'delivered', NOW())`,
+        [sessionKey || require("./whatsappService").defaultKey, cleanPhone, messageText, sentMsgId]
+      ).catch(() => {});
+    }
 
     // Broadcast live message update to CRM Live Chat
     try {
@@ -676,7 +751,7 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey) 
           phone: cleanPhone,
           chatId: rawTarget.includes("@") ? rawTarget : `${cleanPhone}@c.us`,
           message: {
-            id: "welcome_" + Date.now(),
+            id: sentMsgId,
             from: "me",
             body: messageText,
             timestamp: Math.floor(Date.now() / 1000),

@@ -167,8 +167,9 @@ class WaFlowEngine {
    * Dispatch inbound message to any active flow run or trigger a new flow.
    * Returns true if message was consumed by a flow, false otherwise.
    */
-  async dispatchInbound(phone, messageText, interactiveReplyId = null, sessionKey = null, inboundMedia = null) {
+  async dispatchInbound(phone, messageText, interactiveReplyId = null, sessionKey = null, inboundMedia = null, options = {}) {
     if (!phone) return false;
+    if (options.isHistoric) return false;
     const cleanPhone = phone.replace(/\D/g, "");
 
     try {
@@ -249,11 +250,30 @@ class WaFlowEngine {
         }
       }
 
-      // Priority 2: First Inbound / Welcome Bot (triggers when customer has no prior inbound history or new conversation)
+      // Priority 2: First Inbound / Welcome Bot (triggers ONLY when customer initiates conversation, never on campaign replies)
       for (const flow of activeFlows) {
         const isWelcomeTrigger = ["first_inbound", "welcome", "welcome_bot", "first_message"].includes(flow.trigger_type);
         if (isWelcomeTrigger) {
+          // If customer is replying to a bulk campaign, do not fire welcome flow
+          if (options.isCampaignReply) {
+            console.log(`🛡️ [WA FlowEngine] Skipped first-inbound flow "${flow.name}" for +${cleanPhone}: message is a campaign reply.`);
+            continue;
+          }
+
+          // Check if company sent an outbound message within last 24h (customer is replying, not initiating)
           try {
+            const [recentOutbound] = await db.promise().query(
+              `SELECT id FROM wa_message_logs
+               WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'outbound'
+                 AND created_at >= NOW() - INTERVAL 24 HOUR
+               LIMIT 1`,
+              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
+            );
+            if (recentOutbound && recentOutbound.length > 0) {
+              console.log(`🛡️ [WA FlowEngine] Skipped first-inbound flow "${flow.name}" for +${cleanPhone}: company sent outbound message within last 24h.`);
+              continue;
+            }
+
             const [[{ count }]] = await db.promise().query(
               "SELECT COUNT(*) as count FROM wa_message_logs WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'",
               [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
@@ -282,6 +302,11 @@ class WaFlowEngine {
       for (const flow of activeFlows) {
         const isUniversalTrigger = ["all_inbound", "universal", "default", "fallback", "no_keyword", "catch_all"].includes(flow.trigger_type);
         if (isUniversalTrigger) {
+          // If customer is replying to a bulk campaign, do not fire universal fallback flow
+          if (options.isCampaignReply) {
+            console.log(`🛡️ [WA FlowEngine] Skipped universal flow "${flow.name}" for +${cleanPhone}: message is a campaign reply.`);
+            continue;
+          }
           console.log(`🌐 Triggering Universal 24/7 WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
           return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
         }
@@ -290,6 +315,7 @@ class WaFlowEngine {
       // Priority 4: AI Intent Classifier
       for (const flow of activeFlows) {
         if (flow.trigger_type === "ai_intent") {
+          if (options.isCampaignReply) continue;
           console.log(`🧠 Triggering AI Intent Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
           return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
         }

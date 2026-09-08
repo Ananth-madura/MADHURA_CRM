@@ -239,15 +239,7 @@ function startInteractiveReminderSchedulers() {
     amcJob = schedule.scheduleJob("0 12 * * *", runAmcRenewalCheck);
   }
 
-  // Run initial check shortly after boot (30s delay)
-  setTimeout(() => {
-    runAppointmentReminderCheck();
-    runPaymentDueInteractiveCheck();
-    runQuotationFollowupCheck();
-    runAmcRenewalCheck();
-  }, 30000);
-
-  console.log("✅ [WA Reminder Schedulers] Initialized all 4 interactive confirmation schedulers");
+  console.log("✅ [WA Reminder Schedulers] Initialized all 4 interactive confirmation schedulers (strict cron schedule)");
 }
 
 module.exports = {

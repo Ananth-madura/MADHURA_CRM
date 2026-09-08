@@ -102,6 +102,8 @@ class WhatsAppService {
     this.messagesFetchCache = {};
     this.lastChatsFetch = 0;
     this.chatsFetching = false;
+    this.connectedAt = 0;
+    this.isSyncing = false;
     this._queue = Promise.resolve();
     this._sendQueue = Promise.resolve();
     this._lastSendAt = 0;
@@ -355,7 +357,16 @@ class WhatsAppService {
         this.qrCode = null;
         this.isInitializing = false;
         this.phone = this.client.info?.wid?.user || null;
-        console.log(`✅ WhatsApp Client is Ready for phone: ${this.phone}`);
+        this.connectedAt = Date.now();
+        this.isSyncing = true;
+        console.log(`✅ WhatsApp Client is Ready for phone: ${this.phone} [Quarantine Active for initial history sync]`);
+
+        // 20-second quarantine grace period: WhatsApp Web replays historic/unread messages during initial sync.
+        // During this window, all old/sync messages are ingested for CRM live chat but strictly blocked from firing automations.
+        setTimeout(() => {
+          this.isSyncing = false;
+          console.log(`🛡️ [WA Quarantine Guard] Initial sync completed for session ${this.key}. Live real-time automations are active.`);
+        }, 20000);
 
         try {
           const db = require("../config/database");
@@ -374,7 +385,7 @@ class WhatsAppService {
           sessionKey: this.key,
           phone: this.phone,
           status: "active",
-          connectedAt: Date.now(),
+          connectedAt: this.connectedAt,
           lastActiveAt: Date.now(),
         });
 
@@ -403,6 +414,8 @@ class WhatsAppService {
         this.qrCode = null;
         this.pairingCode = null;
         this.isInitializing = false;
+        this.connectedAt = 0;
+        this.isSyncing = false;
         this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "AUTH_FAILURE", message: msg });
       });
 
@@ -413,6 +426,8 @@ class WhatsAppService {
         this.qrCode = null;
         this.pairingCode = null;
         this.isInitializing = false;
+        this.connectedAt = 0;
+        this.isSyncing = false;
 
         this.emitWaEvent("wa_disconnected", null, this.phone, { reason: reasonStr });
 
@@ -449,13 +464,29 @@ class WhatsAppService {
         const rawFilename = msg._data?.filename || (/\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|png|jpg|jpeg|webp|mp4|mp3|ogg|wav)$/i.test(msg.body || "") ? msg.body : "");
         const isMedia = Boolean(msg.hasMedia || msg.type === "document" || msg.type === "image" || msg.type === "video" || msg.type === "audio" || rawFilename);
 
+        const msgTimestampSec = msg.timestamp || Math.floor(Date.now() / 1000);
+        const msgTimestampMs = msgTimestampSec * 1000;
+        const nowMs = Date.now();
+        const connectedTime = this.connectedAt || nowMs;
+
+        // ── 🛡️ STRICT CONNECTION & REPLAY QUARANTINE GUARD ─────────────────────
+        // Connecting a WhatsApp number alone MUST NEVER trigger automated messages.
+        // A message is considered historical or pre-connection sync if:
+        // 1. Its timestamp is before this session became ready (with 10s clock tolerance)
+        // 2. Its timestamp is older than 60 seconds from current system time
+        // 3. Session is in initial sync grace period and message was sent >15s ago
+        const isPreConnection = this.connectedAt > 0 && msgTimestampMs < (connectedTime - 10000);
+        const isStale = (nowMs - msgTimestampMs) > 60000;
+        const isSyncReplay = Boolean(this.isSyncing && (nowMs - msgTimestampMs) > 15000);
+        const isHistoricalOrSync = isPreConnection || isStale || isSyncReplay;
+
         const liveMsg = {
           id: msg.id?.id || `msg_${Date.now()}`,
           serializedId: msg.id?._serialized || msg.id?.id,
           from: msg.from,
           to: msg.to,
           body: rawFilename || msg.body || (isMedia ? "📷 Media attachment" : ""),
-          timestamp: msg.timestamp || Math.floor(Date.now() / 1000),
+          timestamp: msgTimestampSec,
           isMe: Boolean(msg.fromMe),
           type: msg.type || (isMedia ? "document" : "text"),
           hasMedia: isMedia,
@@ -476,7 +507,7 @@ class WhatsAppService {
         }
         delete this.messagesFetchCache[chatId];
 
-        // 1. Emit live Socket event INSTANTLY (< 1ms)
+        // 1. Emit live Socket event INSTANTLY (< 1ms) so CRM operator sees message in chat
         const eventName = msg.fromMe ? "wa_message_sent" : "wa_message_received";
         this.emitWaEvent(eventName, chatId, cleanPhone, liveMsg);
         this.emitWaEvent("wa_message", chatId, cleanPhone, liveMsg);
@@ -495,7 +526,7 @@ class WhatsAppService {
                 liveMsg.type,
                 liveMsg.body,
                 liveMsg.id,
-                msg.timestamp || Math.floor(Date.now() / 1000)
+                msgTimestampSec
               ]
             );
 
@@ -516,6 +547,12 @@ class WhatsAppService {
               ).catch(() => {});
             }
           } catch (_) {}
+
+          // ── 🛡️ QUARANTINE ENFORCEMENT: NEVER TRIGGER AUTOMATION ON PAST/SYNC MESSAGES ──
+          if (isHistoricalOrSync) {
+            console.log(`🛡️ [WA Quarantine Guard] Ingested historical/sync message ${liveMsg.id} from ${cleanPhone || chatId} (sent: ${new Date(msgTimestampMs).toISOString()}) — all outbound automations suppressed.`);
+            return;
+          }
 
           // Bot automations only run on inbound 1-to-1 chats, never on groups
           if (!msg.fromMe && !isGroup && cleanPhone) {
@@ -555,6 +592,18 @@ class WhatsAppService {
             const billHandled = await require("./waCustomerBillingService").handleInboundBillKeyword(cleanPhone, msg.body, this.key).catch(() => false);
             if (billHandled) return;
 
+            // 3. Check if contact is replying to a bulk campaign (Campaign Isolation)
+            const waCampaignEngine = require("./waCampaignEngine");
+            const campaignReply = await waCampaignEngine.checkAndRecordCampaignReply(cleanPhone, msg.body).catch(() => ({ isCampaignReply: false }));
+            const isCampaignReply = Boolean(campaignReply?.isCampaignReply);
+            if (isCampaignReply) {
+              this.emitWaEvent("wa_campaign_reply", chatId, cleanPhone, {
+                campaignId: campaignReply.campaignId,
+                campaignName: campaignReply.campaignName,
+                body: msg.body,
+              });
+            }
+
             // Describe any attachment, but DON'T download it yet — the engine
             // calls resolve() only if the step the customer is on wants a file.
             const inboundMedia = isMedia
@@ -567,12 +616,30 @@ class WhatsAppService {
                 }
               : null;
 
-            const flowHandled = await require("./waFlowEngine").dispatchInbound(cleanPhone, msg.body, interactiveReplyId, this.key, inboundMedia).catch(() => false);
+            // 4. Conversational Flow Engine dispatch
+            const flowHandled = await require("./waFlowEngine").dispatchInbound(
+              cleanPhone,
+              msg.body,
+              interactiveReplyId,
+              this.key,
+              inboundMedia,
+              { isCampaignReply, isHistoric: false }
+            ).catch(() => false);
+
             if (!flowHandled) {
+              // 5. Menu keywords handler
               const handled = await require("./waMenuHandler").handleMenuReply(cleanPhone, { text: msg.body, buttonReplyId: interactiveReplyId }, this.key).catch(() => false);
               if (!handled) {
-                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(chatId || cleanPhone, contactName, this.key).catch(() => false);
-                if (!welcomeSent) {
+                // 6. Welcome Auto-Reply (Only when customer initiates conversation, strictly never on campaign replies)
+                const welcomeSent = await require("./waAutomationService").maybeSendWelcomeReply(
+                  chatId || cleanPhone,
+                  contactName,
+                  this.key,
+                  { isCampaignReply }
+                ).catch(() => false);
+
+                // 7. AI Auto-Reply (Only if welcome not sent and not replying to campaign)
+                if (!welcomeSent && !isCampaignReply) {
                   await require("./waAiReply").maybeAutoReply(chatId || cleanPhone, msg.body, contactName, this.key).catch(() => {});
                 }
               }

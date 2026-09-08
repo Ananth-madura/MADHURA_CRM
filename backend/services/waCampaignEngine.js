@@ -573,6 +573,62 @@ async function startWorker() {
   console.log("✅ Multi-Tenant WhatsApp Campaign Engine ready (Anti-Ban & Load-Balancing Active)");
 }
 
+/**
+ * Check if an inbound message from a contact is a response to an active/recent campaign.
+ * Automatically attributes reply metrics and provides a safeguard flag so general
+ * welcome auto-replies are NEVER accidentally sent to campaign respondents.
+ */
+async function checkAndRecordCampaignReply(phone, messageText = "") {
+  if (!phone) return { isCampaignReply: false };
+  const clean = String(phone).replace(/\D/g, "");
+  const last10 = clean.slice(-10);
+  if (last10.length < 10) return { isCampaignReply: false };
+
+  try {
+    const [rows] = await db.promise().query(
+      `SELECT cm.id as message_id, cm.campaign_id, c.name as campaign_name, cm.reply_received
+       FROM wa_campaign_messages cm
+       LEFT JOIN wa_campaigns c ON cm.campaign_id = c.id
+       WHERE (cm.phone = ? OR cm.phone LIKE ?)
+         AND cm.status IN ('sent', 'delivered', 'read')
+         AND cm.sent_at >= NOW() - INTERVAL 48 HOUR
+       ORDER BY cm.id DESC LIMIT 1`,
+      [clean, `%${last10}`]
+    );
+
+    if (rows && rows.length > 0) {
+      const { message_id, campaign_id, campaign_name, reply_received } = rows[0];
+
+      // Mark reply on campaign message if not already set
+      if (!reply_received) {
+        await db.promise().query(
+          "UPDATE wa_campaign_messages SET reply_received = 1 WHERE id = ?",
+          [message_id]
+        ).catch(() => {});
+
+        if (campaign_id) {
+          await db.promise().query(
+            "UPDATE wa_campaigns SET reply_count = reply_count + 1 WHERE id = ?",
+            [campaign_id]
+          ).catch(() => {});
+        }
+      }
+
+      console.log(`📢 [WA Campaign] Reply detected from +${clean} for Campaign "${campaign_name || campaign_id}" (ID: ${campaign_id})`);
+      return {
+        isCampaignReply: true,
+        campaignId: campaign_id,
+        campaignName: campaign_name,
+        messageId: message_id,
+      };
+    }
+  } catch (err) {
+    console.error("checkAndRecordCampaignReply error:", err.message);
+  }
+
+  return { isCampaignReply: false };
+}
+
 module.exports = {
   startCampaignEngine,
   runCampaign,
@@ -586,4 +642,5 @@ module.exports = {
   isOptedOut,
   isBlocked,
   isWithinWorkingHours,
+  checkAndRecordCampaignReply,
 };

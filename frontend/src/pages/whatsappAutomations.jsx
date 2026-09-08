@@ -764,13 +764,22 @@ export default function WhatsAppAutomations() {
       {/* ── TAB 2: Welcome Auto-Reply Settings ── */}
       {activeTab === "welcome" && (
         <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm max-w-3xl mx-auto space-y-6">
-          <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-start gap-3">
-            <Info className="text-amber-700 mt-0.5 shrink-0" size={18} />
-            <div className="text-xs text-amber-900 space-y-1">
-              <p className="font-bold">One-Time Live Inbound Welcome Auto-Reply</p>
-              <p className="text-amber-800 leading-relaxed">
-                When enabled, your WhatsApp number will automatically send a single personalized welcome greeting <strong>only</strong> when a new customer sends a real-time incoming message. It will never send unsolicited messages to imported contacts or CRM leads without your consent.
+          <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-start gap-3">
+            <ShieldCheck className="text-emerald-700 mt-0.5 shrink-0" size={20} />
+            <div className="text-xs text-emerald-950 space-y-1.5">
+              <p className="font-bold text-emerald-900 flex items-center gap-2">
+                <span>Safe User-Initiated Welcome Engine</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 font-extrabold">
+                  🛡️ Anti-Spam & Quarantine Protected
+                </span>
               </p>
+              <ul className="list-disc list-inside text-emerald-800 space-y-0.5 text-[11px] leading-relaxed">
+                <li><strong>Connecting a WhatsApp number will NEVER send messages.</strong> Historic and synced messages are safely quarantined.</li>
+                <li>Triggers <strong>ONLY</strong> when a customer sends the first incoming message to start a conversation.</li>
+                <li><strong>Bulk campaigns are isolated:</strong> Replies to promotional broadcasts will never trigger this welcome message.</li>
+                <li>If your company or staff contacted the customer in the last 24h, the welcome greeting is suppressed.</li>
+                <li>Guaranteed <strong>one-time delivery</strong> per contact according to the cooldown window below.</li>
+              </ul>
             </div>
           </div>
 

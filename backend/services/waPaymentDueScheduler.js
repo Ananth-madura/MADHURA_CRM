@@ -15,6 +15,14 @@ const db = require("../config/database");
 
 async function runPaymentDueCheck() {
   try {
+    // Check if payment_due automation rule is actively enabled in CRM settings
+    const [rules] = await db.promise().query(
+      "SELECT id FROM wa_automations WHERE trigger_type = 'payment_due' AND is_active = 1 LIMIT 1"
+    );
+    if (!rules || !rules.length) {
+      return; // Do not process if automation rule is inactive
+    }
+
     // Scalar subqueries (not a JOIN) so a duplicate client name can never
     // fan out into more than one row — and therefore more than one message —
     // per invoice.
@@ -58,20 +66,16 @@ async function runPaymentDueCheck() {
 }
 
 let job = null;
-let startupTimer = null;
 
 function startPaymentDueScheduler() {
   if (job) return;
-  // Once daily at 10 AM, plus once shortly after boot to catch anything missed.
+  // Strictly runs daily at 10:00 AM on schedule, never blindly on server boot or WhatsApp connection.
   job = schedule.scheduleJob("0 10 * * *", runPaymentDueCheck);
-  startupTimer = setTimeout(runPaymentDueCheck, 15000);
-  if (startupTimer.unref) startupTimer.unref();
   console.log("[WA Payment Due] Scheduler started (daily at 10:00)");
 }
 
 function stopPaymentDueScheduler() {
   if (job) { job.cancel(); job = null; }
-  if (startupTimer) { clearTimeout(startupTimer); startupTimer = null; }
 }
 
 module.exports = { startPaymentDueScheduler, stopPaymentDueScheduler, runPaymentDueCheck };
