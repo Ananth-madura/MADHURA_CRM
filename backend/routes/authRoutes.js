@@ -1170,4 +1170,9 @@ router.post("/resend-2fa", (req, res) => {
   );
 });
 
+/* ================= LOGOUT ================= */
+router.post("/logout", verifyToken, (req, res) => {
+  res.json({ success: true, message: "Logged out successfully" });
+});
+
 module.exports = router;

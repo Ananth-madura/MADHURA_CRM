@@ -405,7 +405,15 @@ export default function WhatsAppAccounts() {
   const handleLogoutWeb = async () => {
     if (!window.confirm("Disconnect WhatsApp Web session? You will need to scan QR code again.")) return;
     try {
-      await axios.post(`${API}/api/whatsapp/logout`, {}, { headers: headers() });
+      await axios.post(`${API}/api/whatsapp/logout`, { purge: true }, { headers: headers() });
+      try {
+        sessionStorage.removeItem("wa_cached_status");
+        sessionStorage.removeItem("wa_cached_chats");
+        sessionStorage.removeItem("wa_active_chat");
+        localStorage.removeItem("wa_cached_status");
+        localStorage.removeItem("wa_cached_chats");
+        localStorage.removeItem("wa_active_chat");
+      } catch (_) {}
       setQrCode(null);
       fetchAll();
     } catch (err) {

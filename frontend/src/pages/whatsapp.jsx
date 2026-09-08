@@ -359,9 +359,9 @@ export default function WhatsAppPage() {
   const [status, setStatus] = useState(() => {
     try {
       const saved = sessionStorage.getItem("wa_cached_status");
-      return saved ? JSON.parse(saved) : { connected: true, initializing: false, hasQr: false };
+      return saved ? JSON.parse(saved) : { connected: false, initializing: true, hasQr: false };
     } catch {
-      return { connected: true, initializing: false, hasQr: false };
+      return { connected: false, initializing: true, hasQr: false };
     }
   });
   const [qrCode, setQrCode] = useState(null);
@@ -481,16 +481,24 @@ export default function WhatsAppPage() {
   const chatsRef = useRef(chats);
   useEffect(() => {
     chatsRef.current = chats;
-    if (chats && chats.length > 0) {
+    if (Array.isArray(chats) && chats.length > 0) {
       try {
         sessionStorage.setItem("wa_cached_chats", JSON.stringify(chats));
+      } catch (_) {}
+    } else if (Array.isArray(chats) && chats.length === 0) {
+      try {
+        sessionStorage.removeItem("wa_cached_chats");
       } catch (_) {}
     }
   }, [chats]);
 
   useEffect(() => {
     try {
-      sessionStorage.setItem("wa_cached_status", JSON.stringify(status));
+      if (status && status.connected) {
+        sessionStorage.setItem("wa_cached_status", JSON.stringify(status));
+      } else {
+        sessionStorage.removeItem("wa_cached_status");
+      }
     } catch (_) {}
   }, [status]);
 
@@ -1428,15 +1436,26 @@ export default function WhatsAppPage() {
       const token = localStorage.getItem("token");
       await axios.post(
         `${API}/api/whatsapp/logout`,
-        {},
+        { purge: true },
         { headers: { Authorization: `Bearer ${token}` } }
       );
     } catch { }
+    try {
+      sessionStorage.removeItem("wa_cached_status");
+      sessionStorage.removeItem("wa_cached_chats");
+      sessionStorage.removeItem("wa_active_chat");
+      localStorage.removeItem("wa_cached_status");
+      localStorage.removeItem("wa_cached_chats");
+      localStorage.removeItem("wa_active_chat");
+    } catch (_) {}
+    messagesCacheRef.current = {};
     setStatus({ connected: false, initializing: false, hasQr: false });
     setQrCode(null);
     setChats([]);
     setSelectedChat(null);
     setMessages([]);
+    setAccountDetails(null);
+    fetchQr(true);
   };
 
   const handleRefresh = () => {
@@ -1654,11 +1673,18 @@ export default function WhatsAppPage() {
     };
     socket.on("wa_agent_handoff", handleHandoffAlert);
 
-    const handleWaReady = () => {
+    const handleWaReady = (data) => {
       setQrCode(null);
       setQrLoading(false);
       setError(null);
-      setStatus((s) => ({ ...s, connected: true, isWeb: true, initializing: false, hasQr: false }));
+      setStatus((s) => ({
+        ...s,
+        connected: true,
+        isWeb: true,
+        initializing: false,
+        hasQr: false,
+        phone: data?.phone || s.phone,
+      }));
       fetchStatus();
       fetchAccountDetails();
       fetchChats(true);
@@ -1669,7 +1695,7 @@ export default function WhatsAppPage() {
     };
 
     const handleWaQr = (data) => {
-      const qrVal = data?.qr || (typeof data === "string" ? data : null);
+      const qrVal = data?.qr || data?.message?.qr || (typeof data === "string" ? data : null);
       if (qrVal) {
         setQrCode(qrVal);
         setQrLoading(false);
@@ -1679,8 +1705,22 @@ export default function WhatsAppPage() {
     };
     const handleWaDisconnected = (data) => {
       console.log("ℹ️ WhatsApp disconnected event received:", data);
-      setStatus((s) => ({ ...s, connected: false, isWeb: false }));
+      try {
+        sessionStorage.removeItem("wa_cached_status");
+        sessionStorage.removeItem("wa_cached_chats");
+        sessionStorage.removeItem("wa_active_chat");
+        localStorage.removeItem("wa_cached_status");
+        localStorage.removeItem("wa_cached_chats");
+        localStorage.removeItem("wa_active_chat");
+      } catch (_) {}
+      messagesCacheRef.current = {};
+      setStatus((s) => ({ ...s, connected: false, isWeb: false, hasQr: false }));
+      setChats([]);
+      setSelectedChat(null);
+      setMessages([]);
+      setAccountDetails(null);
       fetchStatus();
+      fetchQr(true);
     };
 
     socket.on("wa_qr", handleWaQr);

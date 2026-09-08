@@ -117,6 +117,10 @@ class WhatsAppService {
     return path.join(SESSIONS_ROOT, this.key);
   }
 
+  hasSavedProfile() {
+    return hasSavedProfile(this.sessionPath);
+  }
+
   getSessionMeta() {
     try {
       const metaFile = path.join(this.sessionPath, "session_meta.json");
@@ -389,7 +393,8 @@ class WhatsAppService {
           lastActiveAt: Date.now(),
         });
 
-        this.emitWaEvent("wa_ready", null, this.phone, { connected: true, phone: this.phone });
+        this.emitWaEvent("wa_ready", null, this.phone, { connected: true, phone: this.phone, sessionKey: this.key });
+        this.emitWaEvent("wa_connected", null, this.phone, { connected: true, phone: this.phone, sessionKey: this.key });
 
         (async () => {
           try {
@@ -2223,10 +2228,13 @@ class WhatsAppService {
           fs.rmSync(this.sessionPath, { recursive: true, force: true });
         }
       } catch (_) {}
-      return { success: true, purged: true, message: "Session permanently deleted from disk." };
+      sessions.delete(this.key);
+      this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "LOGOUT", purged: true, sessionKey: this.key });
+      return { success: true, purged: true, message: "Session permanently deleted from disk and memory." };
     } else {
       // 4-day auto-delete lifecycle (real WhatsApp Web expiration)
       const meta = this.markLoggedOut("USER_LOGOUT");
+      this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "LOGOUT", purged: false, sessionKey: this.key });
       console.log(`🔒 WhatsApp session ${this.key} logged out. Will auto-delete in 4 days if not reconnected.`);
       return { success: true, purged: false, ...meta };
     }
@@ -2434,6 +2442,7 @@ module.exports = {
   get,
   all,
   default: getDefault,
+  hasSavedProfile,
   restoreExisting,
   cleanExpiredSessions,
   startSessionCleanupScheduler,

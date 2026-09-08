@@ -16,14 +16,20 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-// Resolves the caller's specific session, or falls back to an active connected session for read/send
+// Resolves the caller's specific session, isolated per authenticated user/sessionKey.
+// Only falls back to system default session if no user context exists or explicit fallback is requested.
 const s = (req) => {
   const reqKey = req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id;
-  const target = reqKey ? mgr.get(reqKey) : null;
-  if (target && target.ready) return target;
-  const readySession = mgr.all().find((ses) => ses.ready);
-  if (readySession) return readySession;
-  return target || mgr.default();
+  if (reqKey) {
+    const target = mgr.get(reqKey);
+    // Explicit fallback allowed only when requested (e.g. system broadcast or shared fallback)
+    if (!target.ready && (req.query?.fallback === "true" || req.headers["x-allow-fallback"] === "true")) {
+      const readySession = mgr.all().find((ses) => ses.ready);
+      if (readySession) return readySession;
+    }
+    return target;
+  }
+  return mgr.default();
 };
 
 // Specifically for auth/lifecycle routes (QR, pairing, logout, reset) - isolated per user
@@ -589,7 +595,7 @@ router.post("/send-location", async (req, res) => {
 
 router.post("/logout", async (req, res) => {
   try {
-    const purge = req.query.purge === "true" || req.body?.purge === true;
+    const purge = req.query.purge !== "false" && req.body?.purge !== false;
     const session = userSession(req);
     const result = await session.logout(purge);
     res.json({
@@ -599,6 +605,7 @@ router.post("/logout", async (req, res) => {
         ? "WhatsApp session and profile files permanently deleted."
         : "WhatsApp session disconnected. Inactive session files will automatically delete in 4 days.",
       sessionExpiry: result,
+      ...result,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

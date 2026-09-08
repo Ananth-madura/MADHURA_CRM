@@ -20,9 +20,33 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (token) {
+        fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
+    // Disconnect global socket if initialized on window
+    try {
+      if (window.__crmSocket && typeof window.__crmSocket.disconnect === "function") {
+        window.__crmSocket.disconnect();
+      }
+    } catch (_) {}
+
+    // Clear all client storage completely
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (_) {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+    }
+
     setUser(null);
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
   };
 
   return (
