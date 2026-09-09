@@ -694,8 +694,8 @@ export default function WhatsAppContacts() {
       {/* Add / Edit Contact Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-[#25D366] to-emerald-700 p-5 text-white flex items-center justify-between">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-[#25D366] to-emerald-700 p-5 text-white flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-base font-bold">{editContact ? "Edit Contact" : "Add WhatsApp Contact"}</h2>
                 <p className="text-xs text-emerald-100 mt-0.5">Save customer profile for bulk campaigns and automations</p>
@@ -705,7 +705,7 @@ export default function WhatsAppContacts() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-gray-700 uppercase mb-1">Full Name *</label>
@@ -812,8 +812,8 @@ export default function WhatsAppContacts() {
       {/* CSV Import Modal */}
       {showCsvModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCsvModal(false)}>
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white flex items-center justify-between">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-base font-bold">Import Contacts from CSV / Excel</h2>
                 <p className="text-xs text-blue-100 mt-0.5">Upload a CSV file containing Name and Phone numbers</p>
@@ -823,7 +823,7 @@ export default function WhatsAppContacts() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center hover:border-blue-500 transition cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                 <Upload size={32} className="mx-auto text-blue-500 mb-2" />
                 <p className="font-bold text-gray-800">Click to select CSV File</p>

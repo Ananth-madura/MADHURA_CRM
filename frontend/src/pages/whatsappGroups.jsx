@@ -206,7 +206,7 @@ export default function WAGroups() {
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full pb-12">
       <WhatsAppNav />
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">

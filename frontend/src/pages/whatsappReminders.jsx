@@ -5,7 +5,7 @@ import { Bell, Sparkles, Bot, Zap, ShieldCheck, CheckCircle2, Clock } from "luci
 
 export default function WhatsAppReminders() {
   return (
-    <div className="p-4 sm:p-6 bg-slate-50 min-h-screen">
+    <div className="w-full pb-12 bg-slate-50 min-h-screen">
       {/* WhatsApp Subsystem Navigation Bar */}
       <WhatsAppNav />
 

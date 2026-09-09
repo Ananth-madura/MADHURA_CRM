@@ -1890,7 +1890,7 @@ export default function WhatsAppPage() {
 
   if (!status.connected) {
     return (
-      <div className="w-full flex-1 flex flex-col h-screen min-h-screen p-2 md:p-4 bg-slate-50 overflow-y-auto">
+      <div className="w-full flex-1 flex flex-col min-h-screen p-3 md:p-5 bg-slate-50 pb-16">
         <WhatsAppNav />
         {showConfigModal && (
           <WAConfigPrompt

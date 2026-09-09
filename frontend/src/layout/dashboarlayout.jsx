@@ -134,6 +134,7 @@ export default function DashboardLayout() {
 
   const isDashboard = location.pathname === "/dashboard" || location.pathname === "/dashboard/";
   const isWhatsApp = location.pathname.startsWith("/dashboard/whatsapp");
+  const isWhatsAppChat = location.pathname === "/dashboard/whatsapp" || location.pathname === "/dashboard/whatsapp/";
 
   return (
     <DashboardSearchContext.Provider value={searchQuery}>
@@ -192,14 +193,16 @@ export default function DashboardLayout() {
           <div
             className={`transition-all duration-300 w-full max-w-full text-shell-text bg-content flex flex-col
             ${isWhatsApp
-                ? "mt-0 ml-0 max-w-full p-0 md:p-0 lg:p-0 pb-0 h-screen min-h-screen overflow-hidden"
+                ? isWhatsAppChat
+                  ? "mt-0 ml-0 max-w-full p-0 min-h-screen"
+                  : "mt-0 ml-0 max-w-full p-3 md:p-5 lg:p-6 min-h-screen"
                 : `${isMobile
                     ? "ml-0 max-w-full"
                     : `${sidebarOpen ? "md:ml-[250px] md:max-w-[calc(100%-250px)]" : "md:ml-[70px] md:max-w-[calc(100%-70px)]"}`
                   } min-h-screen mt-[65px] p-3 md:p-5 lg:p-6 pb-16 md:pb-6`
               }`}
           >
-            <div className={`flex-1 w-full ${isWhatsApp ? "h-screen min-h-0 flex flex-col overflow-hidden" : ""}`}>
+            <div className={`flex-1 w-full ${isWhatsAppChat ? "flex flex-col min-h-0" : "min-h-0"}`}>
               <Outlet />
             </div>
             {!isWhatsApp && (
