@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -352,6 +352,24 @@ const playNotificationSound = () => {
     osc.start();
     osc.stop(ctx.currentTime + 0.35);
   } catch (_) {}
+};
+
+const formatPhoneNumber = (phone) => {
+  if (!phone) return "";
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return phone;
+  // 14+ digits not starting with 120363 is an internal WhatsApp LID, not a real phone number
+  if (digits.length >= 14 && !digits.startsWith("120363")) return "";
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+  }
+  if (digits.length > 10) {
+    return `+${digits.slice(0, digits.length - 10)} ${digits.slice(-10, -5)} ${digits.slice(-5)}`;
+  }
+  return `+${digits}`;
 };
 
 export default function WhatsAppPage() {
@@ -1589,8 +1607,8 @@ export default function WhatsAppPage() {
         const cleanDigits = (targetChatId || phone || "").replace(/\D/g, "");
         const clean10Digits = cleanDigits.slice(-10);
         const idx = prev.findIndex((c) => {
-          const cClean = (c.id || c.phone || "").replace(/\D/g, "");
-          return c.id === targetChatId || cClean === cleanDigits || (clean10Digits && cClean.slice(-10) === clean10Digits);
+          const cPhone = (c.phoneNumber || c.id || c.phone || "").replace(/\D/g, "");
+          return c.id === targetChatId || cPhone === cleanDigits || (clean10Digits && cPhone.slice(-10) === clean10Digits);
         });
 
         const msgBody = previewText(msgObj) || msgObj.body || (msgObj.isMe ? "Sent message" : "Incoming message");
@@ -1607,9 +1625,12 @@ export default function WhatsAppPage() {
           };
           return [updated, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
         } else {
+          const realPhone = cleanDigits.length <= 13 ? cleanDigits : null;
           const newChat = {
             id: targetChatId || `${cleanDigits}@c.us`,
-            name: msgObj.fromName || `+${cleanDigits}`,
+            phoneNumber: realPhone,
+            formattedPhone: realPhone ? formatPhoneNumber(realPhone) : "",
+            name: msgObj.fromName || (realPhone ? formatPhoneNumber(realPhone) : "WhatsApp Contact"),
             phone: cleanDigits,
             hasMessages: true,
             lastMessage: { body: msgBody, timestamp: msgTime, fromMe: Boolean(msgObj.isMe) },
@@ -1810,10 +1831,30 @@ export default function WhatsAppPage() {
 
   // Filter chat categories for sidebar tabs & search (Always defined at top scope)
   const isGroupChat = (c) => Boolean(c.isGroup || (c.id && c.id.includes("@g.us")));
-  const contactChatsList = (chats || []).filter((c) => !isGroupChat(c));
-  const groupChatsList = (chats || []).filter((c) => isGroupChat(c));
-  const unreadChatsList = (chats || []).filter((c) => (c.unreadCount || 0) > 0);
-  const favChatsList = (chats || []).filter((c) => c.isPinned);
+
+  // Defensive frontend deduplication: strictly one entry per group JID or normalized 10-digit phone
+  const deduplicatedChats = useMemo(() => {
+    const seen = new Set();
+    return (chats || []).filter((c) => {
+      if (!c || !c.id) return false;
+      let key;
+      if (isGroupChat(c)) {
+        key = c.id;
+      } else {
+        const phone = c.phoneNumber || (c.id && !c.id.includes("@lid") ? c.id : "");
+        const clean10 = phone.replace(/\D/g, "").slice(-10);
+        key = clean10 && clean10.length === 10 ? clean10 : c.id;
+      }
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [chats]);
+
+  const contactChatsList = deduplicatedChats.filter((c) => !isGroupChat(c));
+  const groupChatsList = deduplicatedChats.filter((c) => isGroupChat(c));
+  const unreadChatsList = deduplicatedChats.filter((c) => (c.unreadCount || 0) > 0);
+  const favChatsList = deduplicatedChats.filter((c) => c.isPinned);
 
   let displayChats = [];
   const searchLower = (searchTerm || "").toLowerCase().trim();
@@ -1832,6 +1873,8 @@ export default function WhatsAppPage() {
     displayChats = baseList.filter(
       (c) =>
         (c.name || "").toLowerCase().includes(searchLower) ||
+        (c.phoneNumber || "").includes(searchLower) ||
+        (c.formattedPhone || "").toLowerCase().includes(searchLower) ||
         (c.id || "").includes(searchLower) ||
         (c.lastMessage?.body || "").toLowerCase().includes(searchLower)
     );
@@ -2191,7 +2234,16 @@ export default function WhatsAppPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
                         <span className={`font-bold text-sm truncate ${isActive ? "text-white" : "text-slate-100"}`}>
-                          {chat.name}
+                          {(() => {
+                            const n = chat.name || "";
+                            if (n.replace(/\D/g, "").length >= 13 || n.includes("@lid")) {
+                              return chat.formattedPhone || formatPhoneNumber(chat.phoneNumber) || "WhatsApp Contact";
+                            }
+                            if (n.startsWith("+91") && n.length === 13) {
+                              return `+91 ${n.slice(3, 8)} ${n.slice(8)}`;
+                            }
+                            return n || chat.formattedPhone || "WhatsApp Contact";
+                          })()}
                         </span>
                         <span className={`text-[11px] font-semibold shrink-0 ${hasUnread ? "text-[#00a884]" : "text-slate-400"}`}>
                           {timeStr}
@@ -2319,14 +2371,30 @@ export default function WhatsAppPage() {
                     className="cursor-pointer group min-w-0"
                   >
                     <div className="flex items-center gap-2">
-                      <p className="font-bold text-white text-sm group-hover:text-[#00a884] transition truncate">{selectedChat.name}</p>
+                      <p className="font-bold text-white text-sm group-hover:text-[#00a884] transition truncate">
+                        {(() => {
+                          const n = selectedChat.name || "";
+                          if (n.replace(/\D/g, "").length >= 13 || n.includes("@lid")) {
+                            return selectedChat.formattedPhone || formatPhoneNumber(selectedChat.phoneNumber) || "WhatsApp Contact";
+                          }
+                          return n || selectedChat.formattedPhone || "WhatsApp Contact";
+                        })()}
+                      </p>
                       {selectedChat.source && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/40 shrink-0">
                           {selectedChat.source}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400">+{selectedChat.id?.replace(/\D/g, "")}</p>
+                    {selectedChat.isGroup ? (
+                      <p className="text-xs text-slate-400">Group Chat</p>
+                    ) : (
+                      <p className="text-xs text-slate-400">
+                        {selectedChat.formattedPhone ||
+                          formatPhoneNumber(selectedChat.phoneNumber || selectedChat.id) ||
+                          (selectedChat.id?.includes("@lid") ? "WhatsApp Contact" : `+${selectedChat.id?.replace(/\D/g, "")}`)}
+                      </p>
+                    )}
                   </div>
                 </div>
 

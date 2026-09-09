@@ -107,6 +107,23 @@ function formatChatJid(chatId) {
   return `${digits}@c.us`;
 }
 
+function formatPhoneDisplay(phone) {
+  if (!phone) return "";
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length >= 14 && !digits.startsWith("120363")) return "";
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+  }
+  if (digits.length > 10) {
+    return `+${digits.slice(0, digits.length - 10)} ${digits.slice(-10, -5)} ${digits.slice(-5)}`;
+  }
+  return `+${digits}`;
+}
+
 function withTimeout(promise, ms = 10000, label = "operation") {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -144,6 +161,102 @@ class WhatsAppService {
     this._lastSendAt = 0;
     this._initPromise = null;
     this._getQrPromise = null;
+    this.lidToPhoneMap = new Map();
+    this.phoneToLidMap = new Map();
+  }
+
+  async resolveLidToPhone(lidJid) {
+    if (!lidJid) return null;
+    const str = String(lidJid).trim();
+    if (!str.includes("@lid") && (str.length < 13 || str.startsWith("120363"))) {
+      return null;
+    }
+    const fullLid = str.includes("@lid") ? str : `${str}@lid`;
+    const digitsOnly = str.replace(/\D/g, "");
+
+    if (this.lidToPhoneMap?.has(fullLid)) return this.lidToPhoneMap.get(fullLid);
+    if (this.lidToPhoneMap?.has(digitsOnly)) return this.lidToPhoneMap.get(digitsOnly);
+
+    const map = await this.resolveLidsBatch([fullLid]);
+    return map.get(fullLid) || map.get(digitsOnly) || null;
+  }
+
+  async resolveLidsBatch(lidJids) {
+    if (!lidJids || !lidJids.length) return this.lidToPhoneMap || new Map();
+    if (!this.lidToPhoneMap) this.lidToPhoneMap = new Map();
+    if (!this.phoneToLidMap) this.phoneToLidMap = new Map();
+
+    const normalized = lidJids.map((j) => String(j).trim()).filter(Boolean);
+    const unmapped = normalized.filter(
+      (id) => !this.lidToPhoneMap.has(id) && !this.lidToPhoneMap.has(id.replace(/\D/g, ""))
+    );
+    if (!unmapped.length) return this.lidToPhoneMap;
+
+    // 1. Live WhatsApp Web batch query via getContactLidAndPhone
+    if (this.ready && this.client && this.client.pupPage) {
+      try {
+        const results = await this.enqueue(() =>
+          this.withTimeout(this.client.getContactLidAndPhone(unmapped), 6000, "getContactLidAndPhone")
+        ).catch(() => []);
+
+        for (const item of (results || [])) {
+          if (item && item.lid && item.pn) {
+            const cleanPn = String(item.pn).replace(/\D/g, "");
+            if (cleanPn && cleanPn.length >= 10 && cleanPn.length <= 13) {
+              const lidFull = item.lid.includes("@lid") ? item.lid : `${item.lid}@lid`;
+              const lidDigits = String(item.lid).replace(/\D/g, "");
+              this.lidToPhoneMap.set(lidFull, cleanPn);
+              this.lidToPhoneMap.set(lidDigits, cleanPn);
+              this.phoneToLidMap.set(cleanPn, lidFull);
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 1b. In-page evaluate fallback for any still unmapped
+      const stillUnmapped = unmapped.filter(
+        (id) => !this.lidToPhoneMap.has(id) && !this.lidToPhoneMap.has(id.replace(/\D/g, ""))
+      );
+      if (stillUnmapped.length) {
+        try {
+          const evalResults = await this.enqueue(() =>
+            this.withTimeout(
+              this.client.pupPage.evaluate((lids) => {
+                const out = [];
+                for (const lid of lids) {
+                  try {
+                    const wid = window.require("WAWebWidFactory").createWid(lid);
+                    const pnWid = window.require("WAWebApiContact").getPhoneNumber(wid);
+                    if (pnWid) {
+                      const pn = pnWid.user || pnWid._serialized || pnWid;
+                      out.push({ lid, pn: String(pn) });
+                    }
+                  } catch (_) {}
+                }
+                return out;
+              }, stillUnmapped),
+              4000,
+              "WAWebApiContact.getPhoneNumber batch"
+            )
+          ).catch(() => []);
+
+          for (const item of (evalResults || [])) {
+            if (item && item.lid && item.pn) {
+              const cleanPn = String(item.pn).replace(/\D/g, "");
+              if (cleanPn && cleanPn.length >= 10 && cleanPn.length <= 13) {
+                const lidFull = item.lid.includes("@lid") ? item.lid : `${item.lid}@lid`;
+                const lidDigits = String(item.lid).replace(/\D/g, "");
+                this.lidToPhoneMap.set(lidFull, cleanPn);
+                this.lidToPhoneMap.set(lidDigits, cleanPn);
+                this.phoneToLidMap.set(cleanPn, lidFull);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    return this.lidToPhoneMap;
   }
 
   withTimeout(promise, ms = 10000, label = "operation") {
@@ -512,7 +625,12 @@ class WhatsAppService {
         if (chatId === "status@broadcast" || chatId.includes("@broadcast")) return;
 
         const isGroup = chatId.includes("@g.us") || Boolean(msg.isGroup);
-        const cleanPhone = chatId.replace(/\D/g, "");
+        const digitsOnly = chatId.replace(/\D/g, "");
+        let cleanPhone = digitsOnly;
+        if (!isGroup && (chatId.includes("@lid") || digitsOnly.length >= 14)) {
+          const mapped = this.lidToPhoneMap?.get(chatId) || this.lidToPhoneMap?.get(digitsOnly);
+          if (mapped) cleanPhone = mapped;
+        }
         const rawFilename = msg._data?.filename || (/\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|png|jpg|jpeg|webp|mp4|mp3|ogg|wav)$/i.test(msg.body || "") ? msg.body : "");
         const isMedia = Boolean(msg.hasMedia || msg.type === "document" || msg.type === "image" || msg.type === "video" || msg.type === "audio" || rawFilename);
 
@@ -568,12 +686,21 @@ class WhatsAppService {
         process.nextTick(async () => {
           try {
             const db = require("../config/database");
+            let phoneToStore = cleanPhone;
+            if (!isGroup && (chatId.includes("@lid") || phoneToStore.length >= 14)) {
+              const resolved = await this.resolveLidToPhone(chatId).catch(() => null);
+              if (resolved && resolved.length <= 13) {
+                phoneToStore = resolved;
+                cleanPhone = resolved;
+              }
+            }
+
             await db.promise().query(
               `INSERT IGNORE INTO wa_message_logs (session_key, phone, direction, message_type, message_text, wa_message_id, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 'delivered', FROM_UNIXTIME(?))`,
               [
                 this.key,
-                cleanPhone || chatId,
+                phoneToStore || chatId,
                 msg.fromMe ? "outbound" : "inbound",
                 liveMsg.type,
                 liveMsg.body,
@@ -582,17 +709,19 @@ class WhatsAppService {
               ]
             );
 
-            // Update contact last message in CRM for non-group chats
-            if (!isGroup && cleanPhone) {
+            // Update contact last message in CRM for non-group chats ONLY if valid phone number
+            if (!isGroup && phoneToStore && phoneToStore.length >= 10 && phoneToStore.length <= 13) {
+              const countryCode = phoneToStore.length > 10 ? phoneToStore.slice(0, phoneToStore.length - 10) : "91";
               await db.promise().query(
                 `INSERT INTO wa_contacts (name, phone, country_code, source, opt_in_status, last_message_text, last_message_at, unread_count)
-                 VALUES (?, ?, '91', 'WhatsApp Chat', 1, ?, NOW(), ?)
+                 VALUES (?, ?, ?, 'WhatsApp Chat', 1, ?, NOW(), ?)
                  ON DUPLICATE KEY UPDATE
                    last_message_text = VALUES(last_message_text),
                    last_message_at = NOW()`,
                 [
-                  msg.fromMe ? "Me" : (msg._data?.notifyName || `+${cleanPhone}`),
-                  cleanPhone,
+                  msg.fromMe ? "Me" : (msg._data?.notifyName || formatPhoneDisplay(phoneToStore)),
+                  phoneToStore,
+                  countryCode,
                   liveMsg.body,
                   msg.fromMe ? 0 : 1
                 ]
@@ -1250,7 +1379,7 @@ class WhatsAppService {
   async getChats(forceRefresh = false) {
     const now = Date.now();
     // Fast path 1: Instant cache return (< 1ms)
-    if (!forceRefresh && (now - this.lastChatsFetch < 30000) && this.chatsCache.length > 0) {
+    if (!forceRefresh && (now - this.lastChatsFetch < 15000) && this.chatsCache.length > 0) {
       return this.chatsCache;
     }
     // Fast path 2: Return existing cache immediately while refreshing in background
@@ -1262,32 +1391,133 @@ class WhatsAppService {
     }
     this.chatsFetching = true;
 
-    const chatMap = new Map();
-    const phoneToChatId = new Map();
+    const chatMap = new Map(); // dedupeKey -> chatObject
+    const db = require("../config/database");
 
-    // 1. Fetch live chats from WhatsApp Web if connected (allow up to 25s for initial/forced sync)
+    // 1. Fetch live chats from WhatsApp Web if connected
     if (this.ready && this.client) {
       try {
         const fetchTimeout = forceRefresh ? 25000 : 12000;
-        let chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), fetchTimeout, "WhatsApp Web getChats")).catch((err) => {
+        let rawChats = await this.enqueue(() =>
+          this.withTimeout(this.client.getChats(), fetchTimeout, "WhatsApp Web getChats")
+        ).catch((err) => {
           console.warn("⚠️ [WhatsApp Web] getChats took too long or errored:", err?.message || err);
           return [];
         });
 
-        (chats || []).forEach((c) => {
+        // 1a. Identify all LID chats and batch resolve to real phone numbers
+        const lidChatIds = (rawChats || [])
+          .filter((c) => c.id?._serialized?.includes("@lid") || c.id?.server === "lid")
+          .map((c) => c.id?._serialized || String(c.id));
+        if (lidChatIds.length > 0) {
+          await this.resolveLidsBatch(lidChatIds).catch(() => {});
+        }
+
+        // 1b. Collect all clean 10-digit phones and LIDs for name enrichment lookup in DB
+        const lookupTerms = [];
+        (rawChats || []).forEach((c) => {
+          const cid = c.id?._serialized || String(c.id);
+          const digits = (c.id?.user || "").replace(/\D/g, "");
+          if (digits) lookupTerms.push(digits);
+          const resolved = this.lidToPhoneMap.get(cid) || this.lidToPhoneMap.get(digits);
+          if (resolved) lookupTerms.push(resolved);
+        });
+
+        const contactNameMap = new Map();
+        if (lookupTerms.length > 0) {
+          try {
+            const uniqueTerms = Array.from(new Set(lookupTerms.filter((t) => t.length >= 10))).slice(0, 150);
+            if (uniqueTerms.length > 0) {
+              const [dbContacts] = await db.promise().query(
+                `SELECT name, phone, profile_pic_url, avatar_url FROM wa_contacts 
+                 WHERE ${uniqueTerms.map(() => "phone LIKE ?").join(" OR ")}`,
+                uniqueTerms.map((t) => `%${t.slice(-10)}%`)
+              );
+              (dbContacts || []).forEach((row) => {
+                const c10 = (row.phone || "").replace(/\D/g, "").slice(-10);
+                if (c10 && row.name && !row.name.startsWith("+") && !contactNameMap.has(c10)) {
+                  contactNameMap.set(c10, {
+                    name: row.name,
+                    pic: row.profile_pic_url || row.avatar_url || null,
+                  });
+                }
+              });
+            }
+          } catch (_) {}
+        }
+
+        // 1c. Process and deduplicate each live chat
+        (rawChats || []).forEach((c) => {
           const chatId = c.id?._serialized || String(c.id);
-          const cleanPhone = (c.id?.user || "").replace(/\D/g, "").slice(-10);
-          if (cleanPhone && cleanPhone.length === 10) {
-            phoneToChatId.set(cleanPhone, chatId);
+          const isGroup = Boolean(c.isGroup || (chatId && chatId.includes("@g.us")));
+
+          let realPhone = null;
+          let clean10 = null;
+          if (!isGroup) {
+            if (chatId.includes("@lid") || c.id?.server === "lid") {
+              const resolved = this.lidToPhoneMap.get(chatId) || this.lidToPhoneMap.get(c.id?.user);
+              if (resolved && resolved.length >= 10 && resolved.length <= 13) {
+                realPhone = resolved;
+                clean10 = resolved.slice(-10);
+              }
+            } else {
+              const userDigits = (c.id?.user || "").replace(/\D/g, "");
+              if (userDigits && userDigits.length >= 10 && userDigits.length <= 13) {
+                realPhone = userDigits;
+                clean10 = userDigits.slice(-10);
+              }
+            }
           }
-          chatMap.set(chatId, {
+
+          // Strict Deduplication Key:
+          // Groups -> group JID
+          // Individual chats -> normalized 10-digit phone if available, else canonical chatId
+          const dedupeKey = isGroup ? chatId : (clean10 && clean10.length === 10 ? clean10 : chatId);
+
+          // Name Resolution:
+          // 1) Saved contact name from address book (c.name)
+          // 2) CRM DB name (from wa_contacts)
+          // 3) WhatsApp pushname / public profile name (c.pushname)
+          // 4) Clean formatted phone number (e.g. +91 98765 43210)
+          // NEVER raw 14+ digit LID string
+          let resolvedName = c.name;
+          const rawNameDigits = (resolvedName || "").replace(/\D/g, "");
+          const isBogusName = !resolvedName || 
+                              resolvedName === "Unknown" || 
+                              resolvedName.startsWith("+") || 
+                              (rawNameDigits.length >= 13 && !rawNameDigits.startsWith("120363")) ||
+                              resolvedName.includes("@lid");
+
+          if (clean10 && contactNameMap.has(clean10)) {
+            const dbMatch = contactNameMap.get(clean10);
+            if (dbMatch.name) {
+              resolvedName = dbMatch.name;
+            }
+          } else if (isBogusName && c.pushname && !c.pushname.includes("@lid")) {
+            resolvedName = c.pushname;
+          }
+
+          if (isBogusName && (!resolvedName || resolvedName.includes("@lid") || (resolvedName.replace(/\D/g, "").length >= 13 && !resolvedName.replace(/\D/g, "").startsWith("120363")))) {
+            if (realPhone) {
+              resolvedName = formatPhoneDisplay(realPhone);
+            } else if (!isGroup) {
+              resolvedName = "WhatsApp Contact";
+            } else {
+              resolvedName = "Group Chat";
+            }
+          }
+
+          const chatObj = {
             id: chatId,
-            name: c.name || c.id?.user || "Unknown",
+            phoneNumber: realPhone || (isGroup ? null : (c.id?.user?.length <= 13 ? c.id?.user : null)),
+            formattedPhone: isGroup ? "Group Chat" : (realPhone ? formatPhoneDisplay(realPhone) : ""),
+            name: resolvedName || "WhatsApp Contact",
             unreadCount: c.unreadCount || 0,
             timestamp: c.timestamp || Math.floor(Date.now() / 1000),
             isPinned: Boolean(c.pinned || c.isPinned),
-            isGroup: Boolean(c.isGroup || (chatId && chatId.includes("@g.us"))),
+            isGroup: isGroup,
             isMuted: Boolean(c.isMuted),
+            profilePicUrl: (clean10 && contactNameMap.get(clean10)?.pic) || null,
             lastMessage: c.lastMessage
               ? {
                   body: describeLastMessage(c.lastMessage),
@@ -1299,116 +1529,124 @@ class WhatsAppService {
                 }
               : null,
             hasMessages: true,
-          });
+          };
+
+          if (chatMap.has(dedupeKey)) {
+            const existing = chatMap.get(dedupeKey);
+            // Merge duplicates: prefer newer timestamp, prefer @c.us if available
+            if ((chatObj.timestamp || 0) > (existing.timestamp || 0)) {
+              existing.timestamp = chatObj.timestamp;
+              if (chatObj.lastMessage) existing.lastMessage = chatObj.lastMessage;
+            }
+            if (chatObj.unreadCount) existing.unreadCount = Math.max(existing.unreadCount, chatObj.unreadCount);
+            if (!existing.phoneNumber && chatObj.phoneNumber) {
+              existing.phoneNumber = chatObj.phoneNumber;
+              existing.formattedPhone = chatObj.formattedPhone;
+            }
+            if (chatId.includes("@c.us") && existing.id.includes("@lid")) {
+              existing.id = chatId; // Prefer @c.us for direct sending
+            }
+            if ((!existing.name || existing.name === "WhatsApp Contact" || existing.name.startsWith("+")) && chatObj.name && !chatObj.name.startsWith("+")) {
+              existing.name = chatObj.name;
+            }
+          } else {
+            chatMap.set(dedupeKey, chatObj);
+          }
         });
+
+        // 1d. Auto-persist scanned session chats into wa_contacts
+        process.nextTick(async () => {
+          try {
+            for (const chat of chatMap.values()) {
+              if (chat.isGroup || !chat.phoneNumber) continue;
+              const cleanDigits = chat.phoneNumber.replace(/\D/g, "");
+              if (cleanDigits.length < 10 || cleanDigits.length > 13) continue;
+              const countryCode = cleanDigits.length > 10 ? cleanDigits.slice(0, cleanDigits.length - 10) : "91";
+              await db.promise().query(
+                `INSERT INTO wa_contacts (name, phone, country_code, source, opt_in_status, last_message_text, last_message_at, unread_count)
+                 VALUES (?, ?, ?, 'WhatsApp Account', 1, ?, FROM_UNIXTIME(?), ?)
+                 ON DUPLICATE KEY UPDATE
+                   name = IF(name IS NULL OR name = '' OR name LIKE '+%', VALUES(name), name),
+                   last_message_text = COALESCE(VALUES(last_message_text), last_message_text),
+                   last_message_at = COALESCE(VALUES(last_message_at), last_message_at)`,
+                [
+                  chat.name || `+${cleanDigits}`,
+                  cleanDigits,
+                  countryCode,
+                  chat.lastMessage?.body || null,
+                  chat.timestamp || Math.floor(Date.now() / 1000),
+                  chat.unreadCount || 0
+                ]
+              ).catch(() => {});
+            }
+          } catch (_) {}
+        });
+
       } catch (err) {
         console.error("WhatsApp Web fetch chats error:", err.message);
       }
-    }
-
-    // 2. Merge recent message activity for THIS active session (session_key = this.key or general/webhook)
-    try {
-      const db = require("../config/database");
-      const [recentLogs] = await db.promise().query(
-        `SELECT phone, direction, message_text, message_type, status, created_at, wa_message_id
-         FROM wa_message_logs
-         WHERE session_key = ? OR session_key IS NULL OR session_key = '1' OR session_key = 'default'
-         ORDER BY id DESC LIMIT 500`,
-        [this.key]
-      );
-
-      recentLogs.forEach((log) => {
-        const cleanPhone = (log.phone || "").replace(/\D/g, "").slice(-10);
-        if (!cleanPhone || cleanPhone.length < 10) return;
-        const chatId = `91${cleanPhone}@c.us`;
-        const logTime = Math.floor(new Date(log.created_at).getTime() / 1000);
-
-        if (chatMap.has(chatId)) {
-          const existing = chatMap.get(chatId);
-          if (!existing.lastMessage || (logTime > (existing.lastMessage.timestamp || 0))) {
-            existing.lastMessage = { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound", type: log.message_type || null, status: log.direction === "outbound" ? (log.status || "sent") : null };
-            if (logTime > (existing.timestamp || 0)) {
-              existing.timestamp = logTime;
-            }
-          }
-        } else if (!this.ready) {
-          // When client is offline, display historical session conversation logs for this session key
-          chatMap.set(chatId, {
-            id: chatId,
-            name: `+91 ${cleanPhone}`,
-            unreadCount: 0,
-            timestamp: logTime,
-            lastMessage: { body: log.message_text || "", timestamp: logTime, fromMe: log.direction === "outbound", type: log.message_type || null, status: log.direction === "outbound" ? (log.status || "sent") : null },
-            hasMessages: true,
-          });
-          phoneToChatId.set(cleanPhone, chatId);
-        }
-      });
-
-      // 2b. Also include recent active contacts from wa_contacts when using Meta Cloud API or offline web
-      const [recentContacts] = await db.promise().query(
-        `SELECT name, phone, last_message_text, last_message_at, unread_count, profile_pic_url, avatar_url
-         FROM wa_contacts
-         WHERE is_blocked = 0
-         ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC LIMIT 100`
-      ).catch(() => [[]]);
-
-      recentContacts.forEach((c) => {
-        const cleanPhone = (c.phone || "").replace(/\D/g, "").slice(-10);
-        if (!cleanPhone || cleanPhone.length < 10) return;
-        const chatId = `91${cleanPhone}@c.us`;
-        const logTime = c.last_message_at ? Math.floor(new Date(c.last_message_at).getTime() / 1000) : Math.floor(Date.now() / 1000);
-        if (!chatMap.has(chatId)) {
-          chatMap.set(chatId, {
-            id: chatId,
-            name: c.name || `+91 ${cleanPhone}`,
-            unreadCount: c.unread_count || 0,
-            timestamp: logTime,
-            profilePicUrl: c.profile_pic_url || c.avatar_url || null,
-            lastMessage: c.last_message_text ? { body: c.last_message_text, timestamp: logTime, fromMe: false } : null,
-            hasMessages: Boolean(c.last_message_text),
-          });
-          phoneToChatId.set(cleanPhone, chatId);
-        } else {
-          const existing = chatMap.get(chatId);
-          if (c.profile_pic_url || c.avatar_url) {
-            existing.profilePicUrl = c.profile_pic_url || c.avatar_url;
-          }
-        }
-      });
-    } catch (e) {
-      console.error("Fast DB chat fetch error:", e.message);
-    }
-
-    // 3. Enrich contact names & profile pictures for session chats
-    if (phoneToChatId.size > 0) {
+    } else {
+      // 2. Client is OFFLINE: display historical conversation logs for THIS session key only
       try {
-        const db = require("../config/database");
-        const phones = Array.from(phoneToChatId.keys());
+        const [recentLogs] = await db.promise().query(
+          `SELECT phone, direction, message_text, message_type, status, created_at, wa_message_id
+           FROM wa_message_logs
+           WHERE (session_key = ? OR session_key IS NULL)
+             AND LENGTH(phone) <= 13
+           ORDER BY id DESC LIMIT 250`,
+          [this.key]
+        );
+
+        recentLogs.forEach((log) => {
+          const cleanPhone = (log.phone || "").replace(/\D/g, "");
+          if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 13) return;
+          const clean10 = cleanPhone.slice(-10);
+          const chatId = `91${clean10}@c.us`;
+          const logTime = Math.floor(new Date(log.created_at).getTime() / 1000);
+
+          if (!chatMap.has(clean10)) {
+            chatMap.set(clean10, {
+              id: chatId,
+              phoneNumber: cleanPhone,
+              formattedPhone: formatPhoneDisplay(cleanPhone),
+              name: `+91 ${clean10}`,
+              unreadCount: 0,
+              timestamp: logTime,
+              isGroup: false,
+              lastMessage: {
+                body: log.message_text || "",
+                timestamp: logTime,
+                fromMe: log.direction === "outbound",
+                type: log.message_type || null,
+                status: log.direction === "outbound" ? (log.status || "sent") : null,
+              },
+              hasMessages: true,
+            });
+          }
+        });
+
+        // Enrich offline names from wa_contacts
+        const phones = Array.from(chatMap.keys());
         if (phones.length > 0) {
           const [waContacts] = await db.promise().query(
             `SELECT name, phone, profile_pic_url, avatar_url FROM wa_contacts WHERE (${phones.map(() => "phone LIKE ?").join(" OR ")})`,
             phones.map((p) => `%${p}`)
           );
-
           (waContacts || []).forEach((c) => {
-            const clean = (c.phone || "").replace(/\D/g, "").slice(-10);
-            if (phoneToChatId.has(clean)) {
-              const chatId = phoneToChatId.get(clean);
-              const chat = chatMap.get(chatId);
-              if (chat) {
-                if (c.name && (!chat.name || chat.name.startsWith("+") || chat.name === "Unknown")) {
-                  chat.name = c.name;
-                }
-                if (c.profile_pic_url || c.avatar_url) {
-                  chat.profilePicUrl = c.profile_pic_url || c.avatar_url;
-                }
+            const clean10 = (c.phone || "").replace(/\D/g, "").slice(-10);
+            if (chatMap.has(clean10)) {
+              const chat = chatMap.get(clean10);
+              if (c.name && (!chat.name || chat.name.startsWith("+"))) {
+                chat.name = c.name;
+              }
+              if (c.profile_pic_url || c.avatar_url) {
+                chat.profilePicUrl = c.profile_pic_url || c.avatar_url;
               }
             }
           });
         }
-      } catch (err) {
-        console.error("Enrich session contact names error:", err.message);
+      } catch (e) {
+        console.error("Offline fast DB chat fetch error:", e.message);
       }
     }
 
@@ -2151,18 +2389,38 @@ class WhatsAppService {
         return { success: true, count: 0, inserted: 0, updated: 0 };
       }
 
+      // 1. Batch resolve any LID contacts to real phone numbers
+      const lidContacts = rawContacts.filter(
+        (c) => c.id?._serialized?.includes("@lid") || c.id?.server === "lid"
+      );
+      if (lidContacts.length > 0) {
+        const lidIds = lidContacts.map((c) => c.id?._serialized || String(c.id));
+        await this.resolveLidsBatch(lidIds).catch(() => {});
+      }
+
       const db = require("../config/database");
       let inserted = 0;
       let updated = 0;
 
       for (const c of rawContacts) {
-        if (!c.isUser || !c.number) continue;
-        const cleanPhone = c.number.replace(/\D/g, "");
-        if (cleanPhone.length < 10) continue;
+        if (!c.isUser) continue;
 
-        const name = (c.name || c.pushname || c.shortName || `+${cleanPhone}`).trim();
+        let cleanPhone = null;
+        if (c.id?._serialized?.includes("@lid") || c.id?.server === "lid") {
+          cleanPhone = this.lidToPhoneMap.get(c.id?._serialized) || this.lidToPhoneMap.get(c.id?.user) || null;
+        } else if (c.number) {
+          cleanPhone = c.number.replace(/\D/g, "");
+        } else if (c.id?.user) {
+          cleanPhone = c.id.user.replace(/\D/g, "");
+        }
+
+        // Strictly ignore unresolvable LIDs or invalid digits — never save fake numbers to CRM
+        if (!cleanPhone || cleanPhone.length < 10 || cleanPhone.length > 13) {
+          continue;
+        }
+
         const countryCode = cleanPhone.length > 10 ? cleanPhone.slice(0, cleanPhone.length - 10) : "91";
-        const fullPhone = cleanPhone;
+        const name = (c.name || c.pushname || c.shortName || formatPhoneDisplay(cleanPhone)).trim();
 
         try {
           const [res] = await db.promise().query(
@@ -2171,7 +2429,7 @@ class WhatsAppService {
              ON DUPLICATE KEY UPDATE
                name = IF(name IS NULL OR name = '' OR name LIKE '+%', VALUES(name), name),
                updated_at = NOW()`,
-            [name, fullPhone, countryCode]
+            [name, cleanPhone, countryCode]
           );
           if (res.affectedRows === 1) inserted++;
           else if (res.affectedRows === 2) updated++;
