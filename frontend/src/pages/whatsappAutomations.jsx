@@ -50,13 +50,19 @@ const PRESET_MESSAGES = {
 
 const PLACEHOLDERS = [
   { tag: "{name}", label: "Name" },
+  { tag: "{tomorrow}", label: "Tomorrow Date" },
+  { tag: "{tomorrow_day}", label: "Tomorrow Day Name" },
+  { tag: "{day}", label: "Today's Day" },
+  { tag: "{date}", label: "Today's Date" },
+  { tag: "{time}", label: "Live Time" },
+  { tag: "{date_time}", label: "Date & Time" },
+  { tag: "{greeting_time}", label: "Smart Greeting" },
   { tag: "{company}", label: "Company" },
   { tag: "{service}", label: "Service / AMC" },
   { tag: "{invoice_no}", label: "Invoice #" },
   { tag: "{quotation_no}", label: "Quotation #" },
   { tag: "{amc_contract_no}", label: "AMC Contract #" },
   { tag: "{amount}", label: "Amount (₹)" },
-  { tag: "{date}", label: "Date" },
   { tag: "{due_date}", label: "Due Date" },
   { tag: "{service_date}", label: "Service Date" },
   { tag: "{city}", label: "City / Area" },
@@ -804,7 +810,14 @@ export default function WhatsAppAutomations() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Welcome Message Copy</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-gray-700 uppercase">Welcome Message Copy</label>
+                <span className="text-[10px] text-gray-400 font-mono">Dynamic Multi-Keywords</span>
+              </div>
+              <WAVariablePicker
+                onInsert={(tag) => setWelcomeSettings((s) => ({ ...s, welcome_text: (s.welcome_text || "") + " " + tag }))}
+                className="mb-2"
+              />
               <textarea
                 rows={3}
                 value={welcomeSettings.welcome_text || ""}
@@ -812,18 +825,6 @@ export default function WhatsAppAutomations() {
                 className="w-full p-3 border rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 bg-gray-50"
                 placeholder="Hello {name}! Welcome to Madhura Tech..."
               />
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {PLACEHOLDERS.slice(0, 4).map((p) => (
-                  <button
-                    key={p.tag}
-                    type="button"
-                    onClick={() => setWelcomeSettings((s) => ({ ...s, welcome_text: (s.welcome_text || "") + " " + p.tag }))}
-                    className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded text-[10px] font-mono"
-                  >
-                    + {p.tag}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
@@ -883,11 +884,7 @@ export default function WhatsAppAutomations() {
             <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
               <span className="text-[11px] font-bold uppercase text-emerald-800 tracking-wider">Live Customer Preview</span>
               <p className="text-xs text-emerald-950 mt-1 whitespace-pre-line leading-relaxed font-sans bg-white p-3 rounded-xl border border-emerald-100 shadow-sm">
-                {(welcomeSettings.welcome_text || "Hello {name}! Welcome to Madhura Tech.")
-                  .replace(/\{name\}/g, "Rahul Sharma")
-                  .replace(/\{company\}/g, "Madhura Tech")
-                  .replace(/\{service\}/g, "HVAC & Electrical AMC")
-                  .replace(/\{city\}/g, "Bangalore")}
+                {evaluateMessagePlaceholders(welcomeSettings.welcome_text || "Hello {name}! Welcome to Madhura Tech.")}
               </p>
             </div>
 
@@ -1153,7 +1150,7 @@ export default function WhatsAppAutomations() {
                 )}
 
                 {form.msg_kind === "template" && (
-                  <div>
+                  <div className="space-y-2">
                     <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Select Approved WhatsApp Template</label>
                     <select
                       value={form.template_id}
@@ -1165,6 +1162,22 @@ export default function WhatsAppAutomations() {
                         <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
                       ))}
                     </select>
+
+                    {form.template_id && (() => {
+                      const tmpl = templates.find(t => String(t.id) === String(form.template_id));
+                      if (!tmpl) return null;
+                      return (
+                        <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1 text-xs">
+                          <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase">
+                            <span className="flex items-center gap-1"><Sparkles size={11} /> Template Evaluated Preview:</span>
+                            <span className="text-[9px] text-emerald-400 font-mono">Dynamic Live</span>
+                          </div>
+                          <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap">
+                            {evaluateMessagePlaceholders(tmpl.body || "")}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1331,6 +1344,18 @@ export default function WhatsAppAutomations() {
                   className="w-full px-3.5 py-2.5 border rounded-xl text-xs bg-white"
                 />
               </div>
+
+              {testModal && (testModal.message_text || testModal.template_body) && (
+                <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase">
+                    <span className="flex items-center gap-1"><Sparkles size={11} /> Evaluated Message Preview:</span>
+                    <span className="text-[9px] text-emerald-400 font-mono">Dynamic Preview</span>
+                  </div>
+                  <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
+                    {evaluateMessagePlaceholders(testModal.message_text || testModal.template_body || "", { name: testName || "Customer" })}
+                  </div>
+                </div>
+              )}
 
               {testResult && (
                 <div className={`p-3 rounded-xl text-xs font-bold ${testResult.success ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>

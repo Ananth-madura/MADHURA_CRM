@@ -3,10 +3,11 @@ import * as XLSX from "xlsx";
 import {
   X, Users, MessageSquare, MapPin, Rocket, ChevronRight, ChevronLeft,
   Upload, Image as ImageIcon, Video, Loader2, CheckCircle2, Trash2,
-  FileSpreadsheet, UserPlus, Search, Navigation, Clock,
+  FileSpreadsheet, UserPlus, Search, Navigation, Clock, Sparkles,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
+import { evaluateMessagePlaceholders } from "./WAVariablePicker";
 
 const STEPS = ["Contacts", "Message", "Location", "Review"];
 const DELAY_MIN_SECONDS = 7;
@@ -445,7 +446,15 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                     {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.category})</option>)}
                   </select>
                   {selectedTemplate && (
-                    <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 whitespace-pre-wrap">{selectedTemplate.body}</div>
+                    <div className="mt-3 p-3.5 bg-slate-900 rounded-xl border border-slate-800 text-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                        <span className="flex items-center gap-1"><Sparkles size={12} /> Template Evaluated Preview:</span>
+                        <span className="text-[9px] text-emerald-400 font-mono">Dynamic Placeholders Active</span>
+                      </div>
+                      <div className="p-2.5 bg-slate-800/90 rounded-lg text-emerald-300 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+                        {evaluateMessagePlaceholders(selectedTemplate.body)}
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -459,10 +468,16 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                       <div className="flex flex-wrap gap-1 text-xs">
                         {[
                           { tag: "{name}", label: "Name" },
+                          { tag: "{tomorrow}", label: "Tomorrow Date" },
+                          { tag: "{tomorrow_day}", label: "Tomorrow Day" },
+                          { tag: "{day}", label: "Day" },
+                          { tag: "{date}", label: "Date" },
+                          { tag: "{time}", label: "Time" },
+                          { tag: "{date_time}", label: "Date & Time" },
+                          { tag: "{greeting_time}", label: "Greeting" },
                           { tag: "{company}", label: "Company" },
                           { tag: "{service}", label: "Service" },
                           { tag: "{city}", label: "City" },
-                          { tag: "{date}", label: "Date" },
                           { tag: "{start_time}", label: "Start Time" },
                           { tag: "{end_time}", label: "End Time" },
                           { tag: "{amount}", label: "Amount" },
@@ -482,7 +497,7 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                       </div>
                     </div>
                     <textarea rows={4} value={messageText} onChange={e => setMessageText(e.target.value)}
-                      placeholder="Type your WhatsApp message... Use {Hi|Hello|Dear} {name} to personalize each message!"
+                      placeholder="Type your WhatsApp message... Use {Hi|Hello|Dear} {name}! Tomorrow {tomorrow} is {tomorrow_day}."
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none" />
 
                     {/* Anti-Ban Spintax & Opt-out Quick Buttons */}
@@ -507,13 +522,10 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                         ))}
                       </div>
 
-                      {messageText && (messageText.includes("|") || messageText.includes("{")) && (
+                      {messageText && (
                         <div className="p-2 bg-slate-900 text-slate-100 rounded-lg text-[11px] font-mono mt-1 text-emerald-300">
                           <span className="text-[9px] font-bold text-amber-400 uppercase block mb-0.5">🎲 Live Random Preview:</span>
-                          {messageText
-                            .replace(/\[([^\[\]]+)\]/g, (_, c) => c.split("|")[Math.floor(Math.random() * c.split("|").length)].trim())
-                            .replace(/\{([^{}]+)\}/g, (_, c) => c.includes("|") ? c.split("|")[Math.floor(Math.random() * c.split("|").length)].trim() : `{${c}}`)
-                            .replace(/\{name\}/gi, "Rahul Sharma")}
+                          {evaluateMessagePlaceholders(messageText)}
                         </div>
                       )}
                     </div>
@@ -628,6 +640,18 @@ export default function WhatsAppCampaignWizard({ isOpen, onClose, onSuccess, ini
                   </div>
                 )}
               </div>
+
+              {((messageType !== "template" && messageText) || (messageType === "template" && selectedTemplate?.body)) && (
+                <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase">
+                    <span>Sample Evaluated Message Preview:</span>
+                    <span className="text-emerald-400 font-mono">Dynamic Live</span>
+                  </div>
+                  <div className="p-2 bg-slate-800/80 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
+                    {evaluateMessagePlaceholders(messageType === "template" ? selectedTemplate.body : messageText)}
+                  </div>
+                </div>
+              )}
 
               {/* Sender Pool / Load Balancer Selector */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">

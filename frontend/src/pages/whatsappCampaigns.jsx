@@ -633,7 +633,14 @@ export default function WACampaigns() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Media Caption</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-gray-600 uppercase">Media Caption</label>
+                      <span className="text-[10px] text-gray-400 font-mono">Dynamic Placeholders Active</span>
+                    </div>
+                    <WAVariablePicker
+                      onInsert={(tag) => setForm(prev => ({ ...prev, message_text: (prev.message_text || "") + " " + tag }))}
+                      className="mb-2"
+                    />
                     <textarea
                       value={f.message_text}
                       onChange={e => setForm({ ...f, message_text: e.target.value })}
@@ -641,13 +648,19 @@ export default function WACampaigns() {
                       className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#25D366] resize-none"
                       placeholder="Caption with {name} {company} {city} placeholders..."
                     />
+                    {f.message_text && (
+                      <div className="mt-2 p-2.5 bg-slate-900 rounded-xl border border-slate-800 text-xs text-emerald-300 font-mono whitespace-pre-wrap">
+                        <span className="text-[10px] text-amber-400 font-bold block mb-0.5">Evaluated Caption Preview:</span>
+                        {evaluateMessagePlaceholders(f.message_text)}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Template picker */}
               {f.type === "template" && (
-                <div>
+                <div className="space-y-2">
                   <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Template *</label>
                   <select
                     value={f.template_id}
@@ -657,6 +670,22 @@ export default function WACampaigns() {
                     <option value="">Select an approved template</option>
                     {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.category})</option>)}
                   </select>
+
+                  {f.template_id && (() => {
+                    const tmpl = templates.find(t => String(t.id) === String(f.template_id));
+                    if (!tmpl) return null;
+                    return (
+                      <div className="p-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 space-y-1.5 text-xs mt-2">
+                        <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                          <span className="flex items-center gap-1"><Sparkles size={12} /> Template Evaluated Preview:</span>
+                          <span className="text-[9px] text-emerald-400 font-mono">Dynamic Placeholders Active</span>
+                        </div>
+                        <div className="p-2.5 bg-slate-800/90 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
+                          {evaluateMessagePlaceholders(tmpl.body || "")}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

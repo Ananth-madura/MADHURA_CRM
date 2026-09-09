@@ -75,7 +75,16 @@ async function sendInteractiveReminder(params = {}) {
     ? options
     : (defaultOptionsMap[reminderType] || defaultOptionsMap.appointment_reminder);
 
-  const formattedText = messageText || `Hello ${contactName}! This is a reminder regarding your scheduled service with us. Please confirm your availability:`;
+  const { formatMessagePlaceholders } = require("./waAutomationService");
+  const rawText = messageText || `Hello {name}! This is a reminder regarding your scheduled service with us. Please confirm your availability:`;
+  const formattedText = formatMessagePlaceholders(rawText, contactName, {
+    phone: normalizedPhone,
+    contact_name: contactName,
+    title,
+    ref_table: refTable,
+    ref_id: refId,
+    staff_name: staffName,
+  });
 
   // 1. Record in wa_interactive_reminders
   const [insertRes] = await db.promise().query(

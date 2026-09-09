@@ -14,7 +14,7 @@ import axios from "axios";
 import { API } from "../config/api";
 import socket from "../socket/socket";
 import WhatsAppNav from "../components/WhatsAppNav";
-import WAVariablePicker from "../components/WAVariablePicker";
+import WAVariablePicker, { evaluateMessagePlaceholders } from "../components/WAVariablePicker";
 
 const QUALITY_COLORS = {
   GREEN: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", badge: "bg-emerald-100 text-emerald-800", label: "Green — High Quality (Tier 1)" },
@@ -1767,6 +1767,27 @@ export default function WhatsAppAccounts() {
                     placeholder="Hello {{name}}! 👋 {{greeting_time}}, thank you for contacting {{company}}. How can we assist you today?"
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 resize-none font-sans text-gray-800"
                   />
+
+                  {/* Live Evaluated Customer Welcome Preview */}
+                  {welcomeForm.welcome_text && (
+                    <div className="p-3.5 bg-slate-900 rounded-2xl border border-slate-800 text-white space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-amber-400 font-bold uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5"><Sparkles size={13} /> Live Customer Welcome Preview:</span>
+                        <span className="text-[10px] text-emerald-400 font-mono">Dynamic Multi-Keyword Active</span>
+                      </div>
+                      <div className="p-3 bg-slate-800/90 rounded-xl text-emerald-300 font-mono text-xs whitespace-pre-wrap leading-relaxed border border-slate-700/50">
+                        {evaluateMessagePlaceholders(welcomeForm.welcome_text, {
+                          name: "Rahul Sharma",
+                          first_name: "Rahul",
+                          company: "Madhura Tech",
+                          city: "Chennai"
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Evaluates all dynamic keywords like <code className="text-amber-300 font-bold">{"{tomorrow}"}</code>, <code className="text-amber-300 font-bold">{"{tomorrow_day}"}</code>, <code className="text-amber-300 font-bold">{"{greeting_time}"}</code>, <code className="text-amber-300 font-bold">{"{date}"}</code>, <code className="text-amber-300 font-bold">{"{time}"}</code> live on every inbound chat.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
@@ -1873,14 +1894,28 @@ export default function WhatsAppAccounts() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 uppercase mb-1">Message Body</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-gray-700 uppercase">Message Body</label>
+                    <span className="text-[10px] text-gray-400 font-mono">Supports {"{tomorrow}"}, {"{day}"}, etc.</span>
+                  </div>
+                  <WAVariablePicker
+                    onInsert={(tag) => setTestMsgText((prev) => (prev || "") + " " + tag)}
+                    className="mb-2"
+                  />
                   <textarea
                     rows={3}
                     value={testMsgText}
                     onChange={(e) => setTestMsgText(e.target.value)}
                     className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#25D366] resize-none"
+                    placeholder="Type test message, e.g. Hi {name}, tomorrow is {tomorrow} ({tomorrow_day})!"
                     required
                   />
+                  {testMsgText && (
+                    <div className="mt-2 p-2.5 bg-slate-900 rounded-xl border border-slate-800 text-xs text-emerald-300 font-mono whitespace-pre-wrap">
+                      <span className="text-[10px] text-amber-400 font-bold block mb-1">Evaluated Preview:</span>
+                      {evaluateMessagePlaceholders(testMsgText, { phone: testPhone || "9876543210" })}
+                    </div>
+                  )}
                 </div>
 
                 <button

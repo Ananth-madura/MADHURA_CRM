@@ -10,6 +10,7 @@ import {
 import axios from "axios";
 import { API } from "../config/api";
 import socket from "../socket/socket";
+import { evaluateMessagePlaceholders } from "./WAVariablePicker";
 
 // ── 1. Persona Definitions & Tone Profiles ─────────────────────────────────────
 const PERSONA_STYLES = [
@@ -49,6 +50,14 @@ const PERSONA_STYLES = [
 const DYNAMIC_VARIABLES = [
   { tag: "{name}", label: "Customer Name", sample: "Rahul Sharma" },
   { tag: "{first_name}", label: "First Name", sample: "Rahul" },
+  { tag: "{tomorrow}", label: "Tomorrow Date", sample: "Tomorrow's Date" },
+  { tag: "{tomorrow_day}", label: "Tomorrow Day Name", sample: "Tomorrow's Day Name" },
+  { tag: "{day}", label: "Today's Day", sample: "Wednesday" },
+  { tag: "{day_name}", label: "Day Name", sample: "Wednesday" },
+  { tag: "{date}", label: "Date", sample: "Today's Date" },
+  { tag: "{time}", label: "Time", sample: "11:00 AM" },
+  { tag: "{date_time}", label: "Live Date & Time", sample: "Date & Time" },
+  { tag: "{greeting_time}", label: "Smart Greeting", sample: "Good morning / afternoon" },
   { tag: "{company}", label: "Company", sample: "Apex Technologies" },
   { tag: "{phone}", label: "Phone", sample: "9876543210" },
   { tag: "{city}", label: "City", sample: "Chennai" },
@@ -60,8 +69,6 @@ const DYNAMIC_VARIABLES = [
   { tag: "{quote_no}", label: "Quote #", sample: "QT-202608-41" },
   { tag: "{contract_title}", label: "Contract", sample: "HVAC Annual AMC" },
   { tag: "{expiry_date}", label: "Expiry Date", sample: "31 Aug 2026" },
-  { tag: "{date}", label: "Date", sample: "Tomorrow" },
-  { tag: "{time}", label: "Time", sample: "11:00 AM" },
 ];
 
 // ── 3. Multi-Dynamic Template Presets by Category & Persona ────────────────────
@@ -167,13 +174,8 @@ const REMINDER_TYPES = [
 
 // Helper to replace {tags} with variables or fallback samples
 function interpolateText(text = "", vars = {}) {
-  let res = text;
-  DYNAMIC_VARIABLES.forEach((v) => {
-    const key = v.tag.replace(/[{}]/g, "");
-    const val = (vars && vars[key] !== undefined && vars[key] !== "") ? vars[key] : v.sample;
-    res = res.split(v.tag).join(val);
-  });
-  return res;
+  if (!text) return "";
+  return evaluateMessagePlaceholders(text, vars);
 }
 
 export default function WhatsAppInteractiveReminders() {

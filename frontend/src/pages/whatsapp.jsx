@@ -43,6 +43,7 @@ import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
 import socket from "../socket/socket";
 import RichMessageContent from "../components/RichMessageContent";
+import WAVariablePicker, { evaluateMessagePlaceholders } from "../components/WAVariablePicker";
 import WAConfigPrompt from "../components/WAConfigPrompt";
 import WAContactAvatar from "../components/WAContactAvatar";
 
@@ -751,8 +752,13 @@ export default function WhatsAppPage() {
   };
 
   const insertTemplate = (tmpl) => {
-    const name = selectedChat?.name && !selectedChat.name.startsWith("+") ? selectedChat.name : "there";
-    const filled = (tmpl.body || "").replace(/\{name\}|\{\{1\}\}/gi, name);
+    const name = selectedChat?.name && !selectedChat.name.startsWith("+") ? selectedChat.name : "";
+    const phone = selectedChat?.phone || selectedChat?.id?.replace(/@.*$/, "") || "";
+    const filled = evaluateMessagePlaceholders(tmpl.body || "", {
+      name: name || "there",
+      first_name: name ? name.split(" ")[0] : "there",
+      phone: phone,
+    });
     setMessageInput(filled);
     setShowTemplatePicker(false);
   };
@@ -2971,7 +2977,16 @@ export default function WhatsAppPage() {
                       .map((qr) => (
                         <div
                           key={qr.id}
-                          onClick={() => setMessageInput(qr.content)}
+                          onClick={() => {
+                            const name = selectedChat?.name && !selectedChat.name.startsWith("+") ? selectedChat.name : "";
+                            const phone = selectedChat?.phone || selectedChat?.id?.replace(/@.*$/, "") || "";
+                            const filled = evaluateMessagePlaceholders(qr.content || "", {
+                              name: name || "Customer",
+                              first_name: name ? name.split(" ")[0] : "Customer",
+                              phone: phone,
+                            });
+                            setMessageInput(filled);
+                          }}
                           className="p-2 hover:bg-[#202c33] rounded-xl cursor-pointer transition"
                         >
                           <div className="flex items-center justify-between">
@@ -3998,23 +4013,33 @@ export default function WhatsAppPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">Template Content (Supports Markdown & {"{name}"}) *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase">Template Content (Supports Markdown & Dynamic Placeholders) *</label>
+                  <span className="text-[10px] text-gray-400 font-mono">{(newTmplBody || "").length} chars</span>
+                </div>
+                <WAVariablePicker
+                  onInsert={(tag) => setNewTmplBody((prev) => (prev || "") + " " + tag)}
+                  className="mb-2"
+                />
                 <textarea
                   rows={4}
-                  placeholder={`Hello {name}!\n\n## Special Offer\nUse code **DISCOUNT20** to get 20% off.\n\n| Item | Discount |\n|---|---|\n| Service A | 20% |`}
+                  placeholder={`Hello {name}!\n\nYour appointment tomorrow is on {tomorrow} ({tomorrow_day}).\n\n## Special Offer\nUse code **DISCOUNT20** to get 20% off.`}
                   value={newTmplBody}
                   onChange={(e) => setNewTmplBody(e.target.value)}
                   className="w-full px-3.5 py-2 border border-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#25D366] font-mono leading-relaxed resize-none"
                   required
                 />
-                <p className="text-[10px] text-gray-400 mt-1">Supports Markdown headers (#), bold (**), lists (-), and tables (| col | col |)</p>
+                <p className="text-[10px] text-gray-400 mt-1">Supports Markdown headers (#), bold (**), and dynamic tokens ({"{tomorrow}"}, {"{tomorrow_day}"}, {"{day}"}, {"{time}"}, {"{date}"})</p>
               </div>
 
-              {/* Live Markdown Preview */}
+              {/* Live Markdown & Dynamic Evaluated Preview */}
               {newTmplBody.trim() && (
                 <div className="p-3 bg-[#0b141a] rounded-xl border border-white/10 text-white space-y-1">
-                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Live Chat Preview:</p>
-                  <RichMessageContent text={newTmplBody} isMe={true} />
+                  <div className="flex items-center justify-between text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+                    <span>Live Chat Evaluated Preview:</span>
+                    <span className="text-amber-300 font-mono text-[9px]">Multi-Dynamic Active</span>
+                  </div>
+                  <RichMessageContent text={evaluateMessagePlaceholders(newTmplBody, { name: selectedChat?.name && !selectedChat.name.startsWith("+") ? selectedChat.name : "Rajesh Kumar" })} isMe={true} />
                 </div>
               )}
 
