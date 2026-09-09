@@ -1092,3 +1092,25 @@ input[type="button"] {
     padding-right: env(safe-area-inset-right);
   }
 }
+
+/* WhatsApp Custom Parallel & Parallax Scrollbar Styling */
+.wa-custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.wa-custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.wa-custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.16) !important;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+.wa-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32) !important;
+}
+.wa-custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  -webkit-overflow-scrolling: touch;
+}

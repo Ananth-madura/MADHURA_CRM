@@ -483,9 +483,12 @@ export default function WhatsAppPage() {
   const recordTimerRef = useRef(null);
   const recordCancelRef = useRef(false);
 
-  // "Jump to latest" affordance (showEmojiPicker is declared with the other UI state above)
+  // "Jump to latest" affordance & WhatsApp Parallax Scroll Engine
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
   const threadRef = useRef(null);
+  const wallpaperRef = useRef(null);
+  const parallaxRaf = useRef(null);
 
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -521,9 +524,47 @@ export default function WhatsAppPage() {
     } catch (_) {}
   }, [status]);
 
-  const scrollToBottom = () => {
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-  };
+  // Clean, deterministic scroll to bottom targeting threadRef directly without window jitter
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (!threadRef.current) return;
+    try {
+      threadRef.current.scrollTo({
+        top: threadRef.current.scrollHeight,
+        behavior: smooth ? "smooth" : "auto",
+      });
+    } catch {
+      threadRef.current.scrollTop = threadRef.current.scrollHeight;
+    }
+  }, []);
+
+  // WhatsApp Doodle Wallpaper Parallax Scroll Handler:
+  // Decoupled via requestAnimationFrame to guarantee silky 60fps/120fps hardware acceleration
+  const handleThreadScroll = useCallback((e) => {
+    const el = e.currentTarget;
+    const isAway = el.scrollHeight - el.scrollTop - el.clientHeight > 180;
+    setIsScrolledUp(isAway);
+    if (!isAway) {
+      setUnreadWhileScrolled(0);
+    }
+
+    if (!parallaxRaf.current) {
+      parallaxRaf.current = requestAnimationFrame(() => {
+        if (wallpaperRef.current) {
+          const parallaxOffset = (el.scrollTop * 0.18) % 260;
+          wallpaperRef.current.style.transform = `translate3d(0, -${parallaxOffset}px, 0)`;
+        }
+        parallaxRaf.current = null;
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (parallaxRaf.current) {
+        cancelAnimationFrame(parallaxRaf.current);
+      }
+    };
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -671,17 +712,25 @@ export default function WhatsAppPage() {
       const data = res.data || [];
       messagesCacheRef.current[chatId] = data;
       setMessages(data);
-      if (limit === 10) scrollToBottom();
+      if (limit === 10) scrollToBottom(false);
     } catch { }
     setMessagesLoading(false);
     setLoadingMore(false);
-  }, []);
+  }, [scrollToBottom]);
 
   const handleLoadMoreMessages = async () => {
     if (!selectedChat || loadingMore) return;
+    const prevScrollHeight = threadRef.current?.scrollHeight || 0;
+    const prevScrollTop = threadRef.current?.scrollTop || 0;
     const nextLimit = msgLimit + 40;
     setMsgLimit(nextLimit);
     await fetchMessages(selectedChat.id, nextLimit);
+    requestAnimationFrame(() => {
+      if (threadRef.current) {
+        const newScrollHeight = threadRef.current.scrollHeight;
+        threadRef.current.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
+      }
+    });
   };
 
   const fetchAccountBalance = async () => {
@@ -768,11 +817,12 @@ export default function WhatsAppPage() {
     setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, unreadCount: 0 } : c)));
     setShowMobileChat(true);
     setMsgLimit(10);
+    setUnreadWhileScrolled(0);
 
     // Instant message display from cache in 0ms!
     if (messagesCacheRef.current[chat.id]) {
       setMessages(messagesCacheRef.current[chat.id]);
-      setTimeout(scrollToBottom, 20);
+      setTimeout(() => scrollToBottom(false), 20);
     }
 
     // Mark as read on WhatsApp server & DB
@@ -1609,7 +1659,14 @@ export default function WhatsAppPage() {
           }
           return [msgObj, ...prev];
         });
-        setTimeout(scrollToBottom, 50);
+        const isNearBottom = threadRef.current
+          ? threadRef.current.scrollHeight - threadRef.current.scrollTop - threadRef.current.clientHeight <= 220
+          : true;
+        if (isNearBottom) {
+          setTimeout(() => scrollToBottom(true), 50);
+        } else {
+          setUnreadWhileScrolled((prev) => prev + 1);
+        }
       }
 
       setChats((prev) => {
@@ -2083,7 +2140,7 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col h-screen min-h-0 bg-[#0b141a] text-slate-100 p-1 md:p-2 overflow-hidden shadow-2xl">
+    <div className="w-full flex-1 flex flex-col h-full max-h-screen min-h-0 bg-[#0b141a] text-slate-100 overflow-hidden shadow-2xl">
       <WhatsAppNav
         onAccountBalance={fetchAccountBalance}
         onSyncWhatsApp={handleSyncWhatsApp}
@@ -2102,9 +2159,9 @@ export default function WhatsAppPage() {
       )}
 
       {/* Main WhatsApp App Canvas */}
-      <div className="flex-1 min-h-0 flex overflow-hidden w-full">
+      <div className="flex-1 min-h-0 flex overflow-hidden w-full relative">
 
-        {/* Chats Sidebar Column */}
+        {/* Chats Sidebar Column (Independent Parallel Scrolling) */}
         <div className={`w-full md:w-96 lg:w-[420px] bg-[#111b21] border-r border-[#222d34] flex flex-col h-full min-h-0 shrink-0 ${showMobileChat ? "hidden md:flex" : "flex"}`}>
           {/* Search Bar & Action Buttons */}
           <div className="p-3 border-b border-[#222d34] flex items-center gap-2 shrink-0">
@@ -2184,8 +2241,8 @@ export default function WhatsAppPage() {
             </button>
           </div>
 
-          {/* Chat List Items */}
-          <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-[#222d34]/60 overscroll-contain">
+          {/* Chat List Items (Parallel Independent Column Scroll) */}
+          <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-[#222d34]/60 overscroll-contain wa-custom-scrollbar scroll-smooth">
             {chatsLoading && chats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 space-y-2 text-slate-400">
                 <Loader2 size={28} className="animate-spin text-[#00a884]" />
@@ -2537,16 +2594,26 @@ export default function WhatsAppPage() {
                 </div>
               </div>
 
-              {/* Chat Thread Messages */}
-              <div
-                ref={threadRef}
-                onScroll={(e) => {
-                  const el = e.currentTarget;
-                  setIsScrolledUp(el.scrollHeight - el.scrollTop - el.clientHeight > 220);
-                }}
-                className="flex-1 min-h-0 overflow-y-auto p-4 bg-[#0b141a] relative overscroll-contain"
-                style={{ backgroundImage: CHAT_WALLPAPER, backgroundRepeat: "repeat", backgroundSize: "260px 260px" }}
-              >
+              {/* Chat Thread Canvas with Parallax Doodle Background */}
+              <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#0b141a]">
+                {/* Parallax WhatsApp Doodle Wallpaper Layer */}
+                <div
+                  ref={wallpaperRef}
+                  className="absolute inset-0 pointer-events-none will-change-transform opacity-95 transition-transform duration-75 ease-out"
+                  style={{
+                    backgroundImage: CHAT_WALLPAPER,
+                    backgroundRepeat: "repeat",
+                    backgroundSize: "260px 260px",
+                    transform: "translate3d(0, 0px, 0)",
+                  }}
+                />
+
+                {/* Messages Thread Scroll Area (Independent Parallel Column Scroll) */}
+                <div
+                  ref={threadRef}
+                  onScroll={handleThreadScroll}
+                  className="relative z-10 flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 py-4 overscroll-contain wa-custom-scrollbar scroll-smooth"
+                >
                 {messages.length >= msgLimit && (
                   <div className="flex justify-center mb-3">
                     <button
@@ -2582,8 +2649,8 @@ export default function WhatsAppPage() {
                     return (
                     <React.Fragment key={msg.id || msg.timestamp}>
                     {showDayDivider && (
-                      <div className="flex justify-center my-3">
-                        <span className="px-3 py-1 bg-[#182229] text-[11px] font-semibold tracking-wide text-slate-300 rounded-lg shadow-sm uppercase">
+                      <div className="sticky top-2 z-20 flex justify-center my-3 pointer-events-none select-none">
+                        <span className="px-3.5 py-1 bg-[#182229]/90 backdrop-blur-md text-[11px] font-bold tracking-wide text-slate-300 rounded-lg shadow-md uppercase border border-white/10">
                           {formatDayDivider(msg.timestamp)}
                         </span>
                       </div>
@@ -2724,17 +2791,30 @@ export default function WhatsAppPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Jump to latest — appears once you scroll away from the bottom */}
-              {isScrolledUp && (
+              {/* Jump to latest floating pill with badge & smooth spring transition */}
+              <div
+                className={`absolute bottom-4 right-4 sm:right-6 z-30 transition-all duration-300 transform ${
+                  isScrolledUp ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-4 scale-90 pointer-events-none"
+                }`}
+              >
                 <button
                   type="button"
-                  onClick={scrollToBottom}
-                  className="absolute bottom-24 right-6 z-20 w-10 h-10 rounded-full bg-[#202c33] border border-slate-700/70 text-slate-200 shadow-lg hover:bg-[#2a3942] transition flex items-center justify-center"
+                  onClick={() => {
+                    scrollToBottom(true);
+                    setUnreadWhileScrolled(0);
+                  }}
+                  className="relative w-10 h-10 rounded-full bg-[#202c33] hover:bg-[#2a3942] border border-slate-700/80 text-slate-200 shadow-2xl hover:scale-105 active:scale-95 transition flex items-center justify-center group"
                   title="Jump to latest messages"
                 >
-                  <ChevronDown size={20} />
+                  <ChevronDown size={20} className="group-hover:translate-y-0.5 transition-transform text-slate-300" />
+                  {unreadWhileScrolled > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-[#00a884] text-[#111b21] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow animate-pulse">
+                      {unreadWhileScrolled}
+                    </span>
+                  )}
                 </button>
-              )}
+              </div>
+            </div>
 
               {/* Quote Reply Banner above composer */}
               {replyingTo && (

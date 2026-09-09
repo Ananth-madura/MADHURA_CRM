@@ -194,7 +194,7 @@ export default function DashboardLayout() {
             className={`transition-all duration-300 w-full max-w-full text-shell-text bg-content flex flex-col
             ${isWhatsApp
                 ? isWhatsAppChat
-                  ? "mt-0 ml-0 max-w-full p-0 min-h-screen"
+                  ? "mt-0 ml-0 max-w-full p-0 h-screen max-h-screen overflow-hidden flex flex-col"
                   : "mt-0 ml-0 max-w-full p-3 md:p-5 lg:p-6 min-h-screen"
                 : `${isMobile
                     ? "ml-0 max-w-full"
@@ -202,7 +202,7 @@ export default function DashboardLayout() {
                   } min-h-screen mt-[65px] p-3 md:p-5 lg:p-6 pb-16 md:pb-6`
               }`}
           >
-            <div className={`flex-1 w-full ${isWhatsAppChat ? "flex flex-col min-h-0" : "min-h-0"}`}>
+            <div className={`flex-1 w-full ${isWhatsAppChat ? "flex flex-col h-full min-h-0 overflow-hidden" : "min-h-0"}`}>
               <Outlet />
             </div>
             {!isWhatsApp && (
