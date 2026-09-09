@@ -1841,7 +1841,7 @@ export default function WhatsAppPage() {
 
   if (!status.connected) {
     return (
-      <div className="w-full flex-1 flex flex-col">
+      <div className="w-full flex-1 flex flex-col h-screen min-h-screen p-2 md:p-4 bg-slate-50 overflow-y-auto">
         <WhatsAppNav />
         {showConfigModal && (
           <WAConfigPrompt
@@ -2031,7 +2031,7 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col h-[calc(100vh-68px)] min-h-[500px] bg-[#0b141a] text-slate-100 p-1.5 md:p-2.5 overflow-hidden rounded-2xl shadow-2xl">
+    <div className="w-full flex-1 flex flex-col h-screen min-h-screen bg-[#0b141a] text-slate-100 p-1 md:p-2 overflow-hidden shadow-2xl">
       <WhatsAppNav
         onAccountBalance={fetchAccountBalance}
         onSyncWhatsApp={handleSyncWhatsApp}
