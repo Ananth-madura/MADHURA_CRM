@@ -159,6 +159,14 @@ export default function WhatsAppAccounts() {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
 
+  const webConnected = Boolean(status?.web?.connected || status?.isWeb);
+  const cloudConfigured = Boolean(status?.cloud?.configured || status?.isCloud || config?.phone_number_id);
+  const activeEngine = status?.activeEngine || (cloudConfigured && webConnected ? "Dual (Cloud API + Web)" : cloudConfigured ? "Meta Cloud API" : webConnected ? "WhatsApp Web Session" : "Offline");
+  const qualityInfo = qualityRating?.quality_rating
+    ? (QUALITY_COLORS[qualityRating.quality_rating] || QUALITY_COLORS.GREEN)
+    : QUALITY_COLORS.GREEN;
+  const webhookUrl = `${window.location.origin}/api/wa/webhook`;
+
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem("token")}` });
 
   // ── Fetch All WhatsApp & AI Settings ──
@@ -578,16 +586,6 @@ export default function WhatsAppAccounts() {
   const applyPreset = (preset) => {
     setAiForm((prev) => ({ ...prev, system_prompt: preset.prompt }));
   };
-
-  const webConnected = status?.web?.connected || status?.isWeb;
-  const cloudConfigured = status?.cloud?.configured || status?.isCloud || config?.phone_number_id;
-  const activeEngine = status?.activeEngine || (cloudConfigured && webConnected ? "Dual (Cloud API + Web)" : cloudConfigured ? "Meta Cloud API" : webConnected ? "WhatsApp Web Session" : "Offline");
-
-  const qualityInfo = qualityRating?.quality_rating
-    ? (QUALITY_COLORS[qualityRating.quality_rating] || QUALITY_COLORS.GREEN)
-    : QUALITY_COLORS.GREEN;
-
-  const webhookUrl = `${window.location.origin}/api/wa/webhook`;
 
   const copyToClipboard = (text, type) => {
     navigator.clipboard.writeText(text);
