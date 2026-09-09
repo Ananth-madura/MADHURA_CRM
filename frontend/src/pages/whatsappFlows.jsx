@@ -404,11 +404,13 @@ export default function WhatsAppFlows() {
       const token = localStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const targetFlowId = editingFlowId || flows[0]?.id;
+      let cleanPhone = String(phone || "").replace(/\D/g, "");
+      if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
       const res = await axios.post(`${API}/api/wa-flows/send-menu`, {
-        phone,
+        phone: cleanPhone,
         flow_id: targetFlowId
       }, { headers });
-      alert(`✅ WhatsApp menu sent to ${phone}!\nResult: ${res.data.message}`);
+      alert(`✅ WhatsApp menu sent to +${cleanPhone}!\nResult: ${res.data.message}`);
     } catch (err) {
       alert(`❌ Error sending to WhatsApp: ${err.response?.data?.error || err.message}`);
     }
@@ -882,13 +884,17 @@ export default function WhatsAppFlows() {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       const keywordsArr = flowKeywords.split(",").map(k => k.trim()).filter(Boolean);
+      const actualEntryKey = (nodes.some(n => n.node_key === flowEntryNode))
+        ? flowEntryNode
+        : (nodes.find(n => n.node_type === "start" || n.node_type?.includes("trigger"))?.node_key || nodes[0]?.node_key || "start");
+
       const payload = {
         name: flowName,
         description: flowDesc,
         status: isPublishing ? "active" : "draft",
         trigger_type: flowTriggerType,
         trigger_config: { keywords: keywordsArr },
-        entry_node_key: flowEntryNode || nodes[0]?.node_key || "start",
+        entry_node_key: actualEntryKey,
         nodes: nodes.map(n => ({
           node_key: n.node_key,
           node_type: n.node_type,

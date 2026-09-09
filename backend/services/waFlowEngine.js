@@ -119,8 +119,9 @@ class WaFlowEngine {
   /**
    * Record outbound bot message in database & broadcast live WebSocket event to CRM chat
    */
-  async recordAndEmitBotMessage(phone, text, type = "text", interactivePayload = null) {
-    const cleanPhone = phone.replace(/\D/g, "");
+   async recordAndEmitBotMessage(phone, text, type = "text", interactivePayload = null) {
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
     const chatId = `${cleanPhone}@c.us`;
     const msgId = "bot_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
 
@@ -159,6 +160,26 @@ class WaFlowEngine {
         };
         io.emit("wa_message_sent", { phone: cleanPhone, chatId, message: liveMsg });
         io.emit("wa_message", { phone: cleanPhone, chatId, message: liveMsg });
+      }
+    } catch (_) {}
+
+    return msgId;
+  }
+
+  async markBotMessageFailed(msgId, phone, errorMessage = "") {
+    if (!msgId) return;
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+    await db.promise().query(
+      "UPDATE wa_message_logs SET status = 'failed' WHERE wa_message_id = ?",
+      [msgId]
+    ).catch(() => {});
+    try {
+      const app = require("../server");
+      const io = app.get && app.get("io");
+      if (io) {
+        io.emit("wa_message_failed", { phone: cleanPhone, msgId, error: errorMessage });
+        io.emit("wa_message_status", { id: msgId, status: "failed", error: errorMessage });
       }
     } catch (_) {}
   }
@@ -331,8 +352,35 @@ class WaFlowEngine {
   /**
    * Start a brand new flow execution for a phone number
    */
-  async startFlowRun(flow, cleanPhone, sessionKey = null, triggerText = "") {
-    const entryNodeKey = flow.entry_node_key || "start";
+  async startFlowRun(flow, phone, sessionKey = null, triggerText = "") {
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
+    // Resolve entry node key intelligently if empty or not matching existing nodes
+    let entryNodeKey = flow.entry_node_key || "start";
+    const [matchingNodes] = await db.promise().query(
+      "SELECT node_key FROM wa_flow_nodes WHERE flow_id = ? AND node_key = ? LIMIT 1",
+      [flow.id, entryNodeKey]
+    ).catch(() => [[]]);
+
+    if (!matchingNodes || matchingNodes.length === 0) {
+      const [triggerNodes] = await db.promise().query(
+        "SELECT node_key FROM wa_flow_nodes WHERE flow_id = ? AND node_type IN ('start', 'keyword_trigger', 'all_inbound_trigger', 'first_inbound_trigger', 'trigger') ORDER BY id ASC LIMIT 1",
+        [flow.id]
+      ).catch(() => [[]]);
+
+      if (triggerNodes && triggerNodes.length > 0) {
+        entryNodeKey = triggerNodes[0].node_key;
+      } else {
+        const [firstNodes] = await db.promise().query(
+          "SELECT node_key FROM wa_flow_nodes WHERE flow_id = ? ORDER BY id ASC LIMIT 1",
+          [flow.id]
+        ).catch(() => [[]]);
+        if (firstNodes && firstNodes.length > 0) {
+          entryNodeKey = firstNodes[0].node_key;
+        }
+      }
+    }
 
     // Close any previous active runs for this phone
     await db.promise().query(
@@ -437,10 +485,11 @@ class WaFlowEngine {
 
     let nextNodeKey = null;
 
-    if (currentNode.node_type === "collect_input") {
+    const isInputNode = ["collect_input", "collect_number", "collect_email", "collect_date"].includes(currentNode.node_type);
+    if (isInputNode) {
       const varKey = config.var_key || "input";
       const inputVal = (messageText || "").trim();
-      const validationType = config.validation_type || "none";
+      const validationType = config.validation_type || (currentNode.node_type === "collect_number" ? "number" : currentNode.node_type === "collect_email" ? "email" : currentNode.node_type === "collect_date" ? "date" : "none");
       const strictValidation = (validationType !== "none" && validationType !== "") || !!config.regex;
       // Attachments answer free-text questions by default. A validated question
       // (email / phone / number / regex) rejects them unless explicitly opted in,
@@ -502,12 +551,15 @@ class WaFlowEngine {
       let isValid = true;
       let errorMsg = config.invalid_prompt || "Please enter a valid response.";
 
-      if (validationType === "number" || config.regex === "^\\d+$") {
+      if (validationType === "number" || currentNode.node_type === "collect_number" || config.regex === "^\\d+$") {
         isValid = /^\d+$/.test(inputVal.replace(/\s/g, ""));
         if (!isValid) errorMsg = config.invalid_prompt || "Please enter a valid number.";
-      } else if (validationType === "email") {
+      } else if (validationType === "email" || currentNode.node_type === "collect_email") {
         isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inputVal);
         if (!isValid) errorMsg = config.invalid_prompt || "Please enter a valid email address (e.g. name@example.com).";
+      } else if (validationType === "date" || currentNode.node_type === "collect_date") {
+        isValid = !isNaN(Date.parse(inputVal)) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(inputVal);
+        if (!isValid) errorMsg = config.invalid_prompt || "Please enter a valid date (e.g. DD/MM/YYYY).";
       } else if (validationType === "phone") {
         const digits = inputVal.replace(/\D/g, "");
         isValid = digits.length >= 10;
@@ -545,23 +597,27 @@ class WaFlowEngine {
       if (Array.isArray(config.sections) && config.sections.length > 0) {
         config.sections.forEach(sec => {
           (sec.buttons || sec.options || sec.rows || []).forEach(b => {
+            const bTitle = b.label || b.title || b.text || b.name || "";
             buttons.push({
               ...b,
               id: b.id || b.reply_id,
               reply_id: b.reply_id || b.id,
-              title: b.label || b.title || "",
+              title: bTitle,
               next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
             });
           });
         });
       } else {
-        buttons = (config.buttons || config.rows || config.options || []).map(b => ({
-          ...b,
-          id: b.id || b.reply_id,
-          reply_id: b.reply_id || b.id,
-          title: b.label || b.title || "",
-          next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
-        }));
+        buttons = (config.buttons || config.rows || config.options || []).map(b => {
+          const bTitle = b.label || b.title || b.text || b.name || "";
+          return {
+            ...b,
+            id: b.id || b.reply_id,
+            reply_id: b.reply_id || b.id,
+            title: bTitle,
+            next_node_key: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+          };
+        });
       }
       
       if (!Array.isArray(vars._nav_history)) vars._nav_history = [];
@@ -627,7 +683,7 @@ class WaFlowEngine {
         );
       }
 
-      // 6. Clean Title / Fuzzy Substring Match (ignoring emojis, symbols, and leading digits)
+      // 6. Clean Title / Fuzzy Substring & Word Match (ignoring emojis, symbols, and leading digits)
       if (!nextNodeKey && !matchedBtn && rawText.length >= 2) {
         const stripSymbols = (s) => (s || "").replace(/^\d+[\s.)-]+\s*/, "").replace(/[^\p{L}\p{N}\s]/gu, "").toLowerCase().trim();
         const cleanInput = stripSymbols(rawText);
@@ -636,11 +692,20 @@ class WaFlowEngine {
             if (!b.title) return false;
             const cleanTitle = stripSymbols(b.title);
             if (!cleanTitle) return false;
-            return (
+            if (
               cleanTitle === cleanInput ||
               cleanInput.includes(cleanTitle) ||
               cleanTitle.includes(cleanInput)
-            );
+            ) {
+              return true;
+            }
+            // Word token overlap: e.g. user typed "view menu" and button is "view full menu"
+            const inputWords = cleanInput.split(/\s+/).filter(w => w.length >= 3);
+            const titleWords = cleanTitle.split(/\s+/).filter(w => w.length >= 3);
+            if (inputWords.length > 0 && inputWords.every(w => titleWords.includes(w))) {
+              return true;
+            }
+            return false;
           });
         }
       }
@@ -708,7 +773,10 @@ class WaFlowEngine {
   /**
    * Sequentially execute nodes until a suspension node (collect_input / send_buttons / send_list) or end is reached
    */
-  async executeNodeChain(runId, flowId, cleanPhone, startNodeKey, currentVars, sessionKey = null) {
+  async executeNodeChain(runId, flowId, phone, startNodeKey, currentVars, sessionKey = null) {
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     let nodeKey = startNodeKey;
     let vars = { ...currentVars };
     let safetyCounter = 0;
@@ -720,10 +788,27 @@ class WaFlowEngine {
         "SELECT * FROM wa_flow_nodes WHERE flow_id = ? AND node_key = ? LIMIT 1",
         [flowId, nodeKey]
       );
-      const node = nodes[0];
+      let node = nodes[0];
       if (!node) {
-        await this.completeRun(runId, `node_not_found_${nodeKey}`);
-        return true;
+        // Fallback: If nodeKey not found (e.g. entry_node_key is "start" but nodes start with trigger),
+        // try to find trigger/start node, or first node of flow
+        const [fallbackNodes] = await db.promise().query(
+          "SELECT * FROM wa_flow_nodes WHERE flow_id = ? AND node_type IN ('start', 'keyword_trigger', 'all_inbound_trigger', 'first_inbound_trigger', 'trigger') ORDER BY id ASC LIMIT 1",
+          [flowId]
+        ).catch(() => [[]]);
+        node = fallbackNodes[0];
+        if (!node) {
+          const [firstNodes] = await db.promise().query(
+            "SELECT * FROM wa_flow_nodes WHERE flow_id = ? ORDER BY id ASC LIMIT 1",
+            [flowId]
+          ).catch(() => [[]]);
+          node = firstNodes[0];
+        }
+        if (!node) {
+          await this.completeRun(runId, `node_not_found_${nodeKey}`);
+          return true;
+        }
+        nodeKey = node.node_key;
       }
 
       let config = {};
@@ -735,8 +820,22 @@ class WaFlowEngine {
 
       switch (node.node_type) {
         case "start":
-          nodeKey = config.next_node_key;
+        case "keyword_trigger":
+        case "all_inbound_trigger":
+        case "first_inbound_trigger":
+        case "trigger": {
+          nodeKey = config.next_node_key || config.nextNodeId || config.target_node || config.next_node;
+          if (!nodeKey) {
+            const [nextSeqNodes] = await db.promise().query(
+              "SELECT node_key FROM wa_flow_nodes WHERE flow_id = ? AND id > ? ORDER BY id ASC LIMIT 1",
+              [flowId, node.id]
+            ).catch(() => [[]]);
+            if (nextSeqNodes && nextSeqNodes[0]) {
+              nodeKey = nextSeqNodes[0].node_key;
+            }
+          }
           break;
+        }
 
         case "send_message": {
           const renderedText = this.interpolate(config.text || "", vars);
@@ -794,24 +893,32 @@ class WaFlowEngine {
           if (Array.isArray(config.sections) && config.sections.length > 0) {
             sections = config.sections.map(sec => ({
               title: sec.title ? this.interpolate(sec.title, vars) : null,
-              buttons: (sec.buttons || sec.options || sec.rows || []).map(b => ({
-                ...b,
-                id: b.id || b.reply_id,
-                label: this.interpolate(b.label || b.title || "", vars),
-                title: this.interpolate(b.label || b.title || "", vars),
-                description: b.description ? this.interpolate(b.description, vars) : undefined,
-                nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
-              }))
+              buttons: (sec.buttons || sec.options || sec.rows || []).map((b, bIdx) => {
+                const bTitle = this.interpolate(b.label || b.title || b.text || b.name || `Option ${bIdx + 1}`, vars);
+                return {
+                  ...b,
+                  id: b.id || b.reply_id || `opt_${bIdx + 1}`,
+                  reply_id: b.reply_id || b.id || `opt_${bIdx + 1}`,
+                  label: bTitle,
+                  title: bTitle,
+                  description: b.description ? this.interpolate(b.description, vars) : undefined,
+                  nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+                };
+              })
             }));
           } else {
-            const flatBtns = (config.buttons || config.options || []).map(b => ({
-              ...b,
-              id: b.id || b.reply_id,
-              label: this.interpolate(b.label || b.title || "", vars),
-              title: this.interpolate(b.label || b.title || "", vars),
-              description: b.description ? this.interpolate(b.description, vars) : undefined,
-              nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
-            }));
+            const flatBtns = (config.buttons || config.options || []).map((b, bIdx) => {
+              const bTitle = this.interpolate(b.label || b.title || b.text || b.name || `Option ${bIdx + 1}`, vars);
+              return {
+                ...b,
+                id: b.id || b.reply_id || `opt_${bIdx + 1}`,
+                reply_id: b.reply_id || b.id || `opt_${bIdx + 1}`,
+                label: bTitle,
+                title: bTitle,
+                description: b.description ? this.interpolate(b.description, vars) : undefined,
+                nextNodeId: b.nextNodeId || b.next_node_key || b.next_node || b.target_node
+              };
+            });
             sections = [{ title: null, buttons: flatBtns }];
           }
 
@@ -829,10 +936,17 @@ class WaFlowEngine {
           const renderedText = this.interpolate(config.text || "", vars);
           const renderedHeader = config.header_text ? this.interpolate(config.header_text, vars) : null;
           const renderedFooter = config.footer_text ? this.interpolate(config.footer_text, vars) : null;
-          const buttons = (config.buttons || []).map(b => ({
-            ...b,
-            title: this.interpolate(b.title, vars)
-          }));
+          const buttons = (config.buttons || config.options || []).map((b, idx) => {
+            const bTitle = this.interpolate(b.title || b.label || b.text || b.name || `Option ${idx + 1}`, vars);
+            return {
+              ...b,
+              id: b.id || b.reply_id || `btn_${idx + 1}`,
+              reply_id: b.reply_id || b.id || `btn_${idx + 1}`,
+              title: bTitle,
+              label: bTitle,
+              next_node_key: b.next_node_key || b.nextNodeId || b.target_node || b.next_node
+            };
+          });
           await this.sendFlowButtons(cleanPhone, renderedText, buttons, renderedHeader, renderedFooter, sessionKey);
           
           // Suspends execution — wait for user reply
@@ -847,11 +961,18 @@ class WaFlowEngine {
           const renderedText = this.interpolate(config.text || config.body || "Please choose from the list:", vars);
           const renderedButtonText = config.button_text || "View Options";
           const renderedTitle = config.title ? this.interpolate(config.title, vars) : null;
-          const rows = (config.rows || config.buttons || []).map(r => ({
-            ...r,
-            title: this.interpolate(r.title, vars),
-            description: r.description ? this.interpolate(r.description, vars) : undefined
-          }));
+          const rows = (config.rows || config.buttons || config.options || []).map((r, idx) => {
+            const rTitle = this.interpolate(r.title || r.label || r.text || r.name || `Option ${idx + 1}`, vars);
+            return {
+              ...r,
+              id: r.id || r.reply_id || `row_${idx + 1}`,
+              reply_id: r.reply_id || r.id || `row_${idx + 1}`,
+              title: rTitle,
+              label: rTitle,
+              description: r.description ? this.interpolate(r.description, vars) : undefined,
+              next_node_key: r.next_node_key || r.nextNodeId || r.target_node || r.next_node
+            };
+          });
           
           await this.sendFlowList(cleanPhone, renderedText, rows, renderedButtonText, renderedTitle, sessionKey);
 
@@ -863,8 +984,11 @@ class WaFlowEngine {
           return true;
         }
 
-        case "collect_input": {
-          const renderedPrompt = this.interpolate(config.prompt_text || "", vars);
+        case "collect_input":
+        case "collect_number":
+        case "collect_email":
+        case "collect_date": {
+          const renderedPrompt = this.interpolate(config.prompt_text || config.text || config.message || "", vars);
           if (renderedPrompt.trim()) {
             await this.sendFlowMessage(cleanPhone, renderedPrompt, sessionKey);
           }
@@ -1793,33 +1917,46 @@ class WaFlowEngine {
   async sendFlowMessage(phone, text, sessionKey = null) {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
-    const formatted = mdToWa.toWhatsApp(text);
-    
-    // Broadcast & record in DB so live chat updates instantly
-    await this.recordAndEmitBotMessage(phone, formatted, "text");
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
-    return await waLoadBalancer.sendTextMessage(phone, formatted, sessionKey).catch((e) => {
-      console.warn("sendFlowMessage error:", e.message);
+    const formatted = mdToWa.toWhatsApp(text);
+    const msgId = await this.recordAndEmitBotMessage(cleanPhone, formatted, "text");
+
+    try {
+      const result = await waLoadBalancer.sendTextMessage(cleanPhone, formatted, sessionKey);
+      return result;
+    } catch (e) {
+      console.warn(`❌ [WA FlowEngine] sendFlowMessage error for +${cleanPhone}:`, e?.message || e);
+      await this.markBotMessageFailed(msgId, cleanPhone, e?.message || "Failed to send");
       return null;
-    });
+    }
   }
 
   async sendFlowMedia(phone, mediaType, mediaUrl, caption, filename = "", sessionKey = null) {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     const formattedCaption = caption ? mdToWa.toWhatsApp(caption) : "";
+    const msgId = await this.recordAndEmitBotMessage(cleanPhone, formattedCaption || filename || `[Media Attachment: ${mediaType}]`, "media");
 
-    await this.recordAndEmitBotMessage(phone, formattedCaption || filename || `[Media Attachment: ${mediaType}]`, "media");
-
-    return await waLoadBalancer.sendMediaMessage(phone, mediaType || "image", mediaUrl, formattedCaption, filename, sessionKey).catch((e) => {
-      console.warn("sendFlowMedia error:", e.message);
+    try {
+      return await waLoadBalancer.sendMediaMessage(cleanPhone, mediaType || "image", mediaUrl, formattedCaption, filename, sessionKey);
+    } catch (e) {
+      console.warn(`❌ [WA FlowEngine] sendFlowMedia error for +${cleanPhone}:`, e?.message || e);
+      await this.markBotMessageFailed(msgId, cleanPhone, e?.message || "Failed to send");
       return null;
-    });
+    }
   }
 
   async sendFlowTemplate(phone, templateRef, vars = {}, sessionKey = null) {
     const waLoadBalancer = require("./waLoadBalancer");
     const { buildTemplateBodyComponent } = require("./waAutomationService");
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     try {
       let tmpl = null;
       if (typeof templateRef === "number" || /^\d+$/.test(templateRef)) {
@@ -1833,9 +1970,15 @@ class WaFlowEngine {
 
       const bodyComponent = buildTemplateBodyComponent(tmpl.body, vars.name, vars);
       const renderedBody = this.interpolate(tmpl.body, vars);
-      await this.recordAndEmitBotMessage(phone, renderedBody, "template");
+      const msgId = await this.recordAndEmitBotMessage(cleanPhone, renderedBody, "template");
 
-      return await waLoadBalancer.sendTemplateMessage(phone, tmpl.name, tmpl.language || "en", bodyComponent ? [bodyComponent] : [], sessionKey);
+      try {
+        return await waLoadBalancer.sendTemplateMessage(cleanPhone, tmpl.name, tmpl.language || "en", bodyComponent ? [bodyComponent] : [], sessionKey);
+      } catch (err) {
+        console.warn(`❌ [WA FlowEngine] sendFlowTemplate error for +${cleanPhone}:`, err?.message || err);
+        await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
+        return null;
+      }
     } catch (e) {
       console.warn("sendFlowTemplate error:", e.message);
       return null;
@@ -1847,17 +1990,21 @@ class WaFlowEngine {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
 
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     // Standardized numbered text menu for WhatsApp Web and fallback
     let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
-    buttons.forEach((b, idx) => {
-      const cleanTitle = (b.title || `Option ${idx + 1}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+    (buttons || []).forEach((b, idx) => {
+      const rawTitle = b.title || b.label || b.text || b.name || `Option ${idx + 1}`;
+      const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
       menuBody += `*${idx + 1}.* ${cleanTitle}\n`;
     });
     if (footerText) menuBody += `\n_${footerText}_`;
     else menuBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
 
     // Record & broadcast interactive menu
-    await this.recordAndEmitBotMessage(phone, menuBody, "interactive", {
+    const msgId = await this.recordAndEmitBotMessage(cleanPhone, menuBody, "interactive", {
       type: "buttons",
       header: headerText,
       footer: footerText,
@@ -1865,39 +2012,45 @@ class WaFlowEngine {
       text
     }, sessionKey);
 
-    if (waCloud.isConfigured() && buttons.length) {
-      // Cloud API reply-buttons cap at 3. Beyond that, render as a list so that
-      // EVERY option stays tappable instead of being silently dropped.
-      const sent = buttons.length > 3
-        ? await waCloud.sendInteractiveList(
-            phone,
-            text,
-            "View Options",
-            buttons.slice(0, 10).map((b, i) => ({
-              id: b.reply_id || b.id || `btn_${i + 1}`,
-              title: (b.title || `Option ${i + 1}`).slice(0, 24),
-              description: b.description || undefined,
-            })),
-            headerText,
-            footerText
-          ).catch(() => null)
-        : await waCloud.sendInteractiveButtons(
-            phone,
-            text,
-            buttons.map((b, i) => ({
-              id: b.reply_id || b.id || `btn_${i + 1}`,
-              title: (b.title || `Option ${i + 1}`).slice(0, 20),
-            })),
-            headerText,
-            footerText
-          ).catch(() => null);
-      if (sent) return sent;
+    if (waCloud.isConfigured() && buttons && buttons.length) {
+      try {
+        const sent = buttons.length > 3
+          ? await waCloud.sendInteractiveList(
+              cleanPhone,
+              text,
+              "View Options",
+              buttons.slice(0, 10).map((b, i) => ({
+                id: b.reply_id || b.id || `btn_${i + 1}`,
+                title: String(b.title || b.label || b.text || b.name || `Option ${i + 1}`).slice(0, 24),
+                description: b.description || undefined,
+              })),
+              headerText,
+              footerText
+            )
+          : await waCloud.sendInteractiveButtons(
+              cleanPhone,
+              text,
+              buttons.map((b, i) => ({
+                id: b.reply_id || b.id || `btn_${i + 1}`,
+                title: String(b.title || b.label || b.text || b.name || `Option ${i + 1}`).slice(0, 20),
+              })),
+              headerText,
+              footerText
+            );
+        if (sent) return sent;
+      } catch (cloudErr) {
+        console.warn(`[WA Flow] Cloud API button send failed, attempting text fallback: ${cloudErr.message}`);
+      }
     }
 
-    return await waLoadBalancer.sendTextMessage(phone, menuBody, sessionKey).catch((err) => {
-      console.warn("sendFlowButtons text fallback error:", err?.message || err);
+    try {
+      const result = await waLoadBalancer.sendTextMessage(cleanPhone, menuBody, sessionKey);
+      return result;
+    } catch (err) {
+      console.error(`❌ [WA FlowEngine] Failed to deliver buttons to +${cleanPhone}:`, err?.message || err);
+      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
       return null;
-    });
+    }
   }
 
   async sendFlowList(phone, text, rows, buttonText = "View Options", title = null, sessionKey = null) {
@@ -1905,16 +2058,20 @@ class WaFlowEngine {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
 
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     let listBody = (title ? `*${title}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
-    rows.forEach((r, idx) => {
-      const cleanTitle = (r.title || `Option ${idx + 1}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+    (rows || []).forEach((r, idx) => {
+      const rawTitle = r.title || r.label || r.text || r.name || `Option ${idx + 1}`;
+      const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
       listBody += `*${idx + 1}.* ${cleanTitle}`;
       if (r.description) listBody += ` - _${r.description}_`;
       listBody += "\n";
     });
     listBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
 
-    await this.recordAndEmitBotMessage(phone, listBody, "interactive", {
+    const msgId = await this.recordAndEmitBotMessage(cleanPhone, listBody, "interactive", {
       type: "list",
       title,
       button_text: buttonText,
@@ -1922,23 +2079,31 @@ class WaFlowEngine {
       text
     }, sessionKey);
 
-    if (waCloud.isConfigured() && rows.length) {
-      const formattedSections = [{
-        title: title || "Options",
-        rows: rows.slice(0, 10).map((r, i) => ({
-          id: r.id || r.reply_id || `row_${i + 1}`,
-          title: (r.title || `Option ${i + 1}`).slice(0, 24),
-          description: r.description ? String(r.description).slice(0, 72) : undefined
-        }))
-      }];
-      const sent = await waCloud.sendInteractiveList(phone, text, buttonText, formattedSections, title).catch(() => null);
-      if (sent) return sent;
+    if (waCloud.isConfigured() && rows && rows.length) {
+      try {
+        const formattedSections = [{
+          title: title || "Options",
+          rows: rows.slice(0, 10).map((r, i) => ({
+            id: r.id || r.reply_id || `row_${i + 1}`,
+            title: String(r.title || r.label || r.text || r.name || `Option ${i + 1}`).slice(0, 24),
+            description: r.description ? String(r.description).slice(0, 72) : undefined
+          }))
+        }];
+        const sent = await waCloud.sendInteractiveList(cleanPhone, text, buttonText, formattedSections, title);
+        if (sent) return sent;
+      } catch (cloudErr) {
+        console.warn(`[WA Flow] Cloud API list send failed, falling back to text: ${cloudErr.message}`);
+      }
     }
 
-    return await waLoadBalancer.sendTextMessage(phone, listBody, sessionKey).catch((err) => {
-      console.warn("sendFlowList text fallback error:", err?.message || err);
+    try {
+      const result = await waLoadBalancer.sendTextMessage(cleanPhone, listBody, sessionKey);
+      return result;
+    } catch (err) {
+      console.error(`❌ [WA FlowEngine] Failed to deliver list to +${cleanPhone}:`, err?.message || err);
+      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
       return null;
-    });
+    }
   }
 
   async sendFlowInteractiveMenu(phone, text, sections, headerText = null, footerText = null, sessionKey = null) {
@@ -1946,8 +2111,11 @@ class WaFlowEngine {
     const waLoadBalancer = require("./waLoadBalancer");
     const mdToWa = require("./mdToWa");
 
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
     const allButtons = [];
-    sections.forEach(sec => {
+    (sections || []).forEach(sec => {
       (sec.buttons || sec.options || sec.rows || []).forEach(b => {
         allButtons.push({
           ...b,
@@ -1958,12 +2126,13 @@ class WaFlowEngine {
 
     let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
     let globalIdx = 1;
-    sections.forEach(sec => {
+    (sections || []).forEach(sec => {
       if (sec.title) {
         menuBody += `*${sec.title}*\n`;
       }
       (sec.buttons || sec.options || sec.rows || []).forEach(b => {
-        const cleanTitle = (b.label || b.title || `Option ${globalIdx}`).replace(/^\d+[\s.)-]+\s*/, "").trim();
+        const rawTitle = b.label || b.title || b.text || b.name || `Option ${globalIdx}`;
+        const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
         menuBody += `*${globalIdx}.* ${cleanTitle}`;
         if (b.description) menuBody += ` - _${b.description}_`;
         menuBody += "\n";
@@ -1974,7 +2143,7 @@ class WaFlowEngine {
     if (footerText) menuBody += `_${footerText}_`;
     else menuBody += `_Reply with option number (1, 2, 3...) or tap an option below._`;
 
-    await this.recordAndEmitBotMessage(phone, menuBody.trim(), "interactive", {
+    const msgId = await this.recordAndEmitBotMessage(cleanPhone, menuBody.trim(), "interactive", {
       type: "interactive_menu",
       header: headerText,
       footer: footerText,
@@ -1984,43 +2153,51 @@ class WaFlowEngine {
     }, sessionKey);
 
     if (waCloud.isConfigured() && allButtons.length) {
-      if (allButtons.length <= 3 && sections.length === 1 && !allButtons.some(b => b.description)) {
-        const sent = await waCloud.sendInteractiveButtons(
-          phone,
-          text,
-          allButtons.map((b, i) => ({
-            id: b.id || b.reply_id || `btn_${i + 1}`,
-            title: (b.label || b.title || `Option ${i + 1}`).slice(0, 20),
-          })),
-          headerText,
-          footerText
-        ).catch(() => null);
-        if (sent) return sent;
-      } else {
-        const formattedSections = sections.map((sec, sIdx) => ({
-          title: (sec.title || `Section ${sIdx + 1}`).slice(0, 24),
-          rows: (sec.buttons || sec.options || sec.rows || []).slice(0, 10).map((b, i) => ({
-            id: b.id || b.reply_id || `opt_${sIdx + 1}_${i + 1}`,
-            title: (b.label || b.title || `Option ${i + 1}`).slice(0, 24),
-            description: b.description ? String(b.description).slice(0, 72) : undefined,
-          }))
-        }));
-        const sent = await waCloud.sendInteractiveList(
-          phone,
-          text,
-          "Select Option",
-          formattedSections,
-          headerText,
-          footerText
-        ).catch(() => null);
-        if (sent) return sent;
+      try {
+        if (allButtons.length <= 3 && sections.length === 1 && !allButtons.some(b => b.description)) {
+          const sent = await waCloud.sendInteractiveButtons(
+            cleanPhone,
+            text,
+            allButtons.map((b, i) => ({
+              id: b.id || b.reply_id || `btn_${i + 1}`,
+              title: String(b.label || b.title || b.text || b.name || `Option ${i + 1}`).slice(0, 20),
+            })),
+            headerText,
+            footerText
+          );
+          if (sent) return sent;
+        } else {
+          const formattedSections = sections.map((sec, sIdx) => ({
+            title: (sec.title || `Section ${sIdx + 1}`).slice(0, 24),
+            rows: (sec.buttons || sec.options || sec.rows || []).slice(0, 10).map((b, i) => ({
+              id: b.id || b.reply_id || `opt_${sIdx + 1}_${i + 1}`,
+              title: String(b.label || b.title || b.text || b.name || `Option ${i + 1}`).slice(0, 24),
+              description: b.description ? String(b.description).slice(0, 72) : undefined,
+            }))
+          }));
+          const sent = await waCloud.sendInteractiveList(
+            cleanPhone,
+            text,
+            "Select Option",
+            formattedSections,
+            headerText,
+            footerText
+          );
+          if (sent) return sent;
+        }
+      } catch (cloudErr) {
+        console.warn(`[WA Flow] Cloud API menu send failed, falling back to text: ${cloudErr.message}`);
       }
     }
 
-    return await waLoadBalancer.sendTextMessage(phone, menuBody.trim(), sessionKey).catch((err) => {
-      console.warn("sendFlowInteractiveMenu text fallback error:", err?.message || err);
+    try {
+      const result = await waLoadBalancer.sendTextMessage(cleanPhone, menuBody.trim(), sessionKey);
+      return result;
+    } catch (err) {
+      console.error(`❌ [WA FlowEngine] Failed to deliver interactive menu to +${cleanPhone}:`, err?.message || err);
+      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
       return null;
-    });
+    }
   }
 
   interpolate(template, vars = {}) {

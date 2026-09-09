@@ -189,14 +189,16 @@ router.delete("/:id", auth, async (req, res) => {
 // ── Trigger Flow directly for a Phone Number ──────────────────────────────────
 router.post("/:id/trigger-phone", auth, async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { phone, sessionKey } = req.body;
     if (!phone) return res.status(400).json({ error: "Phone number required" });
-    const cleanPhone = phone.replace(/\D/g, "");
+    let cleanPhone = String(phone).replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
     const [flows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ?", [req.params.id]);
     if (!flows.length) return res.status(404).json({ error: "Flow not found" });
 
-    const result = await waFlowEngine.startFlowRun(flows[0], cleanPhone);
+    const reqSessionKey = sessionKey || req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id || null;
+    const result = await waFlowEngine.startFlowRun(flows[0], cleanPhone, reqSessionKey);
     res.json({ success: true, message: `Flow "${flows[0].name}" started for +${cleanPhone}`, result });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -451,9 +453,10 @@ router.get("/:id/analytics", auth, async (req, res) => {
 // ── Trigger Main Menu / Flow directly for a Phone Number (CRM Integration) ────
 router.post("/send-menu", async (req, res) => {
   try {
-    const { phone, flow_id, flowId } = req.body || {};
+    const { phone, flow_id, flowId, sessionKey } = req.body || {};
     if (!phone) return res.status(400).json({ error: "Phone number is required" });
-    const cleanPhone = String(phone).replace(/\D/g, "");
+    let cleanPhone = String(phone).replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
     let targetFlow = null;
     const requestedId = flow_id || flowId;
@@ -472,7 +475,8 @@ router.post("/send-menu", async (req, res) => {
     if (!targetFlow) {
       return res.status(404).json({ error: "No WhatsApp flow found" });
     }
-    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone);
+    const reqSessionKey = sessionKey || req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id || null;
+    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone, reqSessionKey);
     res.json({ success: true, message: `Flow "${targetFlow.name}" triggered for +${cleanPhone}`, flowId: targetFlow.id, result });
   } catch (err) {
     res.status(500).json({ error: err.message });

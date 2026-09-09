@@ -139,9 +139,10 @@ app.use("/api/wa/reminders", require("./routes/waReminderRoutes"));
 // Direct CRM trigger route for external webhooks or CRM WhatsApp triggers
 app.post("/send-menu", async (req, res) => {
   try {
-    const { phone, flow_id, flowId } = req.body || {};
+    const { phone, flow_id, flowId, sessionKey } = req.body || {};
     if (!phone) return res.status(400).json({ error: "Phone number is required" });
-    const cleanPhone = String(phone).replace(/\D/g, "");
+    let cleanPhone = String(phone).replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
     const waFlowEngine = require("./services/waFlowEngine");
     const db = require("./config/database");
 
@@ -162,7 +163,7 @@ app.post("/send-menu", async (req, res) => {
     if (!targetFlow) {
       return res.status(404).json({ error: "No WhatsApp flow found in system" });
     }
-    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone);
+    const result = await waFlowEngine.startFlowRun(targetFlow, cleanPhone, sessionKey || null);
     res.json({ success: true, message: `Menu triggered for +${cleanPhone}`, flow: targetFlow.name, result });
   } catch (err) {
     res.status(500).json({ error: err.message });

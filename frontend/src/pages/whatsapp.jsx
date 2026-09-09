@@ -1018,7 +1018,8 @@ export default function WhatsAppPage() {
 
   const handleTriggerFlowForChat = async (flowId) => {
     if (!selectedChat || !flowId) return;
-    const cleanPhone = selectedChat.id.replace(/\D/g, "");
+    let cleanPhone = selectedChat.id.replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
     setTriggeringFlow(true);
     try {
       const token = localStorage.getItem("token");
@@ -1217,8 +1218,10 @@ export default function WhatsAppPage() {
     try {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
-      const phone = selectedChat.id.replace(/\D/g, "");
+      let phone = selectedChat.id.replace(/\D/g, "");
+      if (phone.length === 10) phone = "91" + phone;
       const res = await axios.post(`${API}/api/wa/flows/${flowId}/trigger-phone`, { phone }, { headers });
+      alert(res.data?.message || "Flow triggered successfully!");
       setShowFlowModal(false);
       setShowAttachMenu(false);
       await fetchMessages(selectedChat.id);
