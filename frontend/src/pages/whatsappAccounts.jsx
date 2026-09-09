@@ -12,6 +12,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import axios from "axios";
 import { API } from "../config/api";
+import socket from "../socket/socket";
 import WhatsAppNav from "../components/WhatsAppNav";
 import WAVariablePicker from "../components/WAVariablePicker";
 
@@ -238,7 +239,7 @@ export default function WhatsAppAccounts() {
   const fetchQr = useCallback(async (force = false) => {
     setQrLoading(true);
     try {
-      const url = force ? `${API}/api/whatsapp/qr?force=true` : `${API}/api/whatsapp/qr`;
+      const url = force ? `${API}/api/whatsapp/qr?refresh=true` : `${API}/api/whatsapp/qr`;
       const res = await axios.get(url, { headers: headers() });
       if (res.data?.qr) {
         setQrCode(res.data.qr);
@@ -258,22 +259,55 @@ export default function WhatsAppAccounts() {
     fetchKbDocs();
   }, []);
 
-  // QR auto-countdown timer
+  // Socket.IO real-time QR and connection sync
+  useEffect(() => {
+    const handleWaQr = (data) => {
+      const qrVal = data?.qr || data?.message?.qr || (typeof data === "string" ? data : null);
+      if (qrVal) {
+        setQrCode(qrVal);
+        setQrCountdown(25);
+        setQrLoading(false);
+      }
+    };
+
+    const handleWaReady = () => {
+      setQrCode(null);
+      setQrLoading(false);
+      fetchAll();
+    };
+
+    const handleWaDisconnected = () => {
+      fetchAll();
+    };
+
+    socket.on("wa_qr", handleWaQr);
+    socket.on("wa_ready", handleWaReady);
+    socket.on("wa_connected", handleWaReady);
+    socket.on("wa_disconnected", handleWaDisconnected);
+
+    return () => {
+      socket.off("wa_qr", handleWaQr);
+      socket.off("wa_ready", handleWaReady);
+      socket.off("wa_connected", handleWaReady);
+      socket.off("wa_disconnected", handleWaDisconnected);
+    };
+  }, [fetchAll]);
+
+  // QR auto-countdown timer (visual indicator of WhatsApp Web's QR lifespan)
   useEffect(() => {
     let timer;
-    if (activeTab === "web" && qrCode) {
+    if (activeTab === "web" && qrCode && !webConnected) {
       timer = setInterval(() => {
         setQrCountdown((prev) => {
           if (prev <= 1) {
-            fetchQr(false);
-            return 25;
+            return 0;
           }
           return prev - 1;
         });
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [activeTab, qrCode, fetchQr]);
+  }, [activeTab, qrCode, webConnected]);
 
   // ── AI Master Toggle ──
   const handleToggleAiService = async () => {
@@ -1382,14 +1416,19 @@ export default function WhatsAppAccounts() {
 
                     {qrCode && (
                       <div className="flex items-center gap-3 text-xs">
-                        <span className="text-gray-500">Auto-refreshing in: <strong className="text-gray-800 font-mono">{qrCountdown}s</strong></span>
+                        {qrCountdown > 0 ? (
+                          <span className="text-gray-500">QR Valid: <strong className="text-gray-800 font-mono">{qrCountdown}s</strong></span>
+                        ) : (
+                          <span className="text-amber-600 font-semibold">QR Expired</span>
+                        )}
                         <button
                           type="button"
                           onClick={() => fetchQr(true)}
-                          className="text-[#25D366] font-bold hover:underline flex items-center gap-1"
+                          disabled={qrLoading}
+                          className="text-[#25D366] font-bold hover:underline flex items-center gap-1 disabled:opacity-50"
                         >
-                          <RefreshCw size={12} />
-                          <span>Refresh Now</span>
+                          <RefreshCw size={12} className={qrLoading ? "animate-spin" : ""} />
+                          <span>{qrLoading ? "Refreshing..." : "Refresh Now"}</span>
                         </button>
                       </div>
                     )}

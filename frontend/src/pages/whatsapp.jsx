@@ -560,7 +560,7 @@ export default function WhatsAppPage() {
     try {
       const token = localStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const endpoint = force ? "/api/whatsapp/qr?force=true" : "/api/whatsapp/qr";
+      const endpoint = force ? "/api/whatsapp/qr?refresh=true" : "/api/whatsapp/qr";
       let res;
       try {
         res = await axios.get(`${API}${endpoint}`, { headers, timeout: 20000 });
@@ -1720,7 +1720,6 @@ export default function WhatsAppPage() {
       setMessages([]);
       setAccountDetails(null);
       fetchStatus();
-      fetchQr(true);
     };
 
     socket.on("wa_qr", handleWaQr);

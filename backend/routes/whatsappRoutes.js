@@ -144,8 +144,13 @@ router.get("/qr", async (req, res) => {
   try {
     const session = userSession(req);
     if (req.query.force === "true" || req.query.refresh === "true") {
-      await session.logout(true).catch(() => {});
-      await session.init(true).catch(() => {});
+      const refreshed = await session.refreshQr();
+      return res.json({
+        qr: refreshed.qr || session.qrCode || null,
+        initializing: session.isInitializing,
+        connected: session.ready,
+        message: session.ready ? "Connected" : (refreshed.qr || session.qrCode) ? "QR Ready" : "Refreshing QR code...",
+      });
     }
 
     // Fast-path: return cached QR instantly if already in memory (<1ms)
@@ -156,12 +161,7 @@ router.get("/qr", async (req, res) => {
       return res.json({ qr: null, initializing: false, connected: true });
     }
 
-    // Trigger background initialization if not already in flight
-    if (!session.client && !session.isInitializing) {
-      session.init(false).catch(() => {});
-    }
-
-    // Wait for up to 15s for the initial QR event to emit
+    // Wait for up to 15s for the initial QR event to emit (getQr will initiate init(false) cleanly if needed)
     const qr = await session.getQr(15000);
     res.json({
       qr: qr || session.qrCode || null,
@@ -177,10 +177,20 @@ router.get("/qr", async (req, res) => {
     const session = userSession(req);
     res.json({
       qr: session?.qrCode || null,
-      initializing: session?.isInitializing || true,
+      initializing: session?.isInitializing || false,
       connected: session?.ready || false,
       message: "Initializing WhatsApp engine in background...",
     });
+  }
+});
+
+router.post("/refresh-qr", async (req, res) => {
+  try {
+    const session = userSession(req);
+    const result = await session.refreshQr();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Failed to refresh QR code" });
   }
 });
 

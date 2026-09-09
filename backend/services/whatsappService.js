@@ -1,8 +1,43 @@
 const { Client, LocalAuth, MessageMedia, Location } = require("whatsapp-web.js");
 const path = require("path");
 const fs = require("fs");
+const cp = require("child_process");
 
 const puppeteer = require("puppeteer");
+
+// Forcefully terminates any orphan Chrome / Edge processes holding this session on Windows
+function killSessionBrowserProcesses(sessionPath) {
+  if (process.platform !== "win32" || !sessionPath) return;
+  try {
+    const escaped = sessionPath.replace(/'/g, "''").replace(/\\/g, "\\\\");
+    const folderName = path.basename(sessionPath);
+    const psCmd = `Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'msedge.exe' -or $_.Name -eq 'chrome.exe') -and ($_.CommandLine -like '*whatsapp-sessions*${folderName}*' -or $_.CommandLine -like '*${escaped}*') } | Select-Object -ExpandProperty ProcessId`;
+    const out = cp.execSync(`powershell -NoProfile -Command "${psCmd}"`, { timeout: 8000, encoding: "utf8" });
+    const pids = out.split(/\r?\n/).map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+    for (const pid of pids) {
+      try {
+        cp.execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
+        console.log(`🧹 [Process Guard] Killed orphaned browser process tree PID ${pid} for session ${folderName}`);
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  // Remove lingering Chrome lockfiles that cause "browser is already running" or EBUSY on Windows
+  try {
+    const sessionDir = path.join(sessionPath, "session");
+    const lockFiles = [
+      path.join(sessionDir, "SingletonLock"),
+      path.join(sessionDir, "SingletonCookie"),
+      path.join(sessionDir, "SingletonSocket"),
+      path.join(sessionDir, "lockfile"),
+    ];
+    for (const lf of lockFiles) {
+      if (fs.existsSync(lf)) {
+        try { fs.unlinkSync(lf); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
 
 function getExecutablePath() {
   if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
@@ -107,6 +142,8 @@ class WhatsAppService {
     this._queue = Promise.resolve();
     this._sendQueue = Promise.resolve();
     this._lastSendAt = 0;
+    this._initPromise = null;
+    this._getQrPromise = null;
   }
 
   withTimeout(promise, ms = 10000, label = "operation") {
@@ -223,12 +260,19 @@ class WhatsAppService {
   }
 
   init(forceFresh = false) {
-    return this.lifecycle(() => this._doInit(forceFresh));
+    if (!forceFresh && this.ready) return Promise.resolve();
+    if (!forceFresh && this.isInitializing && this._initPromise) {
+      return this._initPromise;
+    }
+    this._initPromise = this.lifecycle(() => this._doInit(forceFresh))
+      .finally(() => {
+        this._initPromise = null;
+      });
+    return this._initPromise;
   }
 
   async _doInit(forceFresh = false) {
-    if (this.ready) return;
-    if (this.isInitializing && !forceFresh) return;
+    if (this.ready && !forceFresh) return;
     if (this.client && !forceFresh && !this.isInitializing && (this.ready || this.qrCode)) return;
 
     const sessionPath = this.sessionPath;
@@ -239,6 +283,9 @@ class WhatsAppService {
       } catch (_) {}
       this.client = null;
     }
+
+    // Terminate any lingering browser processes holding this session directory on Windows
+    killSessionBrowserProcesses(sessionPath);
 
     // Only wipe the saved session on an explicit reset (forceFresh). A normal
     // reconnect — e.g. after a server restart — must reuse the saved LocalAuth
@@ -1053,44 +1100,100 @@ class WhatsAppService {
     });
   }
 
+  // Dynamic In-Page QR Refresh: If the browser is running on WhatsApp Web, refresh
+  // the QR code in-place using Puppeteer instead of restarting the whole browser engine!
+  async refreshQr() {
+    if (this.ready) return { connected: true, qr: null, message: "Already connected" };
+
+    if (this.client && this.client.pupPage && !this.client.pupPage.isClosed()) {
+      try {
+        console.log(`🔄 [Dynamic QR] Refreshing in-page QR for session ${this.key}...`);
+        this.qrCode = null;
+
+        // Try clicking WhatsApp Web's reload button if present (appears when QR expires)
+        const clickedReload = await this.client.pupPage.evaluate(() => {
+          const reloadBtn = document.querySelector('button[role="button"]') ||
+                            document.querySelector('div[data-ref]') ||
+                            document.querySelector('span[data-icon="refresh"]') ||
+                            document.querySelector('[data-testid="qrcode"] + div button');
+          if (reloadBtn && typeof reloadBtn.click === "function") {
+            reloadBtn.click();
+            return true;
+          }
+          return false;
+        }).catch(() => false);
+
+        if (!clickedReload) {
+          await this.client.pupPage.reload({ waitUntil: "load", timeout: 25000 }).catch(() => {});
+        }
+
+        const newQr = await this.getQr(15000).catch(() => null);
+        return {
+          connected: false,
+          qr: newQr || this.qrCode || null,
+          refreshed: true,
+          message: (newQr || this.qrCode) ? "QR Refreshed" : "QR refreshing in background",
+        };
+      } catch (err) {
+        console.warn(`⚠️ [Dynamic QR] In-page refresh failed (${err.message}), falling back to init...`);
+      }
+    }
+
+    // Fallback: if browser was stopped, boot it cleanly
+    this.qrCode = null;
+    await this.init(false).catch(() => {});
+    const qr = await this.getQr(15000).catch(() => null);
+    return {
+      connected: this.ready,
+      qr: qr || this.qrCode || null,
+      refreshed: true,
+      message: this.ready ? "Connected" : (qr || this.qrCode) ? "QR Ready" : "Initializing WhatsApp engine...",
+    };
+  }
+
   async getQr(timeout = 20000) {
     if (this.qrCode) return this.qrCode;
     if (this.ready) return null; // already connected via a restored session — no QR needed
 
-    if (!this.client || (!this.isInitializing && !this.ready && !this.qrCode)) {
+    if (!this.client && !this.isInitializing) {
       this.init(false).catch((err) => {
         console.warn("⚠️ WhatsApp init error in getQr:", err?.message || err);
       });
     }
 
-    return new Promise((resolve) => {
+    if (this._getQrPromise) {
+      return this._getQrPromise;
+    }
+
+    this._getQrPromise = new Promise((resolve) => {
+      let resolved = false;
+      const done = (val) => {
+        if (resolved) return;
+        resolved = true;
+        clearInterval(checkTimer);
+        clearTimeout(timeoutTimer);
+        const idx = this.qrCallbacks.indexOf(onQr);
+        if (idx !== -1) this.qrCallbacks.splice(idx, 1);
+        this._getQrPromise = null;
+        resolve(val);
+      };
+
       const checkTimer = setInterval(() => {
-        if (this.qrCode) {
-          clearInterval(checkTimer);
-          clearTimeout(timeoutTimer);
-          return resolve(this.qrCode);
-        }
-        if (this.ready) {
-          // saved session was restored directly — connected without needing a new QR
-          clearInterval(checkTimer);
-          clearTimeout(timeoutTimer);
-          return resolve(null);
-        }
+        if (this.qrCode) return done(this.qrCode);
+        if (this.ready) return done(null);
       }, 200);
 
       const timeoutTimer = setTimeout(() => {
-        clearInterval(checkTimer);
-        const idx = this.qrCallbacks.indexOf(resolve);
-        if (idx !== -1) this.qrCallbacks.splice(idx, 1);
-        resolve(this.qrCode || null);
+        done(this.qrCode || null);
       }, timeout);
 
-      this.qrCallbacks.push((qr) => {
-        clearInterval(checkTimer);
-        clearTimeout(timeoutTimer);
-        resolve(qr);
-      });
+      const onQr = (qr) => {
+        done(qr);
+      };
+      this.qrCallbacks.push(onQr);
     });
+
+    return this._getQrPromise;
   }
 
   // CRM fallback contacts barely change minute-to-minute — cache them for 5
@@ -2213,6 +2316,9 @@ class WhatsAppService {
     this.messagesFetchCache = {};
     this.lastChatsFetch = 0;
 
+    // Clean up any lingering browser processes on Windows
+    killSessionBrowserProcesses(this.sessionPath);
+
     // Update database account status
     try {
       const db = require("../config/database");
@@ -2228,7 +2334,7 @@ class WhatsAppService {
           fs.rmSync(this.sessionPath, { recursive: true, force: true });
         }
       } catch (_) {}
-      sessions.delete(this.key);
+      // Keep instance in sessions map to prevent split-brain re-initializations
       this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "LOGOUT", purged: true, sessionKey: this.key });
       return { success: true, purged: true, message: "Session permanently deleted from disk and memory." };
     } else {
