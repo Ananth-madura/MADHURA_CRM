@@ -199,7 +199,7 @@ export default function DashboardLayout() {
                   } min-h-screen mt-[65px] p-3 md:p-5 lg:p-6 pb-16 md:pb-6`
               }`}
           >
-            <div className={`flex-1 w-full ${isWhatsApp ? "h-screen min-h-screen flex flex-col overflow-hidden" : ""}`}>
+            <div className={`flex-1 w-full ${isWhatsApp ? "h-screen min-h-0 flex flex-col overflow-hidden" : ""}`}>
               <Outlet />
             </div>
             {!isWhatsApp && (

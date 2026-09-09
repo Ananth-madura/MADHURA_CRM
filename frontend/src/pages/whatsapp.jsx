@@ -2074,7 +2074,7 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col h-screen min-h-screen bg-[#0b141a] text-slate-100 p-1 md:p-2 overflow-hidden shadow-2xl">
+    <div className="w-full flex-1 flex flex-col h-screen min-h-0 bg-[#0b141a] text-slate-100 p-1 md:p-2 overflow-hidden shadow-2xl">
       <WhatsAppNav
         onAccountBalance={fetchAccountBalance}
         onSyncWhatsApp={handleSyncWhatsApp}
