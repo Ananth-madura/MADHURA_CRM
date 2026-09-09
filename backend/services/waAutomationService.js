@@ -143,7 +143,7 @@ function resolveSpintax(text, injectMicroJitter = true) {
   return result;
 }
 
-// Substitutes multi-dynamic {{placeholder}} and {placeholder} tokens in a message
+// Substitutes multi-dynamic {{placeholder}}, {placeholder}, and %placeholder% tokens in a message
 function formatMessagePlaceholders(templateText, contactName, data = {}) {
   let msg = templateText || "Hello {{name}}!";
   const rawName = contactName || data.name || data.customer_name || data.client_name || data.company_name || data.company || "Customer";
@@ -151,21 +151,35 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
   const firstName = nameParts[0] || "Customer";
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
 
+  // Dynamic Date & Time in Indian Standard Time (Asia/Kolkata)
+  const istTz = "Asia/Kolkata";
   const now = new Date();
-  const currentHour = now.getHours();
+
+  const dateOptions = { day: "2-digit", month: "short", year: "numeric", timeZone: istTz };
+  const formattedDate = now.toLocaleDateString("en-IN", dateOptions);
+  const formattedTime = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: istTz });
+  const dayName = now.toLocaleDateString("en-IN", { weekday: "long", timeZone: istTz });
+
+  // Hour in IST for smart greeting
+  const istHourStr = now.toLocaleTimeString("en-IN", { hour: "numeric", hour12: false, timeZone: istTz });
+  const currentHour = parseInt(istHourStr, 10) || now.getHours();
   let greetingTime = "Hello";
   if (currentHour < 12) greetingTime = "Good morning";
   else if (currentHour < 17) greetingTime = "Good afternoon";
   else greetingTime = "Good evening";
 
-  const dateOptions = { day: "2-digit", month: "short", year: "numeric" };
-  const formattedDate = now.toLocaleDateString("en-IN", dateOptions);
-  const formattedTime = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-  const dayName = now.toLocaleDateString("en-IN", { weekday: "long" });
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Tomorrow calculation in IST
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const tomorrowFormatted = tomorrow.toLocaleDateString("en-IN", dateOptions);
+  const tomorrowDayName = tomorrow.toLocaleDateString("en-IN", { weekday: "long", timeZone: istTz });
+
+  // Yesterday calculation in IST
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayFormatted = yesterday.toLocaleDateString("en-IN", dateOptions);
+  const yesterdayDayName = yesterday.toLocaleDateString("en-IN", { weekday: "long", timeZone: istTz });
+
+  const dateTimeStr = `${formattedDate}, ${formattedTime}`;
+  const tomorrowDateTimeStr = `${tomorrowFormatted}, ${formattedTime}`;
 
   const amountVal = data.amount || data.total_amount || data.invoice_amount || data.balance || "";
   const formattedAmount = amountVal ? (String(amountVal).startsWith("₹") ? String(amountVal) : `₹${amountVal}`) : "";
@@ -173,12 +187,14 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
   const known = {
     // 👤 Contact Person & Customer
     name: rawName,
+    full_name: rawName,
+    customer_name: rawName,
+    client_name: rawName,
+    contact_name: rawName,
     first_name: firstName,
     firstname: firstName,
     last_name: lastName,
     lastname: lastName,
-    customer_name: rawName,
-    client_name: rawName,
     "customer.name": rawName,
     "customer.first_name": firstName,
     "customer.phone": data.phone || data.mobile || "",
@@ -189,6 +205,8 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     // 🏢 Business & Company
     company: data.company || data.company_name || data.business_name || "Madhura Tech",
     company_name: data.company || data.company_name || data.business_name || "Madhura Tech",
+    business_name: data.company || data.company_name || data.business_name || "Madhura Tech",
+    client_company: data.company || data.company_name || data.business_name || "Madhura Tech",
     brand_name: "Madhura Tech",
     sender_company: "Madhura Tech",
     my_company: "Madhura Tech",
@@ -196,16 +214,25 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     // 📞 Phone & Email
     phone: data.phone || data.mobile || data.mobile_number || "",
     mobile: data.phone || data.mobile || data.mobile_number || "",
+    phone_number: data.phone || data.mobile || data.mobile_number || "",
+    mobile_number: data.phone || data.mobile || data.mobile_number || "",
+    contact_no: data.phone || data.mobile || data.mobile_number || "",
     email: data.email || data.email_id || "",
+    email_id: data.email || data.email_id || "",
+    email_address: data.email || data.email_id || "",
 
     // 📍 Location & Address
     address: data.address || data.street_address || data.city || data.location_city || "our office",
     street_address: data.address || data.street_address || "",
+    full_address: data.address || data.street_address || data.city || "",
     city: data.city || data.location_city || "our city",
     location: data.location || data.address || data.city || "",
     location_city: data.city || data.location_city || "our city",
     state: data.state || "",
-    pincode: data.pincode || data.zip || "",
+    pincode: data.pincode || data.zip || data.postal_code || "",
+    pin_code: data.pincode || data.zip || data.postal_code || "",
+    zip: data.pincode || data.zip || "",
+    postal_code: data.pincode || data.zip || "",
 
     // 💼 Service & Offerings
     service: data.service || data.product || data.service_name || "AMC & Services",
@@ -213,36 +240,98 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     product: data.product || data.service || "Solutions",
     purpose: data.purpose || data.remarks || data.notes || "",
     notes: data.notes || data.remarks || "",
-    assigned_agent: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
-    agent_name: data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
-    "agent.name": data.assigned_agent || data.agent_name || data.assigned_to || "Support Executive",
+    remarks: data.notes || data.remarks || "",
+    assigned_agent: data.assigned_agent || data.agent_name || data.assigned_to || data.technician || "Support Executive",
+    agent_name: data.assigned_agent || data.agent_name || data.assigned_to || data.technician || "Support Executive",
+    "agent.name": data.assigned_agent || data.agent_name || data.assigned_to || data.technician || "Support Executive",
+    technician: data.technician || data.assigned_agent || data.agent_name || "Senior Technician",
+    executive: data.assigned_agent || data.agent_name || "Support Executive",
 
     // 🧾 Invoicing & Payments
     invoice_no: data.invoice_no || data.invoice_number || data.bill_no || "",
     invoice_number: data.invoice_no || data.invoice_number || "",
+    bill_no: data.invoice_no || data.invoice_number || data.bill_no || "",
+    quotation_no: data.quotation_no || data.quotation_number || data.quote_no || "",
+    quotation_number: data.quotation_no || data.quotation_number || "",
     amount: formattedAmount,
     total_amount: formattedAmount,
     invoice_amount: formattedAmount,
     balance: formattedAmount,
+    due_amount: formattedAmount,
     due_date: data.due_date ? String(data.due_date).split("T")[0] : "",
     invoice_status: data.invoice_status || "Pending",
     contract_title: data.contract_title || data.amc_plan || "",
+    amc_contract_no: data.amc_contract_no || data.contract_no || data.amc_plan || "",
+    contract_no: data.amc_contract_no || data.contract_no || "",
     amc_plan: data.amc_plan || data.contract_title || "",
     amc_expiry: data.amc_expiry || "",
+    service_date: data.service_date || tomorrowFormatted,
 
-    // ⏰ Dynamic Time & Date
+    // ⏰ Dynamic Time & Date (Today & Live)
     greeting_time: greetingTime,
+    greeting: greetingTime,
+    greetings: greetingTime,
+    smart_greeting: greetingTime,
+    time_greeting: greetingTime,
     time: formattedTime,
     current_time: formattedTime,
+    live_time: formattedTime,
+    now: formattedTime,
     date: formattedDate,
     current_date: formattedDate,
     "current.date": formattedDate,
     today: formattedDate,
+    today_date: formattedDate,
+    datetime: dateTimeStr,
+    date_time: dateTimeStr,
+    current_datetime: dateTimeStr,
+    current_date_time: dateTimeStr,
     day: dayName,
+    day_name: dayName,
+    today_day: dayName,
+    current_day: dayName,
     day_of_week: dayName,
+    weekday: dayName,
+
+    // 🌅 Tomorrow ("tommowe mean tomarrow date and day name and all ways")
+    tomorrow: tomorrowFormatted,
     tomorrow_date: tomorrowFormatted,
+    tomarrow: tomorrowFormatted,
+    tomarrow_date: tomorrowFormatted,
+    tommowe: tomorrowFormatted,
+    tommowe_date: tomorrowFormatted,
+    tommow: tomorrowFormatted,
+    tommow_date: tomorrowFormatted,
+    tomorow: tomorrowFormatted,
+    tomorow_date: tomorrowFormatted,
+    tommorow: tomorrowFormatted,
+    tommorow_date: tomorrowFormatted,
+
+    tomorrow_day: tomorrowDayName,
+    tomorrow_day_name: tomorrowDayName,
+    tomorrow_dayofweek: tomorrowDayName,
+    tomorrow_weekday: tomorrowDayName,
+    tomarrow_day: tomorrowDayName,
+    tomarrow_day_name: tomorrowDayName,
+    tommowe_day: tomorrowDayName,
+    tommowe_day_name: tomorrowDayName,
+    tommow_day: tomorrowDayName,
+    tomorow_day: tomorrowDayName,
+    tommorow_day: tomorrowDayName,
+
+    tomorrow_datetime: tomorrowDateTimeStr,
+    tomorrow_date_time: tomorrowDateTimeStr,
+    tomorrow_time: formattedTime,
+
+    // ⏪ Yesterday
+    yesterday: yesterdayFormatted,
+    yesterday_date: yesterdayFormatted,
+    yesterday_day: yesterdayDayName,
+    yesterday_day_name: yesterdayDayName,
+
     year: String(now.getFullYear()),
-    month: now.toLocaleDateString("en-IN", { month: "long" }),
+    month: now.toLocaleDateString("en-IN", { month: "long", timeZone: istTz }),
+    short_month: now.toLocaleDateString("en-IN", { month: "short", timeZone: istTz }),
     start_time: data.start_time || "09:00 AM",
     end_time: data.end_time || "08:00 PM",
 
@@ -263,19 +352,30 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
 
   const dataLookup = {};
   for (const key of Object.keys(data)) {
-    dataLookup[key.toLowerCase()] = data[key];
-    dataLookup[key.toLowerCase().replace(/_/g, ".")] = data[key];
+    const kLow = key.toLowerCase();
+    dataLookup[kLow] = data[key];
+    dataLookup[kLow.replace(/[\s\-\.]+/g, "_")] = data[key];
+    dataLookup[kLow.replace(/_/g, ".")] = data[key];
   }
 
-  // 1. Resolve {{placeholder}} and {placeholder} tokens (case-insensitive & whitespace-tolerant)
-  let resolved = msg.replace(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g, (match, rawToken) => {
-    const rawLower = rawToken.toLowerCase().trim();
-    const dotNormalized = rawLower.replace(/_/g, ".");
+  // 1. Resolve {{placeholder}}, {placeholder}, and %placeholder% tokens
+  // Matches tokens with letters, numbers, underscores, dots, hyphens, or spaces.
+  // Explicitly excludes '|' to preserve Spintax [choice1|choice2] or {choice1|choice2}.
+  const tokenRegex = /(?:\{\{|\{|\%)\s*([^{}%|]+?)\s*(?:\}\}|\}|\%)/g;
+
+  let resolved = msg.replace(tokenRegex, (match, rawToken) => {
+    const rawTrimmed = rawToken.trim();
+    const rawLower = rawTrimmed.toLowerCase();
+    const normalizedKey = rawLower.replace(/[\s\-\.]+/g, "_");
+    const dotNormalized = rawLower.replace(/[\s\-]+/g, ".").replace(/\.+/g, ".");
     const underscoreNormalized = rawLower.replace(/\./g, "_");
 
     // Exact match in known
     if (Object.prototype.hasOwnProperty.call(known, rawLower) && known[rawLower] !== "") {
       return String(known[rawLower]);
+    }
+    if (Object.prototype.hasOwnProperty.call(known, normalizedKey) && known[normalizedKey] !== "") {
+      return String(known[normalizedKey]);
     }
     if (Object.prototype.hasOwnProperty.call(known, dotNormalized) && known[dotNormalized] !== "") {
       return String(known[dotNormalized]);
@@ -288,6 +388,9 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
     if (Object.prototype.hasOwnProperty.call(dataLookup, rawLower) && dataLookup[rawLower] != null && dataLookup[rawLower] !== "") {
       return String(dataLookup[rawLower]);
     }
+    if (Object.prototype.hasOwnProperty.call(dataLookup, normalizedKey) && dataLookup[normalizedKey] != null && dataLookup[normalizedKey] !== "") {
+      return String(dataLookup[normalizedKey]);
+    }
     if (Object.prototype.hasOwnProperty.call(dataLookup, dotNormalized) && dataLookup[dotNormalized] != null && dataLookup[dotNormalized] !== "") {
       return String(dataLookup[dotNormalized]);
     }
@@ -295,9 +398,9 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
       return String(dataLookup[underscoreNormalized]);
     }
 
-    // Deep dot path in data (e.g. data.customer.name)
-    if (rawToken.includes(".")) {
-      const parts = rawToken.split(".");
+    // Deep dot path in data (e.g. customer.name)
+    if (rawTrimmed.includes(".")) {
+      const parts = rawTrimmed.split(".");
       let val = data;
       for (const p of parts) {
         if (val && typeof val === "object" && Object.prototype.hasOwnProperty.call(val, p)) {
@@ -310,7 +413,7 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
       if (val != null && val !== "") return String(val);
 
       // Fallback: match last part of dot path (e.g., customer.name -> name)
-      const lastPart = parts[parts.length - 1].toLowerCase();
+      const lastPart = parts[parts.length - 1].toLowerCase().replace(/[\s\-]+/g, "_");
       if (Object.prototype.hasOwnProperty.call(known, lastPart) && known[lastPart] !== "") {
         return String(known[lastPart]);
       }
@@ -328,7 +431,7 @@ function formatMessagePlaceholders(templateText, contactName, data = {}) {
 
 function buildTemplateBodyComponent(templateBody, contactName, data = {}) {
   if (!templateBody) return null;
-  const tokens = [...templateBody.matchAll(/\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}/g)].map((m) => m[1]);
+  const tokens = [...templateBody.matchAll(/(?:\{\{|\{|\%)\s*([^{}%|]+?)\s*(?:\}\}|\}|\%)/g)].map((m) => m[1].trim());
   if (!tokens.length) return null;
   return {
     type: "body",

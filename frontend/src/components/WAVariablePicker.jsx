@@ -33,11 +33,15 @@ export const VARIABLE_GROUPS = [
     icon: Clock,
     color: "text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100",
     variables: [
+      { tag: "{{tomorrow}}", label: "Tomorrow Date", sample: "Tomorrow's date (e.g. 10 Sep 2026)" },
+      { tag: "{{tomorrow_day}}", label: "Tomorrow Day Name", sample: "Tomorrow's weekday (e.g. Thursday)" },
+      { tag: "{{tomorrow_date}}", label: "Tomorrow Date (Alt)", sample: "10 Sep 2026" },
+      { tag: "{{day}}", label: "Today's Day", sample: "Wednesday" },
+      { tag: "{{day_name}}", label: "Day Name", sample: "Wednesday" },
+      { tag: "{{date}}", label: "Today's Date", sample: "09 Sep 2026" },
+      { tag: "{{time}}", label: "Current Time", sample: "11:58 AM" },
+      { tag: "{{date_time}}", label: "Live Date & Time", sample: "09 Sep 2026, 11:58 AM" },
       { tag: "{{greeting_time}}", label: "Smart Greeting", sample: "Good morning / afternoon" },
-      { tag: "{{current_time}}", label: "Live Time", sample: "02:30 PM" },
-      { tag: "{{current_date}}", label: "Today's Date", sample: "22 Aug 2026" },
-      { tag: "{{day}}", label: "Day of Week", sample: "Saturday" },
-      { tag: "{{tomorrow_date}}", label: "Tomorrow", sample: "23 Aug 2026" },
     ],
   },
   {
@@ -65,6 +69,115 @@ export const VARIABLE_GROUPS = [
     ],
   },
 ];
+
+/**
+ * Universal evaluator for template tags and spintax for live previews across frontend.
+ * Matches backend waAutomationService.js behavior exactly.
+ */
+export function evaluateMessagePlaceholders(text, overrides = {}) {
+  if (!text) return "";
+  const now = new Date();
+  const istTz = "Asia/Kolkata";
+  const dateOptions = { day: "2-digit", month: "short", year: "numeric", timeZone: istTz };
+  const formattedDate = now.toLocaleDateString("en-IN", dateOptions);
+  const formattedTime = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: istTz });
+  const dayName = now.toLocaleDateString("en-IN", { weekday: "long", timeZone: istTz });
+
+  const currentHour = now.getHours();
+  const greetingTime = currentHour < 12 ? "Good morning" : currentHour < 17 ? "Good afternoon" : "Good evening";
+
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowFormatted = tomorrow.toLocaleDateString("en-IN", dateOptions);
+  const tomorrowDayName = tomorrow.toLocaleDateString("en-IN", { weekday: "long", timeZone: istTz });
+
+  const sampleValues = {
+    name: "Rahul Sharma",
+    full_name: "Rahul Sharma",
+    first_name: "Rahul",
+    company: "Apex Logistics",
+    company_name: "Apex Logistics",
+    phone: "+91 98765 43210",
+    phone_number: "+91 98765 43210",
+    email: "rahul@apexlogistics.com",
+    address: "Plot 42, MIDC Industrial Area",
+    city: "Mumbai",
+    state: "Maharashtra",
+    pincode: "400001",
+    service: "HVAC Maintenance AMC",
+    service_name: "HVAC Maintenance AMC",
+    invoice_no: "INV-2026-092",
+    amount: "₹14,800",
+    due_date: "2026-08-30",
+    agent_name: "Pooja Mehta",
+    technician: "Senior Engineer Suresh",
+
+    // Time & Date
+    greeting_time: greetingTime,
+    greeting: greetingTime,
+    greetings: greetingTime,
+    time: formattedTime,
+    current_time: formattedTime,
+    live_time: formattedTime,
+    now: formattedTime,
+    date: formattedDate,
+    current_date: formattedDate,
+    today: formattedDate,
+    today_date: formattedDate,
+    day: dayName,
+    day_name: dayName,
+    today_day: dayName,
+    current_day: dayName,
+    datetime: `${formattedDate}, ${formattedTime}`,
+    date_time: `${formattedDate}, ${formattedTime}`,
+
+    // Tomorrow ("tommowe mean tomarrow date and day name and all ways")
+    tomorrow: tomorrowFormatted,
+    tomorrow_date: tomorrowFormatted,
+    tommowe: tomorrowFormatted,
+    tommowe_date: tomorrowFormatted,
+    tomarrow: tomorrowFormatted,
+    tomarrow_date: tomorrowFormatted,
+    tomorow: tomorrowFormatted,
+    tommorow: tomorrowFormatted,
+
+    tomorrow_day: tomorrowDayName,
+    tomorrow_day_name: tomorrowDayName,
+    tommowe_day: tomorrowDayName,
+    tomarrow_day: tomorrowDayName,
+    tomorow_day: tomorrowDayName,
+
+    tomorrow_datetime: `${tomorrowFormatted}, ${formattedTime}`,
+    tomorrow_date_time: `${tomorrowFormatted}, ${formattedTime}`,
+
+    ...overrides,
+  };
+
+  // 1. Resolve tokens (supporting {{tag}}, {tag}, %tag% and spaces/hyphens inside)
+  const tokenRegex = /(?:\{\{|\{|\%)\s*([^{}%|]+?)\s*(?:\}\}|\}|\%)/g;
+  let result = text.replace(tokenRegex, (match, rawToken) => {
+    const rawLower = rawToken.trim().toLowerCase();
+    const normalizedKey = rawLower.replace(/[\s\-\.]+/g, "_");
+    if (sampleValues[rawLower] != null) return sampleValues[rawLower];
+    if (sampleValues[normalizedKey] != null) return sampleValues[normalizedKey];
+    return match;
+  });
+
+  // 2. Resolve square bracket spintax [Option 1|Option 2]
+  result = result.replace(/\[([^\[\]]+)\]/g, (_, choices) => {
+    if (!choices.includes("|")) return _;
+    const arr = choices.split("|");
+    return arr[Math.floor(Math.random() * arr.length)].trim();
+  });
+
+  // 3. Resolve curly bracket spintax {Option 1|Option 2}
+  result = result.replace(/\{([^{}]+)\}/g, (_, choices) => {
+    if (!choices.includes("|")) return `{${choices}}`;
+    const arr = choices.split("|");
+    return arr[Math.floor(Math.random() * arr.length)].trim();
+  });
+
+  return result;
+}
 
 export default function WAVariablePicker({ onInsert, className = "" }) {
   const [selectedGroup, setSelectedGroup] = useState("all");

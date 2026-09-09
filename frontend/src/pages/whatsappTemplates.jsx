@@ -6,7 +6,7 @@ import {
 import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
-import WAVariablePicker, { VARIABLE_GROUPS } from "../components/WAVariablePicker";
+import WAVariablePicker, { VARIABLE_GROUPS, evaluateMessagePlaceholders } from "../components/WAVariablePicker";
 import { useNavigate } from "react-router-dom";
 
 const PLACEHOLDER_ITEMS = VARIABLE_GROUPS
@@ -24,36 +24,18 @@ const PLACEHOLDER_ITEMS = VARIABLE_GROUPS
 // Sample preview resolver for interactive phone preview
 function renderPreviewText(templateText) {
   if (!templateText) return "Type your message or insert placeholders to preview...";
-  let result = templateText;
-  
-  // Resolve Spintax choices
-  result = result.replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[0].trim());
-  result = result.replace(/\{([^{}]+)\}/g, (_, choices) => {
-    if (!choices.includes("|")) return `{${choices}}`;
-    return choices.split("|")[0].trim();
+  return evaluateMessagePlaceholders(templateText, {
+    name: "Rajesh Kumar",
+    first_name: "Rajesh",
+    company: "Madhura Tech",
+    address: "12, Mount Road, Guindy",
+    city: "Chennai",
+    service: "AC Maintenance & AMC",
+    invoice_no: "INV-2026-089",
+    amount: "₹14,500",
+    due_date: "25 Aug 2026",
+    agent_name: "Pooja Mehta",
   });
-
-  // Resolve all standard & custom multi-dynamic placeholders
-  result = result
-    .replace(/\{\{?\s*name\s*\}?\}/gi, "Rajesh Kumar")
-    .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rajesh")
-    .replace(/\{\{?\s*company\s*\}?\}/gi, "Madhura Tech")
-    .replace(/\{\{?\s*phone\s*\}?\}/gi, "+91 98765 43210")
-    .replace(/\{\{?\s*address\s*\}?\}/gi, "12, Mount Road, Guindy")
-    .replace(/\{\{?\s*city\s*\}?\}/gi, "Chennai")
-    .replace(/\{\{?\s*service\s*\}?\}/gi, "AC Maintenance & AMC")
-    .replace(/\{\{?\s*invoice_no\s*\}?\}/gi, "INV-2026-089")
-    .replace(/\{\{?\s*amount\s*\}?\}/gi, "₹14,500")
-    .replace(/\{\{?\s*due_date\s*\}?\}/gi, "25 Aug 2026")
-    .replace(/\{\{?\s*greeting_time\s*\}?\}/gi, new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")
-    .replace(/\{\{?\s*time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
-    .replace(/\{\{?\s*current_time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
-    .replace(/\{\{?\s*date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
-    .replace(/\{\{?\s*current_date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
-    .replace(/\{\{?\s*day\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { weekday: "long" }))
-    .replace(/\{\{?\s*agent_name\s*\}?\}/gi, "Pooja Mehta");
-
-  return result;
 }
 
 export default function WATemplates() {

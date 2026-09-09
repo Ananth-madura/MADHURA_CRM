@@ -8,7 +8,7 @@ import axios from "axios";
 import { API } from "../config/api";
 import WhatsAppNav from "../components/WhatsAppNav";
 import WhatsAppCampaignWizard from "../components/WhatsAppCampaignWizard";
-import WAVariablePicker from "../components/WAVariablePicker";
+import WAVariablePicker, { evaluateMessagePlaceholders } from "../components/WAVariablePicker";
 
 const STATUS_COLORS = {
   draft: "bg-gray-100 text-gray-600 border-gray-200",
@@ -689,28 +689,7 @@ export default function WACampaigns() {
                         <span className="text-[9px] text-emerald-400 font-mono">100% Unique Per Contact</span>
                       </div>
                       <div className="p-2.5 bg-slate-800/90 rounded-lg text-emerald-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
-                        {f.message_text
-                          .replace(/\[([^\[\]]+)\]/g, (_, choices) => choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim())
-                          .replace(/\{([^{}]+)\}/g, (_, choices) => choices.includes("|") ? choices.split("|")[Math.floor(Math.random() * choices.split("|").length)].trim() : `{${choices}}`)
-                          .replace(/\{\{?\s*name\s*\}?\}/gi, "Rahul Sharma")
-                          .replace(/\{\{?\s*first_name\s*\}?\}/gi, "Rahul")
-                          .replace(/\{\{?\s*company\s*\}?\}/gi, "Apex Logistics")
-                          .replace(/\{\{?\s*phone\s*\}?\}/gi, "+91 98765 43210")
-                          .replace(/\{\{?\s*address\s*\}?\}/gi, "Plot 42, MIDC Industrial Area")
-                          .replace(/\{\{?\s*city\s*\}?\}/gi, "Mumbai")
-                          .replace(/\{\{?\s*state\s*\}?\}/gi, "Maharashtra")
-                          .replace(/\{\{?\s*email\s*\}?\}/gi, "rahul@apexlogistics.com")
-                          .replace(/\{\{?\s*service\s*\}?\}/gi, "HVAC Maintenance AMC")
-                          .replace(/\{\{?\s*invoice_no\s*\}?\}/gi, "INV-2026-092")
-                          .replace(/\{\{?\s*amount\s*\}?\}/gi, "₹14,800")
-                          .replace(/\{\{?\s*due_date\s*\}?\}/gi, "2026-08-30")
-                          .replace(/\{\{?\s*greeting_time\s*\}?\}/gi, new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")
-                          .replace(/\{\{?\s*time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
-                          .replace(/\{\{?\s*current_time\s*\}?\}/gi, new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }))
-                          .replace(/\{\{?\s*date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
-                          .replace(/\{\{?\s*current_date\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))
-                          .replace(/\{\{?\s*day\s*\}?\}/gi, new Date().toLocaleDateString("en-IN", { weekday: "long" }))
-                          .replace(/\{\{?\s*agent_name\s*\}?\}/gi, "Pooja Mehta")}
+                        {evaluateMessagePlaceholders(f.message_text)}
                       </div>
                     </div>
                   )}
