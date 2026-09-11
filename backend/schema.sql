@@ -167,6 +167,17 @@ CREATE TABLE IF NOT EXISTS `clients` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `client_shares` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `client_id` int NOT NULL,
+  `shared_by` int DEFAULT NULL,
+  `shared_to` int NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_client_shares_client` (`client_id`),
+  KEY `idx_client_shares_shared_to` (`shared_to`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `contracts` (
   `id` int NOT NULL AUTO_INCREMENT,
   `client_company` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,

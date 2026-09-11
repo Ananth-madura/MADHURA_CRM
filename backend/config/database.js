@@ -432,6 +432,18 @@ async function ensureTablesAndColumns() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     },
     {
+      name: "client_shares",
+      sql: `CREATE TABLE IF NOT EXISTS client_shares (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        client_id INT NOT NULL,
+        shared_by INT DEFAULT NULL,
+        shared_to INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_client_shares_client (client_id),
+        KEY idx_client_shares_shared_to (shared_to)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    },
+    {
       name: "user_email_configs",
       sql: `CREATE TABLE IF NOT EXISTS user_email_configs (
         id INT AUTO_INCREMENT PRIMARY KEY,

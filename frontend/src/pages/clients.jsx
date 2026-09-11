@@ -246,7 +246,11 @@ const Clients = () => {
       }
       setLastUpdate(new Date());
     } catch (err) {
-      console.log("Fetch Error:", err);
+      console.error("Fetch Error:", err);
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Unknown error";
+      if (err.response?.status === 500) {
+        console.error("Server error loading clients:", errMsg);
+      }
     }
     setLoading(false);
   };
@@ -633,9 +637,7 @@ const Clients = () => {
 
 
 
-  useEffect(() => {
-    fetchClients();
-  }, [currentPage, limit, debouncedSearchTerm, filterSource, activeTab]);
+
 
   useEffect(() => {
     const handleRefresh = () => fetchClientsRef.current();
