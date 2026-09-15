@@ -23,6 +23,7 @@ import {
   PhoneCall,
   Pin,
   VolumeX,
+  Volume2,
   Sparkles,
   Image,
   Music,
@@ -37,6 +38,19 @@ import {
   Mic,
   Smile,
   ChevronDown,
+  Copy,
+  Download,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Bell,
+  Star,
+  Forward,
+  MoreVertical,
+  ArrowDown,
+  Square,
+  Play,
+  Pause,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
@@ -146,19 +160,34 @@ function MessageTicks({ status, className = "" }) {
   const color = isRead ? "text-[#53bdeb]" : "text-slate-300/70";
 
   return (
-    <svg
-      viewBox="0 0 18 12"
-      className={`w-4 h-3 ${color} ${className}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-label={isRead ? "Read" : isSingle ? "Sent" : "Delivered"}
-    >
-      <path d="M1 6.5 L4.2 9.7 L10.2 2.6" />
-      {!isSingle && <path d="M7 6.5 L10.2 9.7 L16.2 2.6" />}
-    </svg>
+    <span className="wa-tick-transition inline-flex">
+      <svg
+        viewBox="0 0 18 12"
+        className={`w-4 h-3 ${color} ${className}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-label={isRead ? "Read" : isSingle ? "Sent" : "Delivered"}
+      >
+        <path d="M1 6.5 L4.2 9.7 L10.2 2.6" />
+        {!isSingle && <path d="M7 6.5 L10.2 9.7 L16.2 2.6" />}
+      </svg>
+    </span>
+  );
+}
+
+/** WhatsApp-style typing indicator with 3 bouncing dots */
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start mb-2 wa-bubble-enter">
+      <div className="bg-[#202c33] rounded-lg rounded-tl-none px-3 py-2.5 flex items-center gap-0.5 shadow-sm">
+        <span className="wa-typing-dot" />
+        <span className="wa-typing-dot" />
+        <span className="wa-typing-dot" />
+      </div>
+    </div>
   );
 }
 
@@ -489,6 +518,45 @@ export default function WhatsAppPage() {
   const threadRef = useRef(null);
   const wallpaperRef = useRef(null);
   const parallaxRaf = useRef(null);
+
+  // ── New UX Enhancement States ─────────────────────────────────────────────
+  // Typing indicator state
+  const [contactTyping, setContactTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
+
+  // Image lightbox
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
+
+  // Context menu
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, message }
+
+  // Active bot flow status
+  const [activeFlowRun, setActiveFlowRun] = useState(null); // { flowName, currentNode, flowId }
+
+  // Sound & notification toggle
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem("wa_sound_enabled") !== "false"; } catch { return true; }
+  });
+  const [desktopNotifs, setDesktopNotifs] = useState(() => {
+    try { return localStorage.getItem("wa_desktop_notifs") === "true"; } catch { return false; }
+  });
+
+  // Online contacts set
+  const [onlineContacts, setOnlineContacts] = useState(new Set());
+
+  // Emoji search
+  const [emojiSearch, setEmojiSearch] = useState("");
+  const [recentEmojis, setRecentEmojis] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("wa_recent_emojis") || "[]"); } catch { return []; }
+  });
+
+  // Starred messages
+  const [starredMsgIds, setStarredMsgIds] = useState(new Set());
+
+  // Mobile swipe
+  const touchStartRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -1647,9 +1715,23 @@ export default function WhatsAppPage() {
         isMe: Boolean(data?.isMe),
       };
 
-      // Play pleasant audio chime on inbound messages
-      if (!msgObj.isMe) {
+      // Play pleasant audio chime on inbound messages (respects sound toggle)
+      if (!msgObj.isMe && soundEnabledRef.current) {
         playNotificationSound();
+      }
+      // Desktop notification when tab not focused
+      if (!msgObj.isMe && document.hidden && desktopNotifsRef.current) {
+        try {
+          if (Notification.permission === "granted") {
+            const contactName = data?.fromName || data?.contactName || "WhatsApp";
+            new Notification(contactName, {
+              body: msgObj.body || "New message",
+              icon: "/favicon.ico",
+              tag: `wa-${msgObj.id}`,
+              silent: true,
+            });
+          }
+        } catch (_) {}
       }
 
       if (isCurrentChat && msgObj) {
@@ -1870,6 +1952,53 @@ export default function WhatsAppPage() {
       fetchContactCrmDetails(clean);
     }
 
+    // Typing indicator from contact
+    const handleTyping = (data) => {
+      const { chatId, phone } = data || {};
+      const clean10 = (phone || chatId || "").replace(/\D/g, "").slice(-10);
+      const activeSel = selectedChatRef.current;
+      const sel10 = (activeSel?.id || "").replace(/\D/g, "").slice(-10);
+      if (clean10 && sel10 === clean10) {
+        setContactTyping(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => setContactTyping(false), 4000);
+      }
+    };
+    socket.on("wa_typing", handleTyping);
+    socket.on("wa_chat_typing", handleTyping);
+
+    // Online status
+    const handlePresence = (data) => {
+      const { phone, online } = data || {};
+      if (phone) {
+        setOnlineContacts((prev) => {
+          const next = new Set(prev);
+          if (online) next.add(phone.replace(/\D/g, "").slice(-10));
+          else next.delete(phone.replace(/\D/g, "").slice(-10));
+          return next;
+        });
+      }
+    };
+    socket.on("wa_presence", handlePresence);
+    socket.on("wa_user_status", handlePresence);
+
+    // Active flow status
+    const handleFlowAdvanced = (data) => {
+      const { phone, flowName, currentNode, flowId, status: flowStatus } = data || {};
+      const activeSel = selectedChatRef.current;
+      const sel10 = (activeSel?.id || "").replace(/\D/g, "").slice(-10);
+      const evt10 = (phone || "").replace(/\D/g, "").slice(-10);
+      if (sel10 && sel10 === evt10) {
+        if (flowStatus === "completed" || flowStatus === "stopped") {
+          setActiveFlowRun(null);
+        } else {
+          setActiveFlowRun({ flowName, currentNode, flowId });
+        }
+      }
+    };
+    socket.on("wa_flow_advanced", handleFlowAdvanced);
+    socket.on("wa_flow_status", handleFlowAdvanced);
+
     return () => {
       socket.off("wa_message_received", handleRealtimeUpdate);
       socket.off("wa_message_sent", handleRealtimeUpdate);
@@ -1885,14 +2014,121 @@ export default function WhatsAppPage() {
       socket.off("wa_chats_synced", handleWaSynced);
       socket.off("wa_chat_read", handleChatReadEvent);
       socket.off("wa_message_ack", handleMessageAck);
+      socket.off("wa_typing", handleTyping);
+      socket.off("wa_chat_typing", handleTyping);
+      socket.off("wa_presence", handlePresence);
+      socket.off("wa_user_status", handlePresence);
+      socket.off("wa_flow_advanced", handleFlowAdvanced);
+      socket.off("wa_flow_status", handleFlowAdvanced);
     };
   }, [fetchChats, fetchMessages, fetchStatus, fetchAccountDetails]);
+
+  // Refs for sound/notification toggles (accessed inside socket callbacks)
+  const soundEnabledRef = useRef(soundEnabled);
+  useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
+  const desktopNotifsRef = useRef(desktopNotifs);
+  useEffect(() => { desktopNotifsRef.current = desktopNotifs; }, [desktopNotifs]);
+
+  // Persist sound/notification preferences
+  useEffect(() => { localStorage.setItem("wa_sound_enabled", soundEnabled); }, [soundEnabled]);
+  useEffect(() => { localStorage.setItem("wa_desktop_notifs", desktopNotifs); }, [desktopNotifs]);
+
+  // Request desktop notification permission
+  const requestNotifPermission = useCallback(async () => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") setDesktopNotifs(true);
+    } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      setDesktopNotifs(true);
+    }
+  }, []);
+
+  // Auto-grow textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
+  }, [messageInput]);
+
+  // Mobile swipe-to-back gesture
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const handleTouchStart = (e) => {
+      const touch = e.touches[0];
+      if (touch.clientX < 30) {
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+      }
+    };
+    const handleTouchEnd = (e) => {
+      if (!touchStartRef.current) return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartRef.current.x;
+      const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+      const dt = Date.now() - touchStartRef.current.time;
+      if (dx > 80 && dy < 100 && dt < 400) {
+        setShowMobileChat(false);
+      }
+      touchStartRef.current = null;
+    };
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [selectedChat]);
+
+  // Close context menu on scroll or click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener("click", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
+
+  // Emoji helpers
+  const addRecentEmoji = useCallback((emoji) => {
+    setRecentEmojis((prev) => {
+      const next = [emoji, ...prev.filter((e) => e !== emoji)].slice(0, 16);
+      try { localStorage.setItem("wa_recent_emojis", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Copy message text
+  const handleCopyMessage = useCallback((text) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }, []);
+
+  // Star/unstar message
+  const handleToggleStar = useCallback((msgId) => {
+    setStarredMsgIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId); else next.add(msgId);
+      return next;
+    });
+  }, []);
+
+  // Check if contact is online
+  const isContactOnline = useCallback((chatId) => {
+    const clean10 = (chatId || "").replace(/\D/g, "").slice(-10);
+    return onlineContacts.has(clean10);
+  }, [onlineContacts]);
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+    // Shift+Enter creates a new line naturally in textarea
   };
 
   // Filter chat categories for sidebar tabs & search (Always defined at top scope)
@@ -2140,7 +2376,7 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col h-full max-h-screen min-h-0 bg-[#0b141a] text-slate-100 overflow-hidden shadow-2xl">
+    <div className="w-full flex-1 flex flex-col wa-h-screen wa-max-h-screen min-h-0 bg-[#0b141a] text-slate-100 overflow-hidden shadow-2xl">
       <WhatsAppNav
         onAccountBalance={fetchAccountBalance}
         onSyncWhatsApp={handleSyncWhatsApp}
@@ -2157,6 +2393,32 @@ export default function WhatsAppPage() {
           </button>
         </div>
       )}
+
+      {/* Sound & Notification Toggles Bar */}
+      <div className="flex items-center justify-end gap-1.5 px-3 py-1 bg-[#111b21] border-b border-[#222d34] shrink-0">
+        <button
+          onClick={() => setSoundEnabled((v) => !v)}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition ${soundEnabled ? "bg-[#00a884]/20 text-[#00a884] border border-[#00a884]/30" : "bg-[#202c33] text-slate-400 border border-transparent hover:text-slate-200"}`}
+          title={soundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
+        >
+          {soundEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+          <span className="hidden sm:inline">{soundEnabled ? "Sound On" : "Muted"}</span>
+        </button>
+        <button
+          onClick={() => {
+            if (desktopNotifs) {
+              setDesktopNotifs(false);
+            } else {
+              requestNotifPermission();
+            }
+          }}
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition ${desktopNotifs ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-[#202c33] text-slate-400 border border-transparent hover:text-slate-200"}`}
+          title={desktopNotifs ? "Disable desktop notifications" : "Enable desktop notifications"}
+        >
+          <Bell size={12} />
+          <span className="hidden sm:inline">{desktopNotifs ? "Notifs On" : "Notifs Off"}</span>
+        </button>
+      </div>
 
       {/* Main WhatsApp App Canvas */}
       <div className="flex-1 min-h-0 flex overflow-hidden w-full relative">
@@ -2288,14 +2550,19 @@ export default function WhatsAppPage() {
                     className={`w-full flex items-center gap-3 px-3.5 py-3 hover:bg-[#202c33] transition text-left cursor-pointer border-l-4 ${isActive ? "bg-[#2a3942] border-[#00a884]" : "border-transparent"
                       }`}
                   >
-                    {/* Contact Profile Picture / Avatar */}
-                    <WAContactAvatar
-                      src={chat.profilePicUrl}
-                      name={chat.name}
-                      phone={chat.id}
-                      isGroup={chat.isGroup}
-                      size="md"
-                    />
+                    {/* Contact Profile Picture / Avatar with Online Status */}
+                    <div className="relative shrink-0">
+                      <WAContactAvatar
+                        src={chat.profilePicUrl}
+                        name={chat.name}
+                        phone={chat.id}
+                        isGroup={chat.isGroup}
+                        size="md"
+                      />
+                      {isContactOnline(chat.id) && !chat.isGroup && (
+                        <span className="wa-online-dot" title="Online" />
+                      )}
+                    </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">

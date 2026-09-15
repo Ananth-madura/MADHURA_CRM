@@ -1114,3 +1114,161 @@ input[type="button"] {
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   WHATSAPP CHAT — UI ANIMATIONS & MOBILE ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Message bubble entrance — slide up + fade in */
+@keyframes wa-bubble-in {
+  0% { opacity: 0; transform: translateY(12px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.wa-bubble-enter {
+  animation: wa-bubble-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Typing indicator — 3 bouncing dots */
+@keyframes wa-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+.wa-typing-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #8696a0;
+  margin: 0 1.5px;
+}
+.wa-typing-dot:nth-child(1) { animation: wa-typing-bounce 1.4s infinite 0s; }
+.wa-typing-dot:nth-child(2) { animation: wa-typing-bounce 1.4s infinite 0.2s; }
+.wa-typing-dot:nth-child(3) { animation: wa-typing-bounce 1.4s infinite 0.4s; }
+
+/* Mobile bottom-sheet slide-up for attachment menu */
+@keyframes wa-sheet-up {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes wa-sheet-down {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+.wa-bottom-sheet {
+  animation: wa-sheet-up 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Lightbox fade-in */
+@keyframes wa-lightbox-in {
+  0% { opacity: 0; transform: scale(0.92); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.wa-lightbox-enter {
+  animation: wa-lightbox-in 0.25s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Context menu pop */
+@keyframes wa-menu-pop {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.wa-context-menu {
+  animation: wa-menu-pop 0.15s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Read receipt tick color transition */
+.wa-tick-transition svg {
+  transition: color 0.4s ease, stroke 0.4s ease;
+}
+
+/* Auto-growing textarea for message input */
+.wa-auto-textarea {
+  resize: none;
+  overflow-y: auto;
+  min-height: 40px;
+  max-height: 120px;
+  line-height: 1.4;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+.wa-auto-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+.wa-auto-textarea::-webkit-scrollbar-thumb {
+  background-color: rgba(255,255,255,0.15);
+  border-radius: 9999px;
+}
+
+/* Online status indicator dot */
+.wa-online-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #25D366;
+  border: 2px solid #111b21;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
+
+/* Flow status banner pulse */
+@keyframes wa-flow-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.wa-flow-active {
+  animation: wa-flow-pulse 2s ease-in-out infinite;
+}
+
+/* Mobile swipe indicator */
+.wa-swipe-indicator {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255,255,255,0.3);
+  margin: 8px auto 4px;
+}
+
+/* WhatsApp dynamic viewport height utility */
+.wa-h-screen {
+  height: 100vh;
+  height: 100dvh;
+}
+.wa-max-h-screen {
+  max-height: 100vh;
+  max-height: 100dvh;
+}
+
+/* Mobile safe area bottom padding for chat input */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .wa-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* WhatsApp message send pop animation */
+@keyframes wa-send-pop {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.wa-send-pop {
+  animation: wa-send-pop 0.25s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Hide scrollbar utility (cross-browser) */
+.wa-no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.wa-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile touch: larger tap targets on WhatsApp page */
+@media (hover: none) and (pointer: coarse) {
+  .wa-touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

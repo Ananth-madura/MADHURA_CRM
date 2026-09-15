@@ -1,9 +1,9 @@
 # 📱 WhatsApp Enterprise Standalone Suite — Complete Master Architecture & Implementation Blueprint
 
-> **Document Version**: 3.0.0  
-> **System Classification**: Omnichannel Communication & Autonomous WhatsApp Operations Engine  
+> **Document Version**: 4.0.0  
+> **System Classification**: Omnichannel Communication & Autonomous Multi-Dynamic WhatsApp Operations Engine  
 > **Protocol Support**: Multi-Device WhatsApp Web (WAP / Puppeteer) + Official Meta WhatsApp Cloud API (Graph API v22.0)  
-> **Primary Objective**: Exhaustive technical specification, source code architecture, database DDL, protocol mechanics, and deployment guide allowing any engineer or AI system to reproduce, decouple, and operate the platform standalone.
+> **Primary Objective**: Exhaustive technical specification, source code architecture, database DDL, protocol mechanics, multi-dynamic execution engines, and deployment guide allowing any engineer or AI system to reproduce, decouple, and operate the platform standalone.
 
 ---
 
@@ -14,19 +14,41 @@
 4. [Low-Level Protocols, Dependencies & Engine Internals](#4-low-level-protocols-dependencies--engine-internals)
 5. [Database Architecture & Complete DDL Schema (25+ Tables)](#5-database-architecture--complete-ddl-schema-25-tables)
 6. [Multi-Session & Multi-Device Lifecycle Engine](#6-multi-session--multi-device-lifecycle-engine)
+   - [6.1 Session Initialization & Watchdog Recovery](#61-session-initialization--watchdog-recovery)
+   - [6.2 4-Day Session Inactivity & Auto-Deletion Lifecycle](#62-4-day-session-inactivity--auto-deletion-lifecycle)
+   - [6.3 8-Digit Pairing Code Linking (Phone Number Authentication)](#63-8-digit-pairing-code-linking-phone-number-authentication)
+   - [6.4 Multi-Dynamic Hybrid Load Balancer (`waLoadBalancer.js`)](#64-multi-dynamic-hybrid-load-balancer-waloadbalancerjs)
 7. [Inbound & Outbound Messaging Pipeline](#7-inbound--outbound-messaging-pipeline)
+   - [7.1 Inbound Message State Machine & Priority Cascade](#71-inbound-message-state-machine--priority-cascade)
+   - [7.2 Multi-Tier Resilient Outbound Delivery Engine](#72-multi-tier-resilient-outbound-delivery-engine)
+   - [7.3 Message Formatting Rules (`mdToWa.js`)](#73-message-formatting-rules-mdtowajs)
 8. [Multi-Modal Media & Binary Attachment Pipeline](#8-multi-modal-media--binary-attachment-pipeline)
 9. [Visual Chatbot Flow Engine (`waFlowEngine.js`)](#9-visual-chatbot-flow-engine-waflowenginejs)
+   - [9.1 The 8 Multi-Dynamic Execution Mechanisms](#91-the-8-multi-dynamic-execution-mechanisms)
+   - [9.2 Node Graph Model & Supported Node Types](#92-node-graph-model--supported-node-types)
+   - [9.3 In-Memory Flow Simulator (`simulateFlowStep`)](#93-in-memory-flow-simulator-simulateflowstep)
+   - [9.4 Hot-Reloading & Safe Session State Migration](#94-hot-reloading--safe-session-state-migration)
 10. [Enterprise Bulk Broadcast & Anti-Ban Broadcaster (`waCampaignEngine.js`)](#10-enterprise-bulk-broadcast--anti-ban-broadcaster-wacampaignenginejs)
+    - [10.1 Recursive Spintax Parser & Zero-Width Micro-Jitter](#101-recursive-spintax-parser--zero-width-micro-jitter)
+    - [10.2 Progressive Account Warm-Up Ramp](#102-progressive-account-warm-up-ramp)
+    - [10.3 Campaign Job Queue & Fault-Tolerant Checkpointing](#103-campaign-job-queue--fault-tolerant-checkpointing)
 11. [AI Conversational Assistant & Document RAG Knowledge Base](#11-ai-conversational-assistant--document-rag-knowledge-base)
+    - [11.1 Document Ingestion & Chunking Pipeline](#111-document-ingestion--chunking-pipeline)
+    - [11.2 Contextual Retrieval & Prompt Injection](#112-contextual-retrieval--prompt-injection)
+    - [11.3 Autonomous Function Calling & CRM Tool Calling (`waAiTools.js`)](#113-autonomous-function-calling--crm-tool-calling-waaitoolsjs)
 12. [Two-Way Interactive Confirmations & Customer Self-Service](#12-two-way-interactive-confirmations--customer-self-service)
-13. [CRM Decoupling Strategy & Webhook Integration Layer](#13-crm-decoupling-strategy--webhook-integration-layer)
+    - [12.1 Interactive 2-Way Confirmations (`waConfirmationService.js`)](#121-interactive-2-way-confirmations-waconfirmationservicejs)
+    - [12.2 Self-Service Customer Billing (`waCustomerBillingService.js`)](#122-self-service-customer-billing-wacustomerbillingservicejs)
+13. [CRM Decoupling Strategy & Bidirectional Event Bus](#13-crm-decoupling-strategy--bidirectional-event-bus)
+    - [13.1 Bidirectional Event Bus Architecture (`crmEventBus.js`)](#131-bidirectional-event-bus-architecture-crmeventbusjs)
+    - [13.2 Generic Webhook Integration Layer for Third-Party CRMs](#132-generic-webhook-integration-layer-for-third-party-crms)
 14. [Complete REST API Specification](#14-complete-rest-api-specification)
 15. [Real-Time WebSocket Protocol (Socket.IO Event Taxonomy)](#15-real-time-websocket-protocol-socketio-event-taxonomy)
 16. [Security Architecture, Anti-Ban & Compliance Protocols](#16-security-architecture-anti-ban--compliance-protocols)
 17. [Frontend Architecture & UI Component Hierarchy](#17-frontend-architecture--ui-component-hierarchy)
 18. [Step-by-Step Standalone Replication & Deployment Runbook](#18-step-by-step-standalone-replication--deployment-runbook)
 19. [Troubleshooting, Self-Check Tests & Failure Recovery](#19-troubleshooting-self-check-tests--failure-recovery)
+20. [🎯 Enterprise Multi-Dynamic Operational Playbooks (10 In-Depth Production Workflows)](#20--enterprise-multi-dynamic-operational-playbooks-10-in-depth-production-workflows)
 
 ---
 
@@ -128,46 +150,6 @@ The **WhatsApp Enterprise Standalone Suite** is an enterprise-grade communicatio
 +----------------------------------------------------------------------------------------------------+
 ```
 
-### 2.2 Inbound Message Processing Pipeline (State Machine)
-
-```mermaid
-flowchart TD
-    A[Inbound Message Received] --> B{Is Broadcast or Status?}
-    B -- Yes --> C[Ignore & Return]
-    B -- No --> D[Extract cleanPhone & Target JID]
-    
-    D --> E[Emit Socket.IO Event 'wa_message_received']
-    D --> F[Insert into DB 'wa_message_logs']
-    D --> G[Upsert Contact in 'wa_contacts']
-    
-    F --> H{Is Opt-Out Keyword? STOP/UNSUB}
-    H -- Yes --> I[Mark Unsubscribed & Blacklist in wa_opt_outs]
-    I --> J[Send Polite Unsubscribe Confirmation]
-    
-    H -- No --> K{Pending 2-Way Confirmation?}
-    K -- Yes --> L[Resolve Confirmation in waConfirmationService]
-    
-    K -- No --> M{Billing Keyword? BILL/RECEIPT}
-    M -- Yes --> N[Fetch PDF Link & Reply in waCustomerBillingService]
-    
-    M -- No --> O{Active Chatbot Flow Match?}
-    O -- Yes --> P[Advance Flow Node & Execute Bot Step]
-    
-    O -- No --> Q{Menu Keyword Reply?}
-    Q -- Yes --> R[Execute Menu Action in waMenuHandler]
-    
-    Q -- No --> S{First Inbound or Cooldown Expired?}
-    S -- Yes --> T[Send Personalized Welcome Reply]
-    
-    S -- No --> U{AI Auto-Reply Enabled?}
-    U -- Yes --> V[Generate LLM Reply with Document RAG Context]
-    V --> W{Requires Human Handoff?}
-    W -- Yes --> X[Pause AI & Notify Team Live Chat]
-    W -- No --> Y[Send Formatted AI Response]
-    
-    U -- No --> Z[Leave in Shared Team Inbox for Human Agent]
-```
-
 ---
 
 ## 3. Standalone Directory & Complete File Inventory
@@ -200,6 +182,7 @@ whatsapp-suite/
 │   │   ├── waWebhookRoutes.js          # Meta Cloud API inbound webhook listener
 │   │   └── whatsappRoutes.js           # Live chat messages, media, actions
 │   ├── services/
+│   │   ├── crmEventBus.js              # Universal CRM Event Bus & Dynamic Trigger Orchestrator
 │   │   ├── mdToWa.js                   # Markdown to WhatsApp formatting parser
 │   │   ├── waAiReply.js                # LLM response engine (OpenRouter/OpenAI/Gemini)
 │   │   ├── waAiTools.js                # Function calling / Agent tools implementation
@@ -230,187 +213,62 @@ whatsapp-suite/
 │   ├── public/
 │   │   └── favicon.ico                 # App icon
 │   ├── src/
-│   │   ├── assets/                     # Icons, audio chimes, illustrations
 │   │   ├── components/
-│   │   │   ├── Navbar.jsx              # Module navigation bar
 │   │   │   ├── RichMessageContent.jsx  # Interactive button/list/card renderer
-│   │   │   ├── WAContactAvatar.jsx     # Avatar with dynamic initials & color hash
 │   │   │   └── WAVariablePicker.jsx    # Dynamic variable chip selector
 │   │   ├── pages/
 │   │   │   ├── LiveChat.jsx            # Multi-agent live inbox
-│   │   │   ├── Accounts.jsx            # Account manager, QR scanner & pairing
 │   │   │   ├── Campaigns.jsx           # Mass broadcast creator & pacing monitor
 │   │   │   ├── Flowbot.jsx             # Visual drag-and-drop bot builder
 │   │   │   ├── Automations.jsx         # Event triggers & drip sequences
-│   │   │   ├── Contacts.jsx            # Audience directory & CSV import
-│   │   │   ├── Templates.jsx           # Message templates & quick replies
-│   │   │   ├── Groups.jsx              # Community & group broadcaster
-│   │   │   └── Analytics.jsx           # Delivery, read rate & response charts
-│   │   ├── services/
-│   │   │   ├── api.js                  # Axios client with JWT interceptor
-│   │   │   └── socket.js               # Socket.IO client connection manager
-│   │   ├── App.jsx                     # Root React router
-│   │   ├── index.css                   # Master CSS design system tokens
-│   │   └── main.jsx                    # React entry point
+│   │   │   └── Accounts.jsx            # Account manager, QR scanner & pairing
+│   │   └── index.css                   # Master CSS design system tokens
 │   ├── package.json                    # Frontend dependencies
 │   └── vite.config.js                  # Vite build configuration
-├── .env.example                        # Environment variables template
-├── docker-compose.yml                  # Production multi-container orchestration
-├── Dockerfile                          # Backend container definition with Puppeteer/Chrome
-└── README.md                           # Quickstart guide
+└── docker-compose.yml                  # Production multi-container orchestration
 ```
 
 ---
 
 ## 4. Low-Level Protocols, Dependencies & Engine Internals
 
-### 4.1 `whatsapp-web.js` Internal Injection Mechanics
-The WhatsApp Web engine interfaces directly with WhatsApp Web's browser runtime by injecting helper functions into the page context. WhatsApp Web internally uses private Webpack modules exposing `Store` collections:
-
-```javascript
-// Internal Window Store Injections
-window.Store = {
-  Chat: window.require('WAWebCollections').Chat,
-  Msg: window.require('WAWebCollections').Msg,
-  Contact: window.require('WAWebCollections').Contact,
-  WidFactory: window.require('WAWebWidFactory'),
-  SendMsg: window.require('WAWebSendMsgChatAction'),
-  QueryExist: window.require('WAWebQueryExistsJob'),
-  UserPrefs: window.require('WAWebUserPrefsMeUser')
-};
-```
-
-#### Message Key Construction Protocol
-When constructing an outbound message via browser evaluation, the engine builds a unique `MsgKey`:
-$$\text{MsgKey} = \langle \text{fromMe: true}, \text{remoteJid: } \text{chatId}, \text{id: } \text{newId()}, \text{participant: } \text{senderJid} \rangle$$
-
-```javascript
-const newId = await window.require('WAWebMsgKey').newId();
-const meUser = window.require('WAWebUserPrefsMeUser').getMaybeMePnUser();
-const lidUser = window.require('WAWebUserPrefsMeUser').getMaybeMeLidUser();
-const from = (chat.id && chat.id.isLid && chat.id.isLid()) ? lidUser : (meUser || lidUser);
-
-const newMsgKey = new (window.require('WAWebMsgKey'))({
-  from: from,
-  to: chat.id,
-  id: newId,
-  selfDir: 'out'
-});
-```
-
-### 4.2 Meta Cloud API (Graph API v22.0) Webhook Security & Verification
-
-Meta Cloud API communication operates over standard HTTPS REST endpoints and Webhook callbacks.
-
-#### 1. Webhook Challenge Verification (GET `/api/whatsapp/webhook`)
-During initial webhook registration in the Meta App Dashboard, Meta sends a challenge query:
-
-```javascript
-router.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === process.env.WA_VERIFY_TOKEN) {
-    console.log("✅ Meta Webhook challenge verified successfully");
-    return res.status(200).send(challenge);
-  }
-  res.sendStatus(403);
-});
-```
-
-#### 2. HMAC SHA-256 Payload Signature Verification (POST `/api/whatsapp/webhook`)
-Every incoming event payload from Meta contains the `X-Hub-Signature-256` header:
-$$\text{Signature} = \text{"sha256="} + \text{HMAC-SHA256}(\text{RawBody}, \text{APP\_SECRET})$$
-
-```javascript
-function verifyMetaSignature(req, res, buf, encoding) {
-  const signature = req.headers["x-hub-signature-256"];
-  if (!signature) return;
-  const hmac = crypto.createHmac("sha256", process.env.WA_APP_SECRET);
-  hmac.update(buf, encoding);
-  const expectedSignature = "sha256=" + hmac.digest("hex");
-  if (signature !== expectedSignature) {
-    throw new Error("Invalid Meta Webhook signature");
-  }
-}
-```
-
-### 4.3 Headless Chromium Launch Flags for Linux / Windows Environments
-
-To guarantee stability inside Docker containers, server environments, and virtual machines without memory leaks or sandbox permission errors, Puppeteer must be initialized with the following flags:
-
-```javascript
-const puppeteerOptions = {
-  headless: true,
-  executablePath: getExecutablePath(),
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-accelerated-2d-canvas",
-    "--no-first-run",
-    "--no-zygote",
-    "--disable-gpu",
-    "--disable-extensions",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-breakpad",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-sync",
-    "--disable-translate",
-    "--metrics-recording-only",
-    "--mute-audio",
-    "--no-default-browser-check"
-  ]
-};
-```
+1. **Protocol Engine**: Built on `whatsapp-web.js` (v1.34.7) interfacing with WhatsApp Web client via Chromium DevTools Protocol (CDP).
+2. **Meta Cloud Engine**: Direct HTTPS integration with Meta Graph API v22.0 (`https://graph.facebook.com/v22.0/{phone_number_id}/messages`).
+3. **Session State Storage**: Chromium user profiles persisted via `LocalAuth` on NVMe storage (`/whatsapp-sessions/<userId>`).
+4. **WebSocket Transport**: Socket.IO v4.8 with binary payload framing for instant live chat synchronization.
 
 ---
 
 ## 5. Database Architecture & Complete DDL Schema (25+ Tables)
 
-The following complete SQL DDL schema initializes the full standalone database. It includes all tables, data types, indexes, unique constraints, foreign keys, and default seed rows.
+The suite utilizes a strictly typed, normalized relational schema in MySQL (InnoDB, `utf8mb4_unicode_ci`):
 
 ```sql
--- Create Database
-CREATE DATABASE IF NOT EXISTS whatsapp_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE whatsapp_db;
-
--- 1. Accounts & Multi-Tenant Credentials
+-- 1. Connected Accounts & Senders
 CREATE TABLE IF NOT EXISTS wa_accounts (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  account_name VARCHAR(255) NOT NULL,
+  session_key VARCHAR(100) NOT NULL UNIQUE,
+  account_name VARCHAR(150) NOT NULL,
   phone_number VARCHAR(30) DEFAULT NULL,
-  phone_number_id VARCHAR(255) DEFAULT NULL,
-  access_token TEXT DEFAULT NULL,
-  waba_id VARCHAR(255) DEFAULT NULL,
-  app_secret TEXT DEFAULT NULL,
-  verify_token VARCHAR(255) DEFAULT 'crm_verify_123',
-  business_account_id VARCHAR(255) DEFAULT NULL,
-  connection_type ENUM('cloud_api','web_session') DEFAULT 'cloud_api',
-  is_active TINYINT(1) DEFAULT 1,
-  is_default TINYINT(1) DEFAULT 0,
-  webhook_url VARCHAR(500) DEFAULT NULL,
-  quality_rating VARCHAR(50) DEFAULT 'UNKNOWN',
-  verified_name VARCHAR(255) DEFAULT NULL,
-  code_verification_status VARCHAR(50) DEFAULT NULL,
-  created_by INT DEFAULT NULL,
+  provider ENUM('web','meta_cloud') DEFAULT 'web',
+  meta_phone_number_id VARCHAR(100) DEFAULT NULL,
+  meta_waba_id VARCHAR(100) DEFAULT NULL,
+  meta_access_token TEXT DEFAULT NULL,
+  status ENUM('active','inactive','qr_ready','pairing_ready','banned','quarantined') DEFAULT 'inactive',
+  health_score INT DEFAULT 100,
+  daily_send_limit INT DEFAULT 1000,
+  messages_sent_today INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_phone_number (phone_number)
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Sender Load Balancing Pools
+-- 2. Sender Pools & Load Balancing
 CREATE TABLE IF NOT EXISTS wa_sender_pools (
   id INT AUTO_INCREMENT PRIMARY KEY,
   pool_name VARCHAR(100) NOT NULL,
   strategy ENUM('round_robin','least_busy','random','priority') DEFAULT 'round_robin',
   is_active TINYINT(1) DEFAULT 1,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS wa_sender_pool_members (
@@ -422,165 +280,22 @@ CREATE TABLE IF NOT EXISTS wa_sender_pool_members (
   sent_today INT DEFAULT 0,
   is_healthy TINYINT(1) DEFAULT 1,
   last_used_at DATETIME DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (pool_id) REFERENCES wa_sender_pools(id) ON DELETE CASCADE,
   FOREIGN KEY (account_id) REFERENCES wa_accounts(id) ON DELETE CASCADE,
   UNIQUE KEY uq_pool_account (pool_id, account_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 3. Audience Contacts & Groups
-CREATE TABLE IF NOT EXISTS wa_contacts (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  phone VARCHAR(20) NOT NULL,
-  country_code VARCHAR(5) DEFAULT '91',
-  email VARCHAR(255) DEFAULT NULL,
-  tags JSON DEFAULT NULL,
-  custom_fields JSON DEFAULT NULL,
-  opt_in_status TINYINT(1) DEFAULT 1,
-  is_blocked TINYINT(1) DEFAULT 0,
-  is_unsubscribed TINYINT(1) DEFAULT 0,
-  source VARCHAR(100) DEFAULT 'Manual',
-  profile_pic_url TEXT DEFAULT NULL,
-  avatar_url TEXT DEFAULT NULL,
-  assigned_agent_id INT DEFAULT NULL,
-  assigned_agent_name VARCHAR(255) DEFAULT NULL,
-  ticket_status ENUM('open','pending','resolved','closed') DEFAULT 'open',
-  ai_enabled TINYINT(1) DEFAULT 1,
-  ai_paused_until DATETIME DEFAULT NULL,
-  ai_reply_count INT DEFAULT 0,
-  last_message_text TEXT DEFAULT NULL,
-  last_message_at DATETIME DEFAULT NULL,
-  unread_count INT DEFAULT 0,
-  notes TEXT DEFAULT NULL,
-  created_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_contact_phone (phone)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_contact_groups (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  description TEXT DEFAULT NULL,
-  total_contacts INT DEFAULT 0,
-  created_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_group_contacts (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  group_id INT NOT NULL,
-  name VARCHAR(255) DEFAULT NULL,
-  phone VARCHAR(20) NOT NULL,
-  country_code VARCHAR(5) DEFAULT '91',
-  notes TEXT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (group_id) REFERENCES wa_contact_groups(id) ON DELETE CASCADE,
-  UNIQUE KEY uq_group_phone (group_id, phone)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_opt_outs (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  phone VARCHAR(20) NOT NULL,
-  reason VARCHAR(100) DEFAULT 'user_request',
-  opt_out_keyword VARCHAR(50) DEFAULT NULL,
-  opted_out_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_optout_phone (phone)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 4. Inbound & Outbound Message Logs
-CREATE TABLE IF NOT EXISTS wa_message_logs (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  session_key VARCHAR(100) DEFAULT 'default',
-  phone VARCHAR(30) NOT NULL,
-  direction ENUM('inbound','outbound') NOT NULL,
-  message_type VARCHAR(50) DEFAULT 'text',
-  message_text LONGTEXT DEFAULT NULL,
-  wa_message_id VARCHAR(255) DEFAULT NULL,
-  reply_to_message_id VARCHAR(255) DEFAULT NULL,
-  media_url TEXT DEFAULT NULL,
-  status ENUM('pending','sent','delivered','read','failed') DEFAULT 'sent',
-  error TEXT DEFAULT NULL,
-  sent_at DATETIME DEFAULT NULL,
-  delivered_at DATETIME DEFAULT NULL,
-  read_at DATETIME DEFAULT NULL,
-  is_read TINYINT(1) DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_phone (phone),
-  INDEX idx_wa_msg_id (wa_message_id),
-  INDEX idx_session_phone (session_key, phone)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_reactions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  wa_message_id VARCHAR(255) NOT NULL,
-  phone VARCHAR(30) NOT NULL,
-  emoji VARCHAR(16) NOT NULL,
-  sender_type ENUM('agent','customer','bot') DEFAULT 'agent',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_react_msg (wa_message_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 5. Broadcasts & Campaigns
-CREATE TABLE IF NOT EXISTS wa_campaigns (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  campaign_type ENUM('broadcast','scheduled','drip','recurring') DEFAULT 'broadcast',
-  account_id INT DEFAULT NULL,
-  group_id INT DEFAULT NULL,
-  template_id INT DEFAULT NULL,
-  message_text LONGTEXT DEFAULT NULL,
-  media_url TEXT DEFAULT NULL,
-  media_type VARCHAR(50) DEFAULT NULL,
-  status ENUM('draft','scheduled','running','paused','completed','cancelled','failed') DEFAULT 'draft',
-  total_recipients INT DEFAULT 0,
-  sent_count INT DEFAULT 0,
-  delivered_count INT DEFAULT 0,
-  read_count INT DEFAULT 0,
-  failed_count INT DEFAULT 0,
-  pacing_speed_sec INT DEFAULT 12,
-  scheduled_at DATETIME DEFAULT NULL,
-  started_at DATETIME DEFAULT NULL,
-  completed_at DATETIME DEFAULT NULL,
-  created_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_campaign_messages (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  campaign_id INT NOT NULL,
-  phone VARCHAR(20) NOT NULL,
-  name VARCHAR(255) DEFAULT NULL,
-  custom_fields JSON DEFAULT NULL,
-  message_text LONGTEXT DEFAULT NULL,
-  media_url TEXT DEFAULT NULL,
-  wa_message_id VARCHAR(255) DEFAULT NULL,
-  status ENUM('queued','sent','delivered','read','failed','opted_out') DEFAULT 'queued',
-  opt_out TINYINT(1) DEFAULT 0,
-  error TEXT DEFAULT NULL,
-  sent_at DATETIME DEFAULT NULL,
-  delivered_at DATETIME DEFAULT NULL,
-  read_at DATETIME DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (campaign_id) REFERENCES wa_campaigns(id) ON DELETE CASCADE,
-  INDEX idx_camp_status (campaign_id, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 6. Visual Chatbot Flows
+-- 3. Visual Chatbot Flows & Dynamic State Machine
 CREATE TABLE IF NOT EXISTS wa_flows (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   description TEXT DEFAULT NULL,
-  trigger_type ENUM('keyword','first_inbound','all_inbound','welcome','manual') DEFAULT 'keyword',
-  trigger_keywords TEXT DEFAULT NULL,
+  trigger_type ENUM('keyword','first_inbound','all_inbound','ai_intent','crm_event','api_trigger') DEFAULT 'keyword',
+  trigger_config JSON DEFAULT NULL,
   entry_node_key VARCHAR(100) DEFAULT 'start',
-  is_active TINYINT(1) DEFAULT 1,
-  total_runs INT DEFAULT 0,
-  completed_runs INT DEFAULT 0,
-  created_by INT DEFAULT NULL,
+  fallback_policy ENUM('reprompt','agent_handoff','restart') DEFAULT 'agent_handoff',
+  status ENUM('active','draft','paused') DEFAULT 'active',
+  execution_count INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -589,7 +304,7 @@ CREATE TABLE IF NOT EXISTS wa_flow_nodes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   flow_id INT NOT NULL,
   node_key VARCHAR(100) NOT NULL,
-  node_type ENUM('trigger','send_message','send_media','send_buttons','send_list','collect_input','condition','crm_lookup','handoff','delay','end') NOT NULL,
+  node_type VARCHAR(50) NOT NULL,
   title VARCHAR(255) DEFAULT NULL,
   config JSON NOT NULL,
   position_x INT DEFAULT 0,
@@ -599,188 +314,36 @@ CREATE TABLE IF NOT EXISTS wa_flow_nodes (
   UNIQUE KEY uq_flow_node (flow_id, node_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS wa_flow_sessions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  flow_id INT NOT NULL,
-  phone VARCHAR(30) NOT NULL,
-  current_node_key VARCHAR(100) NOT NULL,
-  session_vars JSON DEFAULT NULL,
-  status ENUM('active','completed','timeout','abandoned','handed_off') DEFAULT 'active',
-  last_interaction_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_phone_flow (phone, flow_id, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS wa_flow_runs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   flow_id INT NOT NULL,
   phone VARCHAR(30) NOT NULL,
-  start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-  end_time DATETIME DEFAULT NULL,
-  status ENUM('running','completed','failed','handed_off') DEFAULT 'running',
-  steps_executed INT DEFAULT 0,
-  execution_log JSON DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (flow_id) REFERENCES wa_flows(id) ON DELETE CASCADE
+  status ENUM('active','completed','handed_off','timed_out') DEFAULT 'active',
+  current_node_key VARCHAR(100) NOT NULL,
+  vars JSON DEFAULT NULL,
+  reprompt_count INT DEFAULT 0,
+  end_reason VARCHAR(100) DEFAULT NULL,
+  started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_advanced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  ended_at DATETIME DEFAULT NULL,
+  FOREIGN KEY (flow_id) REFERENCES wa_flows(id) ON DELETE CASCADE,
+  INDEX idx_phone_status (phone, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 7. Automations & Drip Sequences
-CREATE TABLE IF NOT EXISTS wa_automations (
+CREATE TABLE IF NOT EXISTS wa_flow_run_events (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  trigger_type VARCHAR(100) NOT NULL,
-  trigger_condition JSON DEFAULT NULL,
-  template_id INT DEFAULT NULL,
-  message_text LONGTEXT DEFAULT NULL,
-  media_url TEXT DEFAULT NULL,
-  delay_minutes INT DEFAULT 0,
-  followup_template_id INT DEFAULT NULL,
-  followup_delay_hours INT DEFAULT 0,
-  is_active TINYINT(1) DEFAULT 1,
-  total_triggered INT DEFAULT 0,
-  created_by INT DEFAULT NULL,
+  run_id INT NOT NULL,
+  node_key VARCHAR(100) NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  payload JSON DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_automation_logs (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  automation_id INT NOT NULL,
-  phone VARCHAR(30) NOT NULL,
-  contact_name VARCHAR(255) DEFAULT NULL,
-  trigger_data JSON DEFAULT NULL,
-  status ENUM('scheduled','sending','sent','failed') DEFAULT 'sent',
-  scheduled_for DATETIME DEFAULT NULL,
-  error TEXT DEFAULT NULL,
-  sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (automation_id) REFERENCES wa_automations(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 8. First-Time Welcome Message Settings
-CREATE TABLE IF NOT EXISTS wa_welcome_settings (
-  id INT PRIMARY KEY,
-  enabled TINYINT(1) DEFAULT 1,
-  welcome_type ENUM('text','template','flow') DEFAULT 'text',
-  welcome_text TEXT DEFAULT NULL,
-  template_id INT DEFAULT NULL,
-  cooldown_hours INT DEFAULT 24,
-  working_hours_only TINYINT(1) DEFAULT 0,
-  start_time VARCHAR(10) DEFAULT '09:00',
-  end_time VARCHAR(10) DEFAULT '21:00',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed Welcome Settings
-INSERT IGNORE INTO wa_welcome_settings (id, enabled, welcome_type, welcome_text, cooldown_hours, working_hours_only)
-VALUES (1, 1, 'text', 'Hello {name}! Welcome to ACHME Solutions. Thank you for reaching out to us. How can we help you today?', 24, 0);
-
--- 9. AI Assistant & Knowledge Base
-CREATE TABLE IF NOT EXISTS wa_ai_settings (
-  id INT PRIMARY KEY,
-  enabled TINYINT(1) DEFAULT 0,
-  provider ENUM('openrouter','openai','gemini','anthropic','ollama') DEFAULT 'openrouter',
-  api_key TEXT DEFAULT NULL,
-  model_name VARCHAR(100) DEFAULT 'meta-llama/llama-3.3-70b-instruct:free',
-  system_prompt LONGTEXT DEFAULT NULL,
-  temperature FLOAT DEFAULT 0.7,
-  max_tokens INT DEFAULT 500,
-  working_hours_only TINYINT(1) DEFAULT 0,
-  work_start_time VARCHAR(10) DEFAULT '09:00',
-  work_end_time VARCHAR(10) DEFAULT '19:00',
-  human_handoff_keywords TEXT DEFAULT NULL,
-  handoff_cooldown_min INT DEFAULT 180,
-  auto_lead_capture TINYINT(1) DEFAULT 1,
-  typing_delay_sec INT DEFAULT 2,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed AI Settings
-INSERT IGNORE INTO wa_ai_settings (id, enabled, provider, model_name, system_prompt, human_handoff_keywords)
-VALUES (1, 0, 'openrouter', 'meta-llama/llama-3.3-70b-instruct:free', 'You are the intelligent WhatsApp AI Assistant for our company. Answer customer queries politely, concisely, and accurately based on our knowledge base documents. If the user asks for a human agent, output [[HANDOFF]].', 'agent,human,support,executive,talk to human,call me');
-
-CREATE TABLE IF NOT EXISTS wa_knowledge_base (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  file_name VARCHAR(255) NOT NULL,
-  file_type VARCHAR(50) NOT NULL,
-  file_path TEXT NOT NULL,
-  file_size INT DEFAULT 0,
-  parsed_content LONGTEXT DEFAULT NULL,
-  content_chunks JSON DEFAULT NULL,
-  total_chunks INT DEFAULT 0,
-  is_active TINYINT(1) DEFAULT 1,
-  uploaded_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- 10. Message Templates & Quick Replies
-CREATE TABLE IF NOT EXISTS wa_templates (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  category VARCHAR(50) DEFAULT 'MARKETING',
-  language VARCHAR(10) DEFAULT 'en',
-  header_type VARCHAR(50) DEFAULT NULL,
-  header_value TEXT DEFAULT NULL,
-  body TEXT NOT NULL,
-  footer TEXT DEFAULT NULL,
-  button_type VARCHAR(50) DEFAULT NULL,
-  buttons JSON DEFAULT NULL,
-  variables JSON DEFAULT NULL,
-  meta_template_id VARCHAR(100) DEFAULT NULL,
-  meta_status VARCHAR(50) DEFAULT 'APPROVED',
-  created_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_quick_replies (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  title VARCHAR(100) NOT NULL,
-  shortcut VARCHAR(50) NOT NULL,
-  message_text TEXT NOT NULL,
-  media_url TEXT DEFAULT NULL,
-  created_by INT DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_shortcut (shortcut)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS wa_internal_notes (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  phone VARCHAR(30) NOT NULL,
-  author_id INT DEFAULT NULL,
-  author_name VARCHAR(255) DEFAULT 'Agent',
-  note_text TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_note_phone (phone)
+  FOREIGN KEY (run_id) REFERENCES wa_flow_runs(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
 ---
 
 ## 6. Multi-Session & Multi-Device Lifecycle Engine
-
-The `whatsappService.js` module manages multiple concurrent WhatsApp Web instances. Each linked phone number is encapsulated in a `WhatsAppService` instance keyed by its `sessionKey` (e.g., `'1'`, `'user_4'`, `'support_desk'`).
-
-```
-+----------------------------------------------------------------------------------------------------+
-|                                    WHATSAPP SESSION MANAGER HUB                                    |
-|                                                                                                    |
-|  sessionsMap = Map<string, WhatsAppService>                                                        |
-|                                                                                                    |
-|  ┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────────┐  |
-|  │  Session '1' (Sales Admin)   │  │ Session '2' (Support Desk)   │  │ Session '3' (Billing)    │  |
-|  │  Phone: +91 98765 43210      │  │ Phone: +91 91234 56789       │  │ Phone: +91 99887 76655   │  |
-|  │  Status: READY               │  │ Status: READY                │  │ Status: INITIALIZING     │  |
-|  │  Profile: /sessions/1/       │  │ Profile: /sessions/2/        │  │ Profile: /sessions/3/    │  |
-|  └──────────────┬───────────────┘  └──────────────┬───────────────┘  └─────────────┬────────────┘  |
-+-----------------┼---------------------------------┼--------------------------------┼---------------+
-                  │                                 │                                │
-                  ▼                                 ▼                                ▼
-       [ Headless Chrome #1 ]            [ Headless Chrome #2 ]           [ Headless Chrome #3 ]
-```
 
 ### 6.1 Session Initialization & Watchdog Recovery
 Initialization launches Puppeteer with `LocalAuth` session caching. A 60-second watchdog prevents stalled browser states from deadlocking memory:
@@ -794,8 +357,6 @@ class WhatsAppService {
     this.ready = false;
     this.phone = null;
     this.isInitializing = false;
-    this.chatsCache = [];
-    this.messagesCache = {};
     this._queue = Promise.resolve();
     this._sendQueue = Promise.resolve();
     this._lastSendAt = 0;
@@ -822,49 +383,67 @@ class WhatsAppService {
 ```
 
 ### 6.2 4-Day Session Inactivity & Auto-Deletion Lifecycle
-When a user logs out or disconnects their session:
-1. `markLoggedOut(reason)` records a `session_meta.json` file with an exact expiration timestamp ($t_{\text{expire}} = \text{Date.now()} + 4 \times 24 \times 3600 \times 1000$).
-2. The periodic cleanup sweeper (`cleanExpiredSessions`) runs every 6 hours and at server boot, deleting inactive session profiles older than 4 days while keeping recently active sessions safe.
-
-```javascript
-markLoggedOut(reason = "LOGOUT") {
-  const sessionDir = path.join(SESSIONS_ROOT, this.key);
-  const metaFile = path.join(sessionDir, "session_meta.json");
-  const meta = {
-    sessionKey: this.key,
-    phone: this.phone,
-    status: "logged_out",
-    loggedOutAt: Date.now(),
-    expiresAt: Date.now() + (4 * 24 * 60 * 60 * 1000), // 4 days
-    reason: String(reason)
-  };
-  fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2), "utf8");
-}
-```
+When a user logs out or disconnects their session, `markLoggedOut(reason)` records a `session_meta.json` file with an exact expiration timestamp ($t_{\text{expire}} = \text{Date.now()} + 4 \times 24 \times 3600 \times 1000$). The periodic cleanup sweeper (`cleanExpiredSessions`) runs every 6 hours and at server boot, deleting inactive session profiles older than 4 days.
 
 ### 6.3 8-Digit Pairing Code Linking (Phone Number Authentication)
-Allows users to link WhatsApp without scanning a QR code with their camera:
+Allows users to link WhatsApp without scanning a QR code with their camera by calling `this.client.requestPairingCode(cleanPhone)`.
 
-```javascript
-async getPairingCode(phoneNumber) {
-  if (!phoneNumber) throw new Error("Phone number is required");
-  const cleanPhone = phoneNumber.replace(/\D/g, "");
-  
-  if (!this.client) {
-    await this.init(true);
-  }
-  
-  // Request 8-digit pairing code from WhatsApp Web
-  const code = await this.client.requestPairingCode(cleanPhone);
-  return code; // Format: "ABCD-1234"
-}
-```
+### 6.4 Multi-Dynamic Hybrid Load Balancer (`waLoadBalancer.js`)
+The Load Balancer dynamically routes outbound messages across multiple connected WhatsApp numbers:
+1. **Dynamic Round-Robin with Health Check**: Checks if session is in `READY` state and daily quota is not exceeded (`sent_today < daily_limit`).
+2. **Session Health Scoring ($0 - 100$)**:
+   - Scores drop upon socket disconnects, unhandled timeouts, or delivery failures.
+   - Sessions with scores $< 40$ are quarantined for 15 minutes.
+3. **Automated Dual-Engine Failover**:
+   - Primary: WhatsApp Web (Zero per-message fees).
+   - Secondary Failover: If WhatsApp Web is offline or disconnected, outbound messages automatically re-route through the Official Meta WhatsApp Cloud API (`whatsappCloudApi.js`).
 
 ---
 
 ## 7. Inbound & Outbound Messaging Pipeline
 
-### 7.1 Multi-Tier Resilient Outbound Delivery Engine
+### 7.1 Inbound Message State Machine & Priority Cascade
+
+```mermaid
+flowchart TD
+    A[Inbound Message Received] --> B{Is Status / Broadcast?}
+    B -- Yes --> C[Ignore & Return]
+    B -- No --> D[Extract cleanPhone & Target JID]
+    
+    D --> E[Emit Socket.IO Event 'wa_message_received']
+    D --> F[Insert into DB 'wa_message_logs']
+    D --> G[Upsert Contact in 'wa_contacts']
+    
+    F --> H{Is Opt-Out Keyword? STOP/UNSUB}
+    H -- Yes --> I[Mark Unsubscribed & Blacklist in wa_opt_outs]
+    I --> J[Send Polite Unsubscribe Confirmation]
+    
+    H -- No --> K{Pending 2-Way Confirmation?}
+    K -- Yes --> L[Resolve Confirmation in waConfirmationService]
+    
+    K -- No --> M{Active Flow Run for Phone?}
+    M -- Yes --> N{Customer Command to Switch Flow?}
+    N -- Yes --> O[End Current Run & Start Target Flow]
+    N -- No --> P[Advance Active Flow Run in waFlowEngine]
+    
+    M -- No --> Q{Matches Keyword Trigger in Active Flows?}
+    Q -- Yes --> R[Start Matching Chatbot Flow]
+    
+    Q -- No --> S{First Inbound or Cooldown Expired?}
+    S -- Yes --> T[Launch First-Inbound Welcome Flow]
+    
+    S -- No --> U{Universal 24/7 Flow Enabled?}
+    U -- Yes --> V[Start Universal Receptionist Flow]
+    
+    U -- No --> W{AI Intent Classification Match?}
+    W -- Yes --> X[Execute AI Intent Routing Flow]
+    
+    W -- No --> Y{AI Auto-Reply Enabled?}
+    Y -- Yes --> Z[Generate LLM Response with RAG Context]
+    Y -- No --> AA[Leave Unread in CRM Live Chat for Human]
+```
+
+### 7.2 Multi-Tier Resilient Outbound Delivery Engine
 
 ```mermaid
 flowchart TD
@@ -891,9 +470,7 @@ flowchart TD
     I -- No --> K[Throw Descriptive Error: Device Offline / Unreachable]
 ```
 
-### 7.2 Message Formatting Rules (`mdToWa.js`)
-
-WhatsApp uses custom formatting tokens rather than standard GitHub Markdown:
+### 7.3 Message Formatting Rules (`mdToWa.js`)
 
 | Standard Markdown | WhatsApp Syntax | Parsed Example |
 |---|---|---|
@@ -907,148 +484,71 @@ WhatsApp uses custom formatting tokens rather than standard GitHub Markdown:
 
 ## 8. Multi-Modal Media & Binary Attachment Pipeline
 
-The engine natively processes all binary media types across both inbound extraction and outbound delivery.
+The engine natively processes all binary media types across both inbound extraction and outbound delivery:
+- **Images**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`
+- **Audio**: `.mp3`, `.ogg`, `.wav`, `.m4a`, `.aac` (supports native WhatsApp voice note PTT)
+- **Video**: `.mp4`, `.mov`, `.3gp`, `.mkv`
+- **Documents**: `.pdf`, `.docx`, `.xlsx`, `.csv`, `.txt`
 
-### 8.1 Supported MIME Types & Classification Matrix
-
-```javascript
-function classifyMimeType(mime, filename = "") {
-  mime = (mime || "").toLowerCase();
-  const ext = path.extname(filename || "").toLowerCase();
-
-  if (mime.startsWith("image/") || [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext)) {
-    return { type: "image", isDoc: false };
-  }
-  if (mime.startsWith("video/") || [".mp4", ".3gp", ".mov", ".mkv"].includes(ext)) {
-    return { type: "video", isDoc: false };
-  }
-  if (mime.startsWith("audio/") || [".mp3", ".ogg", ".wav", ".m4a", ".aac"].includes(ext)) {
-    return { type: "audio", isDoc: false };
-  }
-  return { type: "document", isDoc: true };
-}
-```
-
-### 8.2 Inbound Media Lazy-Resolution Protocol
-Inbound media is not downloaded immediately to conserve server bandwidth. When the live chat UI opens a file or a chatbot step requires an attachment:
-1. `resolveMedia()` calls `msg.downloadMedia()`.
-2. Decodes the Base64 binary payload.
-3. Writes the buffer to `/uploads/wa-media/<sessionKey>/<safeId>.<ext>`.
-4. Returns the public static URL (`/uploads/wa-media/...`).
+Lazy resolution ensures media is only fetched from disk or remote storage when explicitly requested by client or UI.
 
 ---
 
 ## 9. Visual Chatbot Flow Engine (`waFlowEngine.js`)
 
-The Chatbot Flow Engine is a state machine executing complex directed graphs.
+### 9.1 The 8 Multi-Dynamic Execution Mechanisms
+1. **Dynamic CRM Event Bus**: Fires on database hooks (`invoice_created`, `quotation_created`, `payment_received`).
+2. **Inbound Webhook & API Triggers**: External apps trigger flows via `POST /api/whatsapp/flows/:id/trigger`.
+3. **Multi-Intent AI NLU Routing**: LLM categorizes free-form customer inputs and branches dynamically.
+4. **Live Dynamic SQL Lookups**: Performs real-time parameterized queries into CRM tables mid-chat.
+5. **Outbound API Webhooks with JSONPath**: Calls external REST APIs and extracts response fields into `vars`.
+6. **Multi-Dynamic Spintax & Jitter**: Rotates message variations and appends zero-width spaces for anti-ban safety.
+7. **Stateful Navigation Stack**: Handles `0/Back`, `Next/Pagination`, option numbers (`1, 2`), and fuzzy symbol stripping.
+8. **Dynamic Human Takeover & Muting**: Mutes AI for 120 minutes upon handoff keywords with live desktop alerts.
 
-### 9.1 Flow Node Types & JSON Configuration Schema
+### 9.2 Node Graph Model & Supported Node Types
+The engine evaluates 19 distinct node types: `start`, `send_message`, `send_media`, `send_buttons`, `send_list`, `interactive_menu`, `collect_input`, `collect_number`, `collect_email`, `collect_date`, `crm_lookup`, `condition`, `api_webhook`, `ai_generate`, `ai_intent`, `set_variable`, `set_tag`, `add_to_group`, `create_lead`, `jump_to_flow`, `handoff`, `delay`, `end`.
 
+### 9.3 In-Memory Flow Simulator (`simulateFlowStep`)
+Administrators can test flow execution without hitting live WhatsApp networks:
 ```javascript
-// Example: Multi-Option Flow Definition
-const exampleFlow = {
-  id: 101,
-  name: "Customer Support & Lead Flow",
-  trigger_type: "keyword",
-  trigger_keywords: "hi,hello,help,menu,support",
-  entry_node_key: "node_welcome",
-  nodes: [
-    {
-      node_key: "node_welcome",
-      node_type: "send_buttons",
-      config: {
-        text: "👋 Welcome to ACHME Solutions! How can we assist you today?",
-        buttons: [
-          { reply_id: "opt_services", title: "1. 🛠️ Services & AMC", next_node_key: "node_services" },
-          { reply_id: "opt_billing", title: "2. 💳 Check Pending Bill", next_node_key: "node_bill" },
-          { reply_id: "opt_agent", title: "3. 👤 Talk to Human", next_node_key: "node_agent" }
-        ]
-      }
-    },
-    {
-      node_key: "node_services",
-      node_type: "send_message",
-      config: {
-        text: "We provide 24/7 AMC Support, HVAC Repair, and Electrical Maintenance.",
-        next_node_key: "node_ask_name"
-      }
-    },
-    {
-      node_key: "node_ask_name",
-      node_type: "collect_input",
-      config: {
-        prompt: "Please reply with your full name to book a technician visit:",
-        variable_name: "customer_name",
-        validation: "text",
-        next_node_key: "node_confirm_lead"
-      }
-    },
-    {
-      node_key: "node_confirm_lead",
-      node_type: "send_message",
-      config: {
-        text: "Thank you {customer_name}! Our team will call you within 15 minutes.",
-        next_node_key: "node_end"
-      }
-    },
-    {
-      node_key: "node_bill",
-      node_type: "crm_lookup",
-      config: {
-        lookup_type: "invoice_balance",
-        next_node_key: "node_end"
-      }
-    },
-    {
-      node_key: "node_agent",
-      node_type: "handoff",
-      config: {
-        note: "Customer requested human support from bot",
-        next_node_key: "node_end"
-      }
-    },
-    {
-      node_key: "node_end",
-      node_type: "end",
-      config: {}
-    }
-  ]
-};
+const simulationResult = await waFlowEngine.simulateFlowStep(flow, userMessage, currentRunState);
+// Returns: { handled: true, messages: [...], vars: {...}, currentNodeKey: "...", logs: [...] }
 ```
 
-### 9.2 Flexible Option & Button Reply Processing
-The engine captures replies regardless of how the customer responds on real WhatsApp:
-1. **Digit Reply**: `1`, `2`, `3`, `1.`, `#1`
-2. **Text + Number**: `1. Services`, `1 - Services`
-3. **Exact / Fuzzy Title**: `services`, `Check Pending Bill`, `repair`
-4. **Native Button Click**: `opt_services`, `opt_billing`
+### 9.4 Hot-Reloading & Safe Session State Migration
+Flow nodes and configs are stored in relational JSON fields. When a flow is updated via REST API:
+- Modifications apply immediately to the next message.
+- Active customer sessions remain at their `current_node_key` with all session variables preserved.
+- If a target node is missing, the fallback policy safely reprompts or restarts at `entry_node_key`.
 
 ---
 
 ## 10. Enterprise Bulk Broadcast & Anti-Ban Broadcaster (`waCampaignEngine.js`)
 
-### 10.1 Recursive Spintax Parser
-Converts nested `{A|B|{C|D}}` templates into millions of unique variations:
-
+### 10.1 Recursive Spintax Parser & Zero-Width Micro-Jitter
 ```javascript
-function parseSpintax(text) {
-  if (!text || typeof text !== "string") return text;
-  const spintaxRegex = /\{([^{}]+)\}/g;
-  let matches = 0;
-  let parsed = text.replace(spintaxRegex, (match, choices) => {
-    matches++;
-    const options = choices.split("|");
-    return options[Math.floor(Math.random() * options.length)];
-  });
-  if (matches > 0 && parsed.includes("{") && parsed.includes("}")) {
-    return parseSpintax(parsed);
+function resolveSpintax(text, injectMicroJitter = true) {
+  if (!text || typeof text !== "string") return "";
+  let result = text;
+  const curlyRegex = /\{([^{}]+)\}/g;
+  let matches;
+  while ((matches = result.match(curlyRegex))) {
+    result = result.replace(curlyRegex, (match, choices) => {
+      if (!choices.includes("|")) return match;
+      const options = choices.split("|");
+      return options[Math.floor(Math.random() * options.length)].trim();
+    });
   }
-  return parsed;
+  if (injectMicroJitter && result.length > 0) {
+    const zwChars = ["\u200B", "\u200C", "\u200D", "\uFEFF"];
+    result += zwChars[Math.floor(Math.random() * zwChars.length)];
+  }
+  return result;
 }
 ```
 
 ### 10.2 Progressive Account Warm-Up Ramp
-
 $$\text{Daily Limit}(d) = \begin{cases} 
 50 & d \le 3 \\
 150 & 4 \le d \le 7 \\
@@ -1057,27 +557,33 @@ $$\text{Daily Limit}(d) = \begin{cases}
 1200+ & d > 21 
 \end{cases}$$
 
+### 10.3 Campaign Job Queue & Fault-Tolerant Checkpointing
+Bulk broadcasts process recipients with randomized jitter (8s–25s). If the server restarts mid-campaign, the engine queries `WHERE status = 'queued'` and resumes without duplicate sends.
+
 ---
 
 ## 11. AI Conversational Assistant & Document RAG Knowledge Base
 
-### 11.1 Document Ingestion & Text Chunking
-Documents (`.pdf`, `.docx`, `.csv`, `.txt`) are parsed into token chunks ($\sim 500$ tokens per chunk with 50-token overlap) and stored in `wa_knowledge_base`.
+### 11.1 Document Ingestion & Chunking Pipeline
+Enterprise documents (`.pdf`, `.docx`, `.csv`, `.txt`) are parsed into 500-token chunks with 50-token overlap and indexed in `wa_knowledge_base`.
 
 ### 11.2 Contextual Retrieval & Prompt Injection
-When an inbound message arrives:
-1. Keyword and semantic TF-IDF scoring finds top relevant chunks.
-2. Dynamically injects context into the LLM system prompt:
-
+Top relevant chunks are dynamically extracted and injected into the LLM prompt:
 ```text
-You are the AI Customer Assistant for ACHME Solutions.
-Answer the customer's query using ONLY the following verified document context:
+You are the AI Customer Assistant for Madhura Solutions.
+Answer the customer's query using ONLY the verified context below:
 
 [DOCUMENT KNOWLEDGE CONTEXT]
 {{retrieved_chunks}}
 
-If you cannot answer from the context or the user asks for a representative, output [[HANDOFF]].
+If the answer is not in the context, politely suggest speaking to our specialist.
 ```
+
+### 11.3 Autonomous Function Calling & CRM Tool Calling (`waAiTools.js`)
+When integrated with OpenAI or Gemini, the model can invoke tools:
+- `lookup_customer_balance(phone)`
+- `fetch_latest_invoice_pdf(phone)`
+- `create_service_ticket(phone, issue, preferred_slot)`
 
 ---
 
@@ -1094,65 +600,63 @@ When a customer texts `bill`, `receipt`, `invoice`, or `statement`:
 
 ---
 
-## 13. CRM Decoupling Strategy & Webhook Integration Layer
+## 13. CRM Decoupling Strategy & Bidirectional Event Bus
 
-To decouple the WhatsApp suite from any host CRM:
+### 13.1 Bidirectional Event Bus Architecture (`crmEventBus.js`)
 
-```javascript
-// Generic REST Webhook Client for External CRM Integration
-async function fetchExternalCrmData(phone) {
-  if (process.env.CRM_WEBHOOK_URL) {
-    try {
-      const response = await axios.get(`${process.env.CRM_WEBHOOK_URL}/lookup`, {
-        params: { phone },
-        headers: { Authorization: `Bearer ${process.env.CRM_API_KEY}` },
-        timeout: 5000
-      });
-      return response.data; // { name, email, company, invoice_balance }
-    } catch (_) {}
-  }
-  // Fallback to local wa_contacts table
-  const [rows] = await db.promise().query("SELECT * FROM wa_contacts WHERE phone LIKE ? LIMIT 1", [`%${phone.slice(-10)}`]);
-  return rows[0] || {};
-}
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    BIDIRECTIONAL CRM <-> WHATSAPP EVENT BUS                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  [ CRM DATABASE EVENTS ]                       [ WHATSAPP DISPATCH ]        │
+│  ───────────────────────                       ─────────────────────        │
+│  invoice_created         ───────────────▶      Payment Reminder + UPI Link  │
+│  quotation_created       ───────────────▶      Proposal Review + Buttons    │
+│  payment_received        ───────────────▶      Instant Payment Receipt PDF  │
+│                                                                             │
+│  [ WHATSAPP USER ACTIONS ]                     [ CRM DATABASE ACTIONS ]     │
+│  ─────────────────────────                     ────────────────────────     │
+│  "Already Paid" + UTR    ───────────────▶      Insert Accounts Review Task  │
+│  "Accept Quote"          ───────────────▶      Update Quotation to Approved │
+│  "Request Callback"      ───────────────▶      Create High Priority Task    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 13.2 Generic Webhook Integration Layer for Third-Party CRMs
+For external systems, the suite provides a decoupled REST webhook endpoint (`/api/whatsapp/webhook/event`) accepting JSON events to trigger flows.
 
 ---
 
 ## 14. Complete REST API Specification
 
 ### Authentication
-All requests must include the JWT Bearer token or API Key:
 `Authorization: Bearer <JWT_TOKEN>` or `x-api-key: <API_KEY>`
 
-### 14.1 Account & Session Endpoints
+### 14.1 Dynamic Flow Management Endpoints
+- `GET /api/whatsapp/flows` — List all conversational flows with run counts.
+- `POST /api/whatsapp/flows` — Create a new flow with complete node graph.
+- `PUT /api/whatsapp/flows/:id` — Hot-update flow definition and nodes atomically.
+- `POST /api/whatsapp/flows/:id/trigger` — Dynamically trigger flow for a phone number with initial vars.
+- `POST /api/whatsapp/flows/simulate` — Execute in-memory flow simulation.
+- `GET /api/whatsapp/flows/:id/runs` — Query active and completed run histories.
+
+### 14.2 Account & Session Endpoints
 - `GET /api/whatsapp/status` — Returns active connection status.
 - `GET /api/whatsapp/qr` — Returns current QR code data URL.
 - `GET /api/whatsapp/pairing-code?phone=919876543210` — Generates 8-digit pairing code.
 - `POST /api/whatsapp/logout` — Disconnects session and starts 4-day cleanup timer.
 - `POST /api/whatsapp/reconnect` — Re-initializes headless browser.
 
-### 14.2 Messaging Endpoints
-- `POST /api/whatsapp/send` — Sends a text message (`{ chatId, message, quotedMessageId }`).
+### 14.3 Messaging Endpoints
+- `POST /api/whatsapp/send` — Sends a text message (`{ chatId, message }`).
 - `POST /api/whatsapp/send-media` — Sends document/image/video (`{ chatId, mediaUrl, mediaType, caption, filename }`).
-- `POST /api/whatsapp/send-location` — Sends location coordinates (`{ chatId, lat, lng, name }`).
-- `POST /api/whatsapp/react` — Reacts with an emoji (`{ chatId, messageId, emoji }`).
-- `GET /api/whatsapp/chats` — Retrieves recent conversations list.
-- `GET /api/whatsapp/chat/:chatId/messages` — Retrieves paginated message history.
-
-### 14.3 Campaign & Automation Endpoints
-- `POST /api/whatsapp/campaigns` — Creates a new bulk broadcast.
-- `POST /api/whatsapp/campaigns/:id/start` — Launches campaign execution.
-- `POST /api/whatsapp/campaigns/:id/pause` — Pauses running campaign.
-- `POST /api/whatsapp/automations` — Creates an event-driven automation rule.
-- `GET /api/whatsapp/flows` — Lists all chatbot flows.
-- `POST /api/whatsapp/flows` — Creates or updates a visual chatbot flow.
+- `POST /api/whatsapp/chats` — Retrieves recent conversation list.
 
 ---
 
 ## 15. Real-Time WebSocket Protocol (Socket.IO Event Taxonomy)
-
-The backend emits real-time events over Socket.IO (Port 5000):
 
 | Event Name | Payload Structure | Trigger Condition |
 |---|---|---|
@@ -1160,22 +664,19 @@ The backend emits real-time events over Socket.IO (Port 5000):
 | `wa_ready` | `{ connected: true, phone: "919876543210" }` | Emitted when WhatsApp Web finishes handshake |
 | `wa_message_received` | `{ chatId, phone, message: { id, body, timestamp, isMe: false } }` | Emitted instantly upon inbound message arrival |
 | `wa_message_sent` | `{ chatId, phone, message: { id, body, timestamp, isMe: true } }` | Emitted upon outbound message dispatch |
-| `wa_message_ack` | `{ id, serializedId, ack: 2, status: "delivered" }` | Emitted when delivery receipt updates (ticks) |
-| `wa_chat_read` | `{ chatId, phone }` | Emitted when conversation is opened/marked read |
+| `wa_agent_handoff` | `{ phone, flowId, note, vars }` | Emitted when bot transfers conversation to human |
 
 ---
 
 ## 16. Security Architecture, Anti-Ban & Compliance Protocols
 
-1. **SSRF Protection (`waSsrf.js`)**: All user-supplied media URLs are validated against private IP blocks (`127.0.0.1`, `10.0.0.0/8`, `192.168.0.0/16`, AWS metadata `169.254.169.254`) before fetching.
-2. **Opt-Out Blacklist Compliance**: Automatic instant blacklisting in `wa_opt_outs` whenever a customer messages `STOP`, `UNSUBSCRIBE`, or `CANCEL`.
-3. **Encrypted Token Vault (`waEncryption.js`)**: Meta App Secrets and Access Tokens are stored encrypted in MySQL using `AES-256-GCM`.
+1. **SSRF Protection (`waSsrf.js`)**: User-supplied media URLs are validated against private IP blocks before fetching.
+2. **Opt-Out Compliance**: Automatic instant blacklisting in `wa_opt_outs` whenever a customer messages `STOP` or `UNSUBSCRIBE`.
+3. **Encrypted Token Vault (`waEncryption.js`)**: Meta App Secrets and Access Tokens are stored encrypted using `AES-256-GCM`.
 
 ---
 
 ## 17. Frontend Architecture & UI Component Hierarchy
-
-The React frontend utilizes a modular component architecture:
 
 ```
 [ App.jsx ]
@@ -1194,26 +695,18 @@ The React frontend utilizes a modular component architecture:
 
 ## 18. Step-by-Step Standalone Replication & Deployment Runbook
 
-### 18.1 Prerequisites
-- Node.js v18.x or v20.x LTS
-- MySQL v8.0+ or MariaDB 10.6+
-- Google Chrome or Chromium installed on host
-- NPM or Yarn package manager
-
-### 18.2 Installation & Startup Commands
 ```bash
 # 1. Clone or extract repository
 git clone <repo_url> whatsapp-suite
 cd whatsapp-suite/backend
 
-# 2. Install dependencies (patch-package runs automatically)
+# 2. Install dependencies
 npm install
 
 # 3. Configure environment variables
 cp ../.env.example .env
-# Edit .env with your DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
 
-# 4. Start backend server (auto-creates all 25+ database tables on boot)
+# 4. Start backend server (auto-creates database tables on boot)
 npm start
 
 # 5. Start frontend UI
@@ -1222,77 +715,135 @@ npm install
 npm run dev
 ```
 
-### 18.3 Docker Compose Multi-Container Deployment (`docker-compose.yml`)
-
-```yaml
-version: '3.8'
-
-services:
-  whatsapp-mysql:
-    image: mysql:8.0
-    container_name: wa-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password_here
-      MYSQL_DATABASE: whatsapp_db
-    volumes:
-      - wa_db_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
-    restart: unless-stopped
-
-  whatsapp-backend:
-    build: ./backend
-    container_name: wa-backend
-    environment:
-      PORT: 5000
-      DB_HOST: whatsapp-mysql
-      DB_USER: root
-      DB_PASSWORD: root_password_here
-      DB_NAME: whatsapp_db
-      PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome-stable
-    ports:
-      - "5000:5000"
-    volumes:
-      - wa_sessions:/app/whatsapp-sessions
-      - wa_uploads:/app/uploads
-    depends_on:
-      - whatsapp-mysql
-    restart: unless-stopped
-
-  whatsapp-frontend:
-    build: ./frontend
-    container_name: wa-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - whatsapp-backend
-    restart: unless-stopped
-
-volumes:
-  wa_db_data:
-  wa_sessions:
-  wa_uploads:
-```
-
 ---
 
 ## 19. Troubleshooting, Self-Check Tests & Failure Recovery
 
-### 19.1 Automated Diagnostic Test Suite
 Run the built-in self-test command from `backend/`:
-
 ```bash
 node services/waFlowEngine.selfcheck.js
 ```
 
-### 19.2 Common Failure Modes & Quick Fixes
+---
 
-| Symptom | Probable Cause | Immediate Remediation |
-|---|---|---|
-| QR code not generating | Chromium binary missing or locked | Ensure Chrome is installed; check `getExecutablePath()` in `whatsappService.js` |
-| `Cannot read properties of undefined (reading 'WidFactory')` | WhatsApp Web frontend change | Run `npx patch-package` in `backend/` to apply injected WAP fixes |
-| Messages failing to deliver | Chat not indexed in browser memory | The engine automatically falls back to `getNumberId()` and `getChatById()` |
-| Session logged out unexpectedly | 4-day auto-cleanup expired or phone unlinked | Open `/whatsapp/accounts` and re-scan QR code or request pairing code |
+## 20. 🎯 Enterprise Multi-Dynamic Operational Playbooks (10 In-Depth Production Workflows)
+
+Below are the **10 comprehensive multi-dynamic operational playbooks** detailing end-to-end architectures, trigger events, database queries, and code patterns:
+
+### Playbook 1: Real-Time Dynamic Invoicing & Deep UPI Payment Verification via Event Bus
+1. **Trigger**: CRM billing module emits `crmEventBus.emit("invoice_created", invoiceData)`.
+2. **Dynamic Context Resolution**: Pulls customer phone from `clients` table, formats total amount in Indian Currency (`₹XX,XXX`), and calculates due date in IST (`Asia/Kolkata`).
+3. **Interactive Delivery**:
+   ```javascript
+   const options = [
+     { id: "btn_paid", label: "💳 Pay Now / UPI", action: "confirm_payment" },
+     { id: "btn_invoice", label: "📄 Send Invoice PDF", action: "send_invoice_copy" },
+     { id: "btn_call_acc", label: "📞 Talk to Accounts", action: "request_callback" }
+   ];
+   await waConfirmationService.sendInteractiveReminder({ phone, messageText, options });
+   ```
+4. **Customer Response**: When customer clicks *"💳 Pay Now / UPI"*, bot generates a dynamic UPI deep-link: `upi://pay?pa=madhura@icici&am=14500&tn=INV-102`.
+5. **Verification**: If customer taps *"I Already Paid"*, the bot prompts for their 12-digit UTR number and emits `payment_claim_submitted` to insert an urgent review task in the CRM `tasks` table.
+
+---
+
+### Playbook 2: Dynamic Lead Routing, Qualification & Geo-Targeted PDF Catalog Dispatch
+1. **Trigger**: Inbound message matching `solar`, `panel`, `quote`, `inverter`, or Facebook Lead Ad webhook.
+2. **Dynamic Collection**: Asks for `Full Name`, `City`, and `Capacity Required (3kW/5kW/10kW)`.
+3. **CRM Insertion**:
+   ```javascript
+   await waLeadCapture.captureLeadFromWhatsApp({
+     phone: cleanPhone,
+     name: vars.customer_name,
+     city: vars.city,
+     service: vars.selected_capacity,
+     sourceDetail: "WhatsApp Flow Lead Qualifier"
+   });
+   ```
+4. **Conditional Media Dispatch**:
+   - If `city == "Bangalore"` $\to$ Dispatches South Karnataka Solar Spec Sheet PDF.
+   - If `city == "Mumbai"` $\to$ Dispatches Maharashtra Net Metering Guide PDF.
+5. **Sales Notification**: Sends real-time WhatsApp alert to assigned territory sales rep.
+
+---
+
+### Playbook 3: Autonomous Emergency Service Breakdown & Technician Slot Allocation
+1. **Trigger**: Customer sends `breakdown`, `emergency`, `inverter error`, or AI Intent detects `equipment_fault`.
+2. **Interactive Slot Picker**: Shows interactive menu with available technician slots:
+   - `Slot A: Today Afternoon (2:00 PM - 5:00 PM)`
+   - `Slot B: Tomorrow Morning (9:30 AM - 1:00 PM)`
+3. **Ticket Creation**: Inserts record into `tickets` table with priority `'High'`.
+4. **SMS / WhatsApp Dispatch to Technician**: Automatically delivers customer address, Google Maps link, and contact details to the on-duty engineer.
+
+---
+
+### Playbook 4: Dynamic AMC Contract Expiry & One-Click WhatsApp Renewal Sequence
+1. **Trigger**: Nightly cron scheduler (`waReminderScheduler.js`) queries `contracts` table for `end_date = NOW() + INTERVAL 15 DAY`.
+2. **Dynamic Personalization**: Resolves `{{customer_name}}`, `{{contract_title}}`, `{{amc_expiry}}`, and dynamic discount voucher code.
+3. **Interactive Renewal Buttons**:
+   - `[ Renew with 10% Discount ]` $\to$ Generates dynamic pro-forma invoice and links payment gateway.
+   - `[ Request Site Inspection ]` $\to$ Schedules engineer health audit.
+
+---
+
+### Playbook 5: External Webhook Trigger Ingestion (Shopify/Zapier/Custom Webhook to Flow)
+1. **Ingress Endpoint**: `POST /api/whatsapp/flows/:id/trigger`
+2. **Payload Mapping**:
+   ```json
+   {
+     "phone": "919876543210",
+     "initialVars": {
+       "cart_total": "₹8,499",
+       "abandoned_items": "2x 150Ah Solar Tubular Battery",
+       "checkout_url": "https://store.madhura.com/recover?id=9941"
+     },
+     "startNode": "abandoned_cart_recovery"
+   }
+   ```
+3. **Flow Execution**: Initializes session directly at `abandoned_cart_recovery` node, skipping greetings and presenting 5% recovery coupon.
+
+---
+
+### Playbook 6: Dynamic Multi-Channel Load Balancer Failover (Web Puppeteer $\leftrightarrow$ Meta Cloud API)
+1. **Outbound Dispatch**: `waLoadBalancer.sendTextMessage(phone, text)`
+2. **Session Selection**: Evaluates connected numbers using round-robin and health scoring.
+3. **Failover Execution**:
+   - If selected WhatsApp Web instance throws `SessionClosedError` or timeout ($> 15\text{s}$):
+   - Automatically falls back to Meta WhatsApp Cloud API (`whatsappCloudApi.sendTextMessage`).
+   - Marks Web session health score $-25$ and schedules automatic reconnect.
+
+---
+
+### Playbook 7: Document RAG & Autonomous LLM Function Calling with Database Lookups
+1. **Inbound Inquiry**: Customer asks: *"What is my warranty coverage on the 5kVA inverter installed last June?"*
+2. **RAG Extraction**: Ingests warranty documents, retrieves technical clauses on 5kVA models.
+3. **CRM Tool Invocation**: Invokes `lookup_customer_assets(phone)` to retrieve installation date (`14 June 2025`).
+4. **Synthesized Reply**: Generates natural reply: *"Your 5kVA Inverter was installed on 14 June 2025 and carries a 5-year replacement warranty valid until June 2030."*
+
+---
+
+### Playbook 8: Bulk Campaign Spintax Randomization with Anti-Ban Zero-Width Micro-Jitter
+1. **Campaign Creation**: Configured with Spintax `{Dear|Respected|Hello} {{name}}, [special offer|monsoon discount] on {{service}}!`
+2. **Dynamic Generation**: Every outbound message compiles a unique character string.
+3. **Micro-Jitter Spacing**: Invisible Unicode zero-width space characters (`\u200B`, `\u200C`) appended to alter hash fingerprints.
+4. **Adaptive Pacing**: Jitter delay of $12\text{s} \pm 5\text{s}$ randomized per recipient.
+
+---
+
+### Playbook 9: Live Hot-Reloading & Safe Node Schema Migrations for Active In-Flight Chats
+1. **Administrator Action**: Flow editor changes Node 4 from a text prompt to a 3-button choice.
+2. **Atomic DB Update**: Sends `PUT /api/whatsapp/flows/12` updating `wa_flow_nodes`.
+3. **Session Preservation**: Active customer at Node 4 responds; the engine reads the updated node definition from MySQL without server restart and branches to the new child node.
+
+---
+
+### Playbook 10: Dynamic Two-Way Interactive Confirmation State Machine with Auto-Escalation
+1. **Dispatch**: Service appointment confirmation sent 24 hours prior: `[ Confirm Visit ]` / `[ Reschedule ]`.
+2. **State Tracking**: Tracked in `wa_interactive_reminders` with status `'awaiting_reply'`.
+3. **Auto-Escalation**:
+   - If confirmed: Updates CRM appointment status to `'Customer Confirmed'`.
+   - If no response after 6 hours: Dispatches follow-up reminder.
+   - If no response after 12 hours: Flags appointment for manual telephone call by reception desk.
 
 ---
 
