@@ -51,6 +51,9 @@ import {
   Square,
   Play,
   Pause,
+  ExternalLink,
+  CornerDownLeft,
+  Phone,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
@@ -472,12 +475,14 @@ export default function WhatsAppPage() {
   const [selectedFlowId, setSelectedFlowId] = useState("");
   const [triggeringFlow, setTriggeringFlow] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
-  const [optionsMenuTitle, setOptionsMenuTitle] = useState("How can we assist you today?");
+  const [optionsMenuTitle, setOptionsMenuTitle] = useState("Welcome to Madhura Tech! Please choose an option below:");
+  const [optionsMenuBotFlowId, setOptionsMenuBotFlowId] = useState("");
   const [optionsMenuItems, setOptionsMenuItems] = useState([
-    "💼 Inquire About Services & Solutions",
-    "🧾 Check Invoice & Payment Status",
-    "🛠️ Request AMC Service / Maintenance",
-    "📞 Connect with a Support Executive",
+    { type: "reply", text: "English" },
+    { type: "reply", text: "मराठी" },
+    { type: "reply", text: "हिन्दी" },
+    { type: "call", text: "Call Now", phone: "+91 98765 43210" },
+    { type: "url", text: "Apply Now", url: "https://suran.edu/apply" },
   ]);
 
   // Quote reply, Quick replies, CRM sidebar details
@@ -530,10 +535,6 @@ export default function WhatsAppPage() {
   // Typing indicator state
   const [contactTyping, setContactTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
-
-  // Image lightbox
-  const [lightboxZoom, setLightboxZoom] = useState(1);
-  const [lightboxRotation, setLightboxRotation] = useState(0);
 
   // Context menu
   const [contextMenu, setContextMenu] = useState(null); // { x, y, message }
@@ -1042,50 +1043,174 @@ export default function WhatsAppPage() {
     } catch (_) { }
   };
 
-  const extractQuickReplies = (msg) => {
+  const extractMessageButtons = (msg) => {
     if (!msg) return [];
-    // 1. From direct buttons / rows arrays
-    if (msg.buttons && Array.isArray(msg.buttons)) {
-      return msg.buttons.map((b) => b.title || b.text || b.id).filter(Boolean);
+    const buttons = [];
+
+    const normalizeBtn = (b) => {
+      if (!b) return null;
+      if (typeof b === "string") {
+        const s = b.trim();
+        if (!s) return null;
+        if (s.startsWith("📞") || s.toLowerCase().startsWith("call")) {
+          const ph = (s.match(/\+?\d[\d\s-]{8,15}/) || [])[0] || "";
+          return { type: "call", title: s.replace(/^📞\s*/, "").replace(/:\s*\+?\d[\d\s-]{8,15}/, "").trim() || "Call Now", phone: ph };
+        }
+        if (s.startsWith("↗") || s.startsWith("🔗") || s.includes("http")) {
+          const u = (s.match(/https?:\/\/[^\s)]+/) || [])[0] || "";
+          return { type: "url", title: s.replace(/^[↗🔗]\s*/, "").replace(/:\s*https?:\/\/[^\s)]+/, "").trim() || "Apply Now", url: u };
+        }
+        const cleanTitle = s.replace(/^[↩🔘•\d.)\s\u20E3]+/u, "").trim();
+        return { type: "reply", title: cleanTitle || s, id: cleanTitle || s };
+      }
+      const title = b.title || b.text || b.displayText || b.id || "";
+      const type = b.type || (b.url ? "url" : b.phone ? "call" : "reply");
+      return {
+        type,
+        title: String(title).trim(),
+        id: b.id || title,
+        url: b.url || (type === "url" ? b.id : undefined),
+        phone: b.phone || (type === "call" ? b.id : undefined),
+      };
+    };
+
+    // 1. Direct buttons array (from bot flows or API)
+    if (Array.isArray(msg.buttons) && msg.buttons.length > 0) {
+      msg.buttons.forEach((b) => {
+        const norm = normalizeBtn(b);
+        if (norm && norm.title) buttons.push(norm);
+      });
     }
-    if (msg.rows && Array.isArray(msg.rows)) {
-      return msg.rows.map((r) => r.title || r.id).filter(Boolean);
+
+    // 2. Direct rows array (interactive lists)
+    if (buttons.length === 0 && Array.isArray(msg.rows) && msg.rows.length > 0) {
+      msg.rows.forEach((r) => {
+        const norm = normalizeBtn(r);
+        if (norm && norm.title) buttons.push(norm);
+      });
     }
-    // 2. From interactive payload
-    if (msg.interactive?.buttons && Array.isArray(msg.interactive.buttons)) {
-      return msg.interactive.buttons.map((b) => b.title || b.text || b.id).filter(Boolean);
+
+    // 3. Interactive payload (official Meta / WhatsApp Cloud / Flow Engine)
+    if (buttons.length === 0) {
+      const interactive = msg.interactive || (typeof msg.interactive_payload === "string" ? (() => { try { return JSON.parse(msg.interactive_payload); } catch { return null; } })() : msg.interactive_payload);
+      if (interactive) {
+        if (Array.isArray(interactive.buttons)) {
+          interactive.buttons.forEach((b) => {
+            const btnData = b.reply || b.button || b;
+            const norm = normalizeBtn(btnData);
+            if (norm && norm.title) buttons.push(norm);
+          });
+        }
+        if (Array.isArray(interactive.action?.buttons)) {
+          interactive.action.buttons.forEach((b) => {
+            const btnData = b.reply || b.button || b;
+            const norm = normalizeBtn(btnData);
+            if (norm && norm.title) buttons.push(norm);
+          });
+        }
+        if (Array.isArray(interactive.rows)) {
+          interactive.rows.forEach((r) => {
+            const norm = normalizeBtn(r);
+            if (norm && norm.title) buttons.push(norm);
+          });
+        }
+        if (Array.isArray(interactive.action?.sections)) {
+          interactive.action.sections.forEach((sec) => {
+            if (Array.isArray(sec.rows)) {
+              sec.rows.forEach((r) => {
+                const norm = normalizeBtn(r);
+                if (norm && norm.title) buttons.push(norm);
+              });
+            }
+          });
+        }
+      }
     }
-    if (msg.interactive?.rows && Array.isArray(msg.interactive.rows)) {
-      return msg.interactive.rows.map((r) => r.title || r.id).filter(Boolean);
-    }
-    if (msg.interactive_payload) {
-      try {
-        const payload = typeof msg.interactive_payload === "string" ? JSON.parse(msg.interactive_payload) : msg.interactive_payload;
-        if (payload.buttons && Array.isArray(payload.buttons)) return payload.buttons.map((b) => b.title || b.text || b.id).filter(Boolean);
-        if (payload.rows && Array.isArray(payload.rows)) return payload.rows.map((r) => r.title || r.id).filter(Boolean);
-      } catch (_) {}
-    }
-    // 3. Parse numbered / bullet options from message body text:
-    const body = msg.body || "";
-    if (body.includes("\n")) {
-      const lines = body.split("\n");
-      const options = [];
-      for (const line of lines) {
-        const trimmed = line.trim();
-        const match = trimmed.match(/^(?:\*|•|-)?\s*(?:\d+[\s.)-]+)\s*\*?(.*?)\*?$/);
-        if (match && match[1]) {
-          const clean = match[1].trim().replace(/\*+/g, "");
-          if (clean.length >= 2 && !clean.toLowerCase().startsWith("reply with") && !clean.toLowerCase().startsWith("or reply") && !clean.toLowerCase().startsWith("reply 0")) {
-            options.push(clean);
+
+    // 4. Parse from message body text (flow menus, numbered choices, call/apply links)
+    if (buttons.length === 0) {
+      const body = msg.body || "";
+      if (body.includes("\n")) {
+        const lines = body.split("\n");
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          // Call button: "📞 Call Now" or "📞 Call: +91..."
+          if (trimmed.startsWith("📞") || trimmed.toLowerCase().startsWith("call now") || trimmed.toLowerCase().startsWith("call:")) {
+            const ph = (trimmed.match(/\+?\d[\d\s-]{8,15}/) || [])[0] || "";
+            const t = trimmed.replace(/^📞\s*/, "").replace(/:\s*\+?\d[\d\s-]{8,15}/, "").trim();
+            buttons.push({ type: "call", title: t || "Call Now", phone: ph });
+            continue;
+          }
+
+          // URL button: "↗ Apply Now" or "↗ Link: https://..."
+          if (trimmed.startsWith("↗") || trimmed.startsWith("🔗") || trimmed.toLowerCase().startsWith("apply now") || trimmed.toLowerCase().startsWith("apply:")) {
+            const u = (trimmed.match(/https?:\/\/[^\s)]+/) || [])[0] || "";
+            const t = trimmed.replace(/^[↗🔗]\s*/, "").replace(/:\s*https?:\/\/[^\s)]+/, "").trim();
+            buttons.push({ type: "url", title: t || "Apply Now", url: u });
+            continue;
+          }
+
+          // Reply button: "↩ English" or "1️⃣ English" or "1. English" or "• English"
+          if (trimmed.startsWith("↩")) {
+            const t = trimmed.replace(/^↩\s*/, "").trim();
+            if (t) buttons.push({ type: "reply", title: t, id: t });
+            continue;
+          }
+
+          const match = trimmed.match(/^(?:\*|•|-)?\s*(?:\d+[\s.)-]+|[\u0030-\u0039]\uFE0F?\u20E3)\s*\*?(.*?)\*?$/);
+          if (match && match[1]) {
+            const clean = match[1].trim().replace(/\*+/g, "");
+            if (clean.length >= 2 && !clean.toLowerCase().startsWith("reply with") && !clean.toLowerCase().startsWith("or reply") && !clean.toLowerCase().startsWith("reply 0")) {
+              buttons.push({ type: "reply", title: clean, id: clean });
+            }
           }
         }
       }
-      if (options.length >= 2 && options.length <= 10) {
-        return options;
+    }
+
+    return buttons;
+  };
+
+  const getMessageDisplayBody = (msg, buttons) => {
+    let body = msg.body || "";
+    if (!buttons || buttons.length === 0 || !body.includes("\n")) return body;
+    const lines = body.split("\n");
+    let lastContentIdx = lines.length - 1;
+
+    while (lastContentIdx >= 0) {
+      const line = lines[lastContentIdx].trim();
+      if (!line) {
+        lastContentIdx--;
+        continue;
+      }
+      const isBtnLine =
+        line.startsWith("↩") ||
+        line.startsWith("📞") ||
+        line.startsWith("↗") ||
+        line.toLowerCase().startsWith("call now") ||
+        line.toLowerCase().startsWith("apply now") ||
+        line.toLowerCase().startsWith("reply with a number") ||
+        line.toLowerCase().startsWith("reply with") ||
+        line.toLowerCase().startsWith("choose an option") ||
+        buttons.some((b) => {
+          const t = (b.title || b.text || "").toLowerCase();
+          return t && line.toLowerCase().includes(t);
+        });
+
+      if (isBtnLine) {
+        lastContentIdx--;
+      } else {
+        break;
       }
     }
-    return [];
+
+    const cleaned = lines.slice(0, lastContentIdx + 1).join("\n").trim();
+    return cleaned || body;
   };
+
+  const extractQuickReplies = extractMessageButtons;
 
   const handleSendDirect = async (textToSend) => {
     if (!textToSend || !selectedChat) return;
@@ -1366,13 +1491,94 @@ export default function WhatsAppPage() {
     }
   };
 
-  const handleSendOptionsMenu = () => {
+  const handleSendInteractiveMenuNow = async () => {
     if (!selectedChat || !optionsMenuTitle) return;
-    const formatted = `📋 *${optionsMenuTitle}*\n\n${optionsMenuItems.filter(Boolean).map((opt, idx) => `${idx + 1}️⃣ ${opt}`).join("\n")}\n\n_👉 Reply with a number (1-${optionsMenuItems.filter(Boolean).length}) to choose an option._`;
+
+    const validButtons = optionsMenuItems.filter((item) => {
+      if (typeof item === "string") return item.trim().length > 0;
+      return item && item.text && item.text.trim().length > 0;
+    }).map((item) => {
+      if (typeof item === "string") return { type: "reply", text: item.trim(), title: item.trim() };
+      return {
+        type: item.type || "reply",
+        text: item.text.trim(),
+        title: item.text.trim(),
+        phone: item.phone ? item.phone.trim() : undefined,
+        url: item.url ? item.url.trim() : undefined,
+      };
+    });
+
+    const bodyText = optionsMenuTitle.trim();
+
+    // 1. If user selected a Bot Flow to trigger
+    if (optionsMenuBotFlowId) {
+      await handleTriggerFlowForChat(optionsMenuBotFlowId);
+      setShowOptionsModal(false);
+      setShowAttachMenu(false);
+      return;
+    }
+
+    // 2. Build formatted text with buttons
+    const formattedSendText = `${bodyText}\n\n${validButtons.map((b) => {
+      if (b.type === "call") return `📞 ${b.text}${b.phone ? ` (${b.phone})` : ""}`;
+      if (b.type === "url") return `↗ ${b.text}${b.url ? ` (${b.url})` : ""}`;
+      return `↩ ${b.text}`;
+    }).join("\n")}`;
+
+    // Optimistic UI update
+    const tempId = "temp_" + Date.now();
+    const tempMsg = {
+      id: tempId,
+      from: "me",
+      body: formattedSendText,
+      timestamp: Math.floor(Date.now() / 1000),
+      isMe: true,
+      status: "sending",
+      buttons: validButtons,
+      interactive: {
+        type: "buttons",
+        buttons: validButtons,
+      },
+    };
+    setMessages((prev) => [tempMsg, ...prev]);
+    setShowOptionsModal(false);
+    setShowAttachMenu(false);
+    setTimeout(scrollToBottom, 50);
+
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.post(`${API}/api/whatsapp/send`, {
+        chatId: selectedChat.id,
+        message: formattedSendText,
+        buttons: validButtons,
+      }, { headers });
+      fetchMessages(selectedChat.id, 15);
+    } catch (err) {
+      console.warn("Failed to send interactive options menu:", err.message);
+    }
+  };
+
+  const handleInsertOptionsMenuToComposer = () => {
+    if (!selectedChat || !optionsMenuTitle) return;
+    const validButtons = optionsMenuItems.filter((item) => {
+      if (typeof item === "string") return item.trim().length > 0;
+      return item && item.text && item.text.trim().length > 0;
+    }).map((item) => (typeof item === "string" ? { type: "reply", text: item.trim() } : item));
+
+    const formatted = `${optionsMenuTitle.trim()}\n\n${validButtons.map((b) => {
+      if (b.type === "call") return `📞 ${b.text}${b.phone ? ` (${b.phone})` : ""}`;
+      if (b.type === "url") return `↗ ${b.text}${b.url ? ` (${b.url})` : ""}`;
+      return `↩ ${b.text}`;
+    }).join("\n")}`;
+
     setMessageInput(formatted);
     setShowOptionsModal(false);
     setShowAttachMenu(false);
+    textareaRef.current?.focus();
   };
+
+  const handleSendOptionsMenu = handleSendInteractiveMenuNow;
 
   const fetchTeamMembers = useCallback(async () => {
     try {
@@ -3061,87 +3267,100 @@ export default function WhatsAppPage() {
                           </div>
                         )}
 
-                        {msg.location ? (
-                          <a
-                            href={`https://www.google.com/maps?q=${msg.location.lat},${msg.location.lng}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-2 underline font-semibold text-emerald-300"
-                          >
-                            <MapPin size={14} /> {msg.location.name || "Shared location"}
-                          </a>
-                        ) : (msg.hasMedia || msg.type === "image" || msg.type === "video" || msg.type === "audio" || msg.type === "ptt" || msg.type === "document" || msg.type === "sticker" || isFilename(msg.body) || isFilename(msg.filename)) ? (
-                          <div className="space-y-1">
-                            <MediaBubble
-                              chatId={selectedChat.id}
-                              messageId={msg.id}
-                              filename={msg.filename || msg.body}
-                              isMe={msg.isMe}
-                              onPreview={(src, title) => openLightbox({ src, title })}
-                            />
-                            {msg.body && !isFilename(msg.body) && !msg.body.startsWith("http") ? (
-                              <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <RichMessageContent
-                            text={msg.body || previewText(msg) || (msg.isMe ? "Sent message" : "Incoming message")}
-                            isMe={msg.isMe}
-                          />
-                        )}
-
-                        {/* Interactive Quick Reply Option Buttons */}
                         {(() => {
-                          const quickOptions = extractQuickReplies(msg);
-                          if (!quickOptions || quickOptions.length === 0) return null;
+                          const msgButtons = extractMessageButtons(msg);
+                          const displayBody = getMessageDisplayBody(msg, msgButtons);
                           return (
-                            <div className="mt-2 pt-2 border-t border-white/15 space-y-1.5">
-                              <div className="text-[10px] uppercase font-bold text-emerald-400/90 flex items-center gap-1">
-                                <span>⚡ Quick Reply Options:</span>
+                            <>
+                              {msg.location ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${msg.location.lat},${msg.location.lng}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-2 underline font-semibold text-emerald-300"
+                                >
+                                  <MapPin size={14} /> {msg.location.name || "Shared location"}
+                                </a>
+                              ) : (msg.hasMedia || msg.type === "image" || msg.type === "video" || msg.type === "audio" || msg.type === "ptt" || msg.type === "document" || msg.type === "sticker" || isFilename(msg.body) || isFilename(msg.filename)) ? (
+                                <div className="space-y-1">
+                                  <MediaBubble
+                                    chatId={selectedChat.id}
+                                    messageId={msg.id}
+                                    filename={msg.filename || msg.body}
+                                    isMe={msg.isMe}
+                                    onPreview={(src, title) => openLightbox({ src, title })}
+                                  />
+                                  {msg.body && !isFilename(msg.body) && !msg.body.startsWith("http") ? (
+                                    <p className="whitespace-pre-wrap break-words">{displayBody || msg.body}</p>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <RichMessageContent
+                                  text={displayBody || previewText(msg) || (msg.isMe ? "Sent message" : "Incoming message")}
+                                  isMe={msg.isMe}
+                                />
+                              )}
+
+                              {/* Reaction badges on bubble */}
+                              {Array.isArray(msg.reactions) && msg.reactions.length > 0 && (
+                                <div className="flex gap-1 mt-1 -mb-1">
+                                  {msg.reactions.map((r, rIdx) => (
+                                    <span key={rIdx} className="bg-[#111b21]/90 border border-slate-700/80 px-1.5 py-0.2 rounded-full text-[11px] shadow">
+                                      {r.emoji}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-end gap-1 text-[11px] -mt-0.5 -mb-0.5 text-slate-300/60 font-normal leading-none pt-1">
+                                <span>
+                                  {msg.timestamp
+                                    ? new Date(msg.timestamp * 1000).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                    : ""}
+                                </span>
+                                {starredMsgIds.has(msg.id) && (
+                                  <Star size={10} className="text-amber-400 fill-amber-400 inline" />
+                                )}
+                                {msg.isMe && <MessageTicks status={msg.status || "sent"} />}
                               </div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {quickOptions.map((opt, optIdx) => (
-                                  <button
-                                    key={optIdx}
-                                    type="button"
-                                    onClick={() => handleSendDirect(opt)}
-                                    className="px-2.5 py-1.5 bg-[#00a884]/20 hover:bg-[#00a884] text-emerald-200 hover:text-white rounded-lg text-xs font-bold transition border border-[#00a884]/40 flex items-center gap-1 shadow-sm active:scale-95 text-left"
-                                    title={`Send "${opt}"`}
-                                  >
-                                    <span>🔘</span>
-                                    <span>{opt}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
+
+                              {/* WhatsApp Authentic Full-Width Action Buttons (Call Now / Apply Now / Quick Replies) */}
+                              {msgButtons && msgButtons.length > 0 && (
+                                <div className="mt-2 -mx-2.5 -mb-1.5 border-t border-white/10 divide-y divide-white/10 overflow-hidden rounded-b-lg select-none bg-black/10">
+                                  {msgButtons.map((btn, bIdx) => (
+                                    <button
+                                      key={bIdx}
+                                      type="button"
+                                      onClick={() => {
+                                        if (btn.type === "url" && btn.url) {
+                                          window.open(btn.url, "_blank", "noopener,noreferrer");
+                                        } else if (btn.type === "call" && btn.phone) {
+                                          window.location.href = `tel:${btn.phone.replace(/\s+/g, "")}`;
+                                        } else {
+                                          handleSendDirect(btn.title || btn.text || btn);
+                                        }
+                                      }}
+                                      className="w-full py-2.5 px-3 flex items-center justify-center gap-2 text-xs font-semibold text-[#00a884] hover:bg-white/5 active:bg-white/10 transition-colors text-center group/btn"
+                                      title={btn.type === "call" ? `Call ${btn.phone || ""}` : btn.type === "url" ? `Open link ${btn.url || ""}` : `Send "${btn.title || btn.text || btn}"`}
+                                    >
+                                      {btn.type === "call" ? (
+                                        <Phone size={14} className="text-[#00a884] shrink-0" />
+                                      ) : btn.type === "url" ? (
+                                        <ExternalLink size={14} className="text-[#00a884] shrink-0" />
+                                      ) : (
+                                        <CornerDownLeft size={14} className="text-[#00a884] shrink-0" />
+                                      )}
+                                      <span className="truncate group-hover/btn:underline">{btn.title || btn.text || btn}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
-
-                        {/* Reaction badges on bubble */}
-                        {Array.isArray(msg.reactions) && msg.reactions.length > 0 && (
-                          <div className="flex gap-1 mt-1 -mb-1">
-                            {msg.reactions.map((r, rIdx) => (
-                              <span key={rIdx} className="bg-[#111b21]/90 border border-slate-700/80 px-1.5 py-0.2 rounded-full text-[11px] shadow">
-                                {r.emoji}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-end gap-1 text-[11px] -mt-0.5 -mb-0.5 text-slate-300/60 font-normal leading-none pt-1">
-                          <span>
-                            {msg.timestamp
-                              ? new Date(msg.timestamp * 1000).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                              : ""}
-                          </span>
-                          {starredMsgIds.has(msg.id) && (
-                            <Star size={10} className="text-amber-400 fill-amber-400 inline" />
-                          )}
-                          {msg.isMe && <MessageTicks status={msg.status || "sent"} />}
-                        </div>
                       </div>
                     </div>
                     </React.Fragment>
@@ -3538,6 +3757,16 @@ export default function WhatsAppPage() {
                   title="Trigger Chatbot Flow"
                 >
                   <Zap size={18} />
+                </button>
+
+                {/* Quick Interactive Buttons & Flow Menu */}
+                <button
+                  type="button"
+                  onClick={() => setShowOptionsModal(true)}
+                  className="p-2.5 text-blue-400 hover:text-blue-300 hover:bg-[#2a3942] rounded-full transition shrink-0"
+                  title="Send WhatsApp Interactive Buttons & Flow Menu (Call, Links, Quick Replies)"
+                >
+                  <ListOrdered size={18} />
                 </button>
 
                 {/* Emoji Picker Button */}
@@ -4049,103 +4278,282 @@ export default function WhatsAppPage() {
         </div>
       )}
 
-      {/* Send Inquiry Options / Interactive Menu Modal */}
+      {/* Send Inquiry Options / Interactive Buttons Modal */}
       {showOptionsModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowOptionsModal(false)}>
-          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-slate-200" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setShowOptionsModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowOptionsModal(false)}>
+          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-xl p-5 md:p-6 shadow-2xl relative text-slate-200 max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowOptionsModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition">
               <X size={20} />
             </button>
 
-            <div className="flex items-center gap-3 mb-4 border-b border-[#222d34] pb-3">
-              <div className="p-3 bg-blue-500/20 text-blue-400 rounded-xl">
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-4 border-b border-[#222d34] pb-3 shrink-0">
+              <div className="p-3 bg-[#00a884]/20 text-[#00a884] rounded-xl">
                 <ListOrdered size={24} />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Send Inquiry & Options Menu</h3>
-                <p className="text-xs text-slate-400">Prompt the customer with numbered interactive inquiry choices</p>
+                <h3 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                  <span>Send WhatsApp Interactive Buttons & Flow Menu</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Send authentic action buttons (Call Now, Web Links & Quick Replies) or launch a Chatbot Flow for <span className="text-[#00a884] font-semibold">{selectedChat?.name || "Customer"}</span>
+                </p>
               </div>
             </div>
 
-            <div className="space-y-4">
+            {/* Scrollable Body */}
+            <div className="space-y-4 overflow-y-auto wa-custom-scrollbar pr-1 flex-1">
+              {/* Optional Flow Bot Selector */}
+              <div className="p-3 bg-[#202c33]/60 rounded-xl border border-[#2a3942]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Zap size={14} className="text-amber-400" />
+                    <span>Attach Chatbot Flow (Optional)</span>
+                  </label>
+                  {optionsMenuBotFlowId && (
+                    <button
+                      type="button"
+                      onClick={() => setOptionsMenuBotFlowId("")}
+                      className="text-[10px] text-amber-400 hover:underline"
+                    >
+                      Clear Flow
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={optionsMenuBotFlowId}
+                  onChange={(e) => setOptionsMenuBotFlowId(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-slate-200 outline-none focus:border-[#00a884]"
+                >
+                  <option value="">None (Standard Interactive Buttons)</option>
+                  {flows.map((fl) => (
+                    <option key={fl.id} value={fl.id}>
+                      🤖 Flow Bot: {fl.name} ({fl.node_count || 1} nodes)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  {optionsMenuBotFlowId ? (
+                    <span className="text-amber-300 font-medium">⚡ Customer clicking options will trigger automated multi-step chatbot replies from this flow!</span>
+                  ) : (
+                    "When customer clicks a button, it responds with the selected action or quick reply text."
+                  )}
+                </p>
+              </div>
+
+              {/* Message Header / Body Prompt */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Header / Prompt Title</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                  Message Header / Prompt Text
+                </label>
+                <textarea
+                  rows={3}
                   value={optionsMenuTitle}
                   onChange={(e) => setOptionsMenuTitle(e.target.value)}
-                  placeholder="e.g. Welcome to Madhura Tech. How can we help you?"
-                  className="w-full px-3.5 py-2.5 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-white outline-none focus:border-[#00a884]"
+                  placeholder="e.g. Welcome to Madhura Tech! Please choose an option below:"
+                  className="w-full px-3.5 py-2.5 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-white outline-none focus:border-[#00a884] resize-none"
                 />
               </div>
 
+              {/* Buttons Editor */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-300 uppercase">Menu Options (Replies)</label>
-                  <button
-                    type="button"
-                    onClick={() => setOptionsMenuItems((prev) => [...prev, `Option ${prev.length + 1}`])}
-                    className="text-[11px] font-bold text-[#00a884] hover:underline"
-                  >
-                    + Add Option
-                  </button>
-                </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {optionsMenuItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <span className="w-6 text-center text-xs font-bold text-[#00a884]">{idx + 1}.</span>
-                      <input
-                        type="text"
-                        value={item}
-                        onChange={(e) => {
-                          const updated = [...optionsMenuItems];
-                          updated[idx] = e.target.value;
-                          setOptionsMenuItems(updated);
-                        }}
-                        className="flex-1 px-3 py-2 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-white outline-none focus:border-[#00a884]"
-                      />
-                      {optionsMenuItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setOptionsMenuItems(optionsMenuItems.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-slate-400 hover:text-red-400"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-3 bg-[#0b141a] rounded-xl border border-white/10 space-y-1">
-                <p className="text-[10px] font-bold text-[#00a884] uppercase tracking-wider">Preview in Chat:</p>
-                <div className="text-xs text-slate-200 whitespace-pre-wrap font-sans">
-                  <p className="font-bold">📋 {optionsMenuTitle}</p>
-                  <div className="mt-1 space-y-0.5">
-                    {optionsMenuItems.filter(Boolean).map((opt, i) => (
-                      <p key={i}>{i + 1}️⃣ {opt}</p>
-                    ))}
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-300 uppercase">
+                    Interactive Buttons ({optionsMenuItems.length})
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setOptionsMenuItems((prev) => [...prev, { type: "reply", text: `Option ${prev.length + 1}` }])}
+                      className="px-2 py-1 bg-[#00a884]/20 hover:bg-[#00a884]/30 text-[#00a884] rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                      title="Add Quick Reply Button"
+                    >
+                      <CornerDownLeft size={12} />
+                      <span>+ Reply</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOptionsMenuItems((prev) => [...prev, { type: "call", text: "Call Now", phone: "+91 " }])}
+                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                      title="Add Call Now Button"
+                    >
+                      <Phone size={12} />
+                      <span>+ Call</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOptionsMenuItems((prev) => [...prev, { type: "url", text: "Apply Now", url: "https://" }])}
+                      className="px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                      title="Add Web URL Button"
+                    >
+                      <ExternalLink size={12} />
+                      <span>+ Link</span>
+                    </button>
                   </div>
-                  <p className="text-[11px] text-slate-400 italic mt-1.5">👉 Reply with a number (1-{optionsMenuItems.filter(Boolean).length}) to choose an option.</p>
+                </div>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto wa-custom-scrollbar pr-1">
+                  {optionsMenuItems.map((item, idx) => {
+                    const itemObj = typeof item === "string" ? { type: "reply", text: item } : item;
+                    return (
+                      <div key={idx} className="p-2.5 bg-[#202c33] border border-[#2a3942] rounded-xl space-y-2">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={itemObj.type || "reply"}
+                            onChange={(e) => {
+                              const updated = [...optionsMenuItems];
+                              const newType = e.target.value;
+                              updated[idx] = {
+                                ...itemObj,
+                                type: newType,
+                                phone: newType === "call" ? (itemObj.phone || "+91 ") : undefined,
+                                url: newType === "url" ? (itemObj.url || "https://") : undefined,
+                              };
+                              setOptionsMenuItems(updated);
+                            }}
+                            className="bg-[#111b21] border border-[#2a3942] text-[#00a884] font-bold text-xs rounded-lg px-2 py-1.5 outline-none"
+                          >
+                            <option value="reply">↩ Reply</option>
+                            <option value="call">📞 Call</option>
+                            <option value="url">↗ Link</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={itemObj.text || ""}
+                            onChange={(e) => {
+                              const updated = [...optionsMenuItems];
+                              updated[idx] = { ...itemObj, text: e.target.value };
+                              setOptionsMenuItems(updated);
+                            }}
+                            placeholder="Button label (e.g. English, Call Now)"
+                            className="flex-1 px-3 py-1.5 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-white outline-none focus:border-[#00a884]"
+                          />
+
+                          {optionsMenuItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setOptionsMenuItems(optionsMenuItems.filter((_, i) => i !== idx))}
+                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition"
+                              title="Delete button"
+                            >
+                              <X size={15} />
+                            </button>
+                          )}
+                        </div>
+
+                        {itemObj.type === "call" && (
+                          <div className="flex items-center gap-2 pl-2">
+                            <Phone size={13} className="text-emerald-400 shrink-0" />
+                            <input
+                              type="tel"
+                              value={itemObj.phone || ""}
+                              onChange={(e) => {
+                                const updated = [...optionsMenuItems];
+                                updated[idx] = { ...itemObj, phone: e.target.value };
+                                setOptionsMenuItems(updated);
+                              }}
+                              placeholder="Phone Number (e.g. +91 98765 43210)"
+                              className="flex-1 px-2.5 py-1 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-emerald-300 outline-none focus:border-emerald-400"
+                            />
+                          </div>
+                        )}
+
+                        {itemObj.type === "url" && (
+                          <div className="flex items-center gap-2 pl-2">
+                            <ExternalLink size={13} className="text-blue-400 shrink-0" />
+                            <input
+                              type="url"
+                              value={itemObj.url || ""}
+                              onChange={(e) => {
+                                const updated = [...optionsMenuItems];
+                                updated[idx] = { ...itemObj, url: e.target.value };
+                                setOptionsMenuItems(updated);
+                              }}
+                              placeholder="Web URL (e.g. https://example.com/apply)"
+                              className="flex-1 px-2.5 py-1 bg-[#111b21] border border-[#2a3942] rounded-lg text-xs text-blue-300 outline-none focus:border-blue-400"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-[#222d34]">
+              {/* WhatsApp Authentic Live Preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold text-[#00a884] uppercase tracking-wider">
+                    Live WhatsApp Customer Preview:
+                  </p>
+                  <span className="text-[10px] text-slate-400">Matches official WhatsApp client UI</span>
+                </div>
+
+                <div className="p-3 bg-[#0b141a] rounded-xl border border-white/10 flex justify-start">
+                  <div className="max-w-[85%] bg-[#202c33] rounded-lg p-2.5 text-xs text-white shadow-md relative">
+                    <p className="whitespace-pre-wrap break-words">{optionsMenuTitle || "Please choose an option:"}</p>
+                    <div className="flex justify-end mt-1 text-[10px] text-slate-400">
+                      <span>1:58 pm</span>
+                    </div>
+
+                    {/* Button Rows */}
+                    {optionsMenuItems.filter((it) => (typeof it === "string" ? it.trim() : it.text?.trim())).length > 0 && (
+                      <div className="mt-2 -mx-2.5 -mb-2.5 border-t border-white/10 divide-y divide-white/10 overflow-hidden rounded-b-lg">
+                        {optionsMenuItems
+                          .filter((it) => (typeof it === "string" ? it.trim() : it.text?.trim()))
+                          .map((it, bIdx) => {
+                            const btn = typeof it === "string" ? { type: "reply", text: it } : it;
+                            return (
+                              <div
+                                key={bIdx}
+                                className="w-full py-2.5 px-3 flex items-center justify-center gap-2 text-xs font-semibold text-[#00a884] bg-white/[0.02]"
+                              >
+                                {btn.type === "call" ? (
+                                  <Phone size={13} className="text-[#00a884] shrink-0" />
+                                ) : btn.type === "url" ? (
+                                  <ExternalLink size={13} className="text-[#00a884] shrink-0" />
+                                ) : (
+                                  <CornerDownLeft size={13} className="text-[#00a884] shrink-0" />
+                                )}
+                                <span className="truncate">{btn.text || "Option"}</span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Action Buttons */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t border-[#222d34] mt-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowOptionsModal(false)}
+                className="w-full sm:w-auto px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] rounded-xl text-xs text-slate-300 font-semibold transition"
+              >
+                Cancel
+              </button>
+              <div className="flex w-full sm:w-auto gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowOptionsModal(false)}
-                  className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] rounded-xl text-xs text-slate-300 font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendOptionsMenu}
-                  className="px-5 py-2 bg-[#00a884] text-[#111b21] rounded-xl text-xs font-bold hover:bg-[#008f70] transition flex items-center gap-1.5 shadow"
+                  onClick={handleInsertOptionsMenuToComposer}
+                  className="flex-1 sm:flex-initial px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] border border-[#2a3942] text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                  title="Insert formatted text into the message composer"
                 >
                   <Send size={14} />
                   <span>Insert into Composer</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendInteractiveMenuNow}
+                  className="flex-1 sm:flex-initial px-5 py-2 bg-[#00a884] hover:bg-[#008f70] text-[#111b21] rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg active:scale-95"
+                  title="Send interactive buttons directly into chat"
+                >
+                  <Zap size={14} />
+                  <span>Send Buttons Now</span>
                 </button>
               </div>
             </div>
