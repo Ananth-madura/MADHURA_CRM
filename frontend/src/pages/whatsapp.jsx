@@ -453,6 +453,13 @@ export default function WhatsAppPage() {
   // Lightbox Modal, Contact Info Drawer, Sidebar Filters
   const [sidebarTab, setSidebarTab] = useState("all"); // 'all', 'unread', 'favourites', 'groups'
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
+  const openLightbox = useCallback((img) => {
+    setLightboxZoom(1);
+    setLightboxRotation(0);
+    setLightboxImage(img);
+  }, []);
   const [showContactInfoDrawer, setShowContactInfoDrawer] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
@@ -907,6 +914,9 @@ export default function WhatsAppPage() {
     if (!messageInput.trim() || !selectedChat) return;
     const textToSend = messageInput.trim();
     setMessageInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     setError(null);
 
     // Instant Optimistic UI update: push message immediately to chat thread
@@ -1144,7 +1154,13 @@ export default function WhatsAppPage() {
       const res = await axios.post(`${API}/api/wa/flows/${flowId}/trigger-phone`, {
         phone: cleanPhone
       }, { headers: { Authorization: `Bearer ${token}` } });
-      alert(res.data?.message || "Flow started successfully for this contact!");
+      const selFlow = flows.find((f) => String(f.id) === String(flowId));
+      setActiveFlowRun({
+        flowId,
+        flowName: selFlow?.name || "Automated Bot Flow",
+        currentNode: "Starting...",
+        phone: cleanPhone,
+      });
       setShowFlowModal(false);
       await fetchMessages(selectedChat.id, 15);
     } catch (err) {
@@ -2092,6 +2108,19 @@ export default function WhatsAppPage() {
     };
   }, [contextMenu]);
 
+  // Lightbox keyboard shortcuts (Esc, +, -, r)
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const handleKey = (e) => {
+      if (e.key === "Escape") setLightboxImage(null);
+      if (e.key === "+" || e.key === "=") setLightboxZoom((z) => Math.min(3, Number((z + 0.25).toFixed(2))));
+      if (e.key === "-") setLightboxZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))));
+      if (e.key === "r" || e.key === "R") setLightboxRotation((r) => (r + 90) % 360);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [lightboxImage]);
+
   // Emoji helpers
   const addRecentEmoji = useCallback((emoji) => {
     setRecentEmojis((prev) => {
@@ -2601,7 +2630,11 @@ export default function WhatsAppPage() {
                             return icon ? <span className="shrink-0">{icon}</span> : null;
                           })()}
                           <span className="truncate">
-                            {chat.lastMessage?.body || "Tap to open conversation"}
+                            {selectedChat?.id === chat.id && contactTyping ? (
+                              <span className="text-[#25D366] font-semibold italic animate-pulse">typing...</span>
+                            ) : (
+                              chat.lastMessage?.body || "Tap to open conversation"
+                            )}
                           </span>
                         </div>
 
@@ -2721,6 +2754,12 @@ export default function WhatsAppPage() {
                     </div>
                     {selectedChat.isGroup ? (
                       <p className="text-xs text-slate-400">Group Chat</p>
+                    ) : contactTyping ? (
+                      <p className="text-xs text-[#25D366] font-semibold animate-pulse">typing...</p>
+                    ) : isContactOnline(selectedChat.id) ? (
+                      <p className="text-xs text-[#25D366] font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] inline-block"></span> online
+                      </p>
                     ) : (
                       <p className="text-xs text-slate-400">
                         {selectedChat.formattedPhone ||
@@ -2861,6 +2900,34 @@ export default function WhatsAppPage() {
                 </div>
               </div>
 
+              {/* Active Bot Flow Banner */}
+              {activeFlowRun && (
+                <div className="bg-[#182229] border-b border-emerald-500/40 px-4 py-2 flex items-center justify-between z-20 shadow-md animate-fadeIn shrink-0">
+                  <div className="flex items-center gap-2.5 text-xs min-w-0">
+                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-bold text-emerald-400 shrink-0">🤖 Bot Flow Active:</span>
+                    <span className="text-white font-medium truncate">{activeFlowRun.flowName || "Automated Flow"}</span>
+                    {activeFlowRun.currentNode && (
+                      <span className="text-slate-300 text-[11px] bg-white/10 px-2 py-0.5 rounded border border-white/10 shrink-0 hidden sm:inline">
+                        Step: {activeFlowRun.currentNode}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setActiveFlowRun(null)}
+                      className="px-2.5 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shadow-sm"
+                      title="Stop this automated bot flow"
+                    >
+                      <Square size={11} fill="currentColor" /> Stop Bot
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Chat Thread Canvas with Parallax Doodle Background */}
               <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#0b141a]">
                 {/* Parallax WhatsApp Doodle Wallpaper Layer */}
@@ -2923,7 +2990,15 @@ export default function WhatsAppPage() {
                       </div>
                     )}
                     <div
-                      className={`flex ${msg.isMe ? "justify-end" : "justify-start"} group relative ${endsRun ? "mb-2.5" : "mb-0.5"}`}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({
+                          x: Math.min(e.clientX, window.innerWidth - 230),
+                          y: Math.min(e.clientY, window.innerHeight - 270),
+                          message: msg,
+                        });
+                      }}
+                      className={`flex ${msg.isMe ? "justify-end" : "justify-start"} group relative wa-bubble-enter ${endsRun ? "mb-2.5" : "mb-0.5"}`}
                     >
                       {/* Hover action toolbar for reactions & quote reply */}
                       <div className="opacity-0 group-hover:opacity-100 transition flex items-center gap-1 bg-[#111b21] px-2 py-0.5 rounded-full shadow border border-slate-700/60 absolute -top-3 z-10 select-none">
@@ -2943,6 +3018,21 @@ export default function WhatsAppPage() {
                           title="Quote reply"
                         >
                           ↩️
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setContextMenu({
+                              x: Math.min(rect.left, window.innerWidth - 230),
+                              y: Math.min(rect.bottom + 5, window.innerHeight - 270),
+                              message: msg,
+                            });
+                          }}
+                          className="text-slate-400 hover:text-white ml-0.5 text-xs px-1 hover:bg-white/10 rounded"
+                          title="More options"
+                        >
+                          <MoreVertical size={12} />
                         </button>
                       </div>
 
@@ -2987,7 +3077,7 @@ export default function WhatsAppPage() {
                               messageId={msg.id}
                               filename={msg.filename || msg.body}
                               isMe={msg.isMe}
-                              onPreview={(src, title) => setLightboxImage({ src, title })}
+                              onPreview={(src, title) => openLightbox({ src, title })}
                             />
                             {msg.body && !isFilename(msg.body) && !msg.body.startsWith("http") ? (
                               <p className="whitespace-pre-wrap break-words">{msg.body}</p>
@@ -3047,6 +3137,9 @@ export default function WhatsAppPage() {
                               })
                               : ""}
                           </span>
+                          {starredMsgIds.has(msg.id) && (
+                            <Star size={10} className="text-amber-400 fill-amber-400 inline" />
+                          )}
                           {msg.isMe && <MessageTicks status={msg.status || "sent"} />}
                         </div>
                       </div>
@@ -3055,6 +3148,7 @@ export default function WhatsAppPage() {
                     );
                   })
                 )}
+                {contactTyping && <TypingIndicator />}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -3132,15 +3226,21 @@ export default function WhatsAppPage() {
                   disabled={mediaSending}
                 />
 
-                {/* Floating Attachment & Action Popover Menu */}
+                {/* Floating Attachment & Action Popover Menu / Mobile Bottom Sheet */}
                 {showAttachMenu && (
-                  <div className="absolute bottom-full left-3 mb-3 w-72 bg-[#111b21] border border-[#222d34] rounded-2xl shadow-2xl z-40 p-2 text-slate-200 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                    <div className="px-3 py-2 border-b border-[#222d34] flex items-center justify-between text-xs font-bold text-[#00a884]">
-                      <span className="flex items-center gap-1.5"><Paperclip size={14} /> Share Media & Quick Tools</span>
-                      <button onClick={() => setShowAttachMenu(false)} className="text-slate-400 hover:text-white p-0.5">
-                        <X size={14} />
-                      </button>
-                    </div>
+                  <>
+                    <div
+                      className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs"
+                      onClick={() => setShowAttachMenu(false)}
+                    />
+                    <div className="fixed inset-x-0 bottom-0 z-50 md:absolute md:inset-x-auto md:bottom-full md:left-3 md:mb-3 md:w-72 bg-[#111b21] border-t md:border border-[#222d34] rounded-t-3xl md:rounded-2xl shadow-2xl p-3 md:p-2 text-slate-200 wa-bottom-sheet max-h-[75vh] overflow-y-auto">
+                      <div className="wa-swipe-indicator md:hidden" />
+                      <div className="px-3 py-2 border-b border-[#222d34] flex items-center justify-between text-xs font-bold text-[#00a884]">
+                        <span className="flex items-center gap-1.5"><Paperclip size={14} /> Share Media & Quick Tools</span>
+                        <button onClick={() => setShowAttachMenu(false)} className="text-slate-400 hover:text-white p-1">
+                          <X size={16} />
+                        </button>
+                      </div>
 
                     <div className="p-1.5 space-y-1">
                       {/* Document / PDF */}
@@ -3316,6 +3416,7 @@ export default function WhatsAppPage() {
                       </button>
                     </div>
                   </div>
+                  </>
                 )}
 
                 {/* Slash commands quick-replies popup */}
@@ -3453,24 +3554,74 @@ export default function WhatsAppPage() {
                   {showEmojiPicker && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowEmojiPicker(false)} />
-                      <div className="absolute bottom-12 left-0 z-40 w-72 max-h-56 overflow-y-auto bg-[#233138] border border-slate-700 rounded-2xl shadow-2xl p-2.5">
-                        {EMOJI_GROUPS.map((group) => (
-                          <div key={group.label} className="mb-2 last:mb-0">
-                            <div className="text-[10px] font-bold uppercase text-slate-400 px-1 mb-1">{group.label}</div>
-                            <div className="grid grid-cols-8 gap-0.5">
-                              {group.emojis.map((emo) => (
-                                <button
-                                  key={emo}
-                                  type="button"
-                                  onClick={() => setMessageInput((prev) => prev + emo)}
-                                  className="text-lg leading-none p-1 rounded hover:bg-white/10 active:scale-90 transition"
-                                >
-                                  {emo}
-                                </button>
-                              ))}
+                      <div className="absolute bottom-12 left-0 z-40 w-80 max-h-72 flex flex-col bg-[#233138] border border-slate-700 rounded-2xl shadow-2xl p-2.5">
+                        {/* Search Bar in Emoji Picker */}
+                        <div className="mb-2 relative">
+                          <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search emojis..."
+                            value={emojiSearch}
+                            onChange={(e) => setEmojiSearch(e.target.value)}
+                            className="w-full pl-8 pr-7 py-1 bg-[#111b21] text-slate-100 placeholder-slate-400 text-xs rounded-lg outline-none border border-white/10 focus:border-[#00a884]"
+                          />
+                          {emojiSearch && (
+                            <button onClick={() => setEmojiSearch("")} className="absolute right-2 top-1.5 text-slate-400 hover:text-white">
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto wa-custom-scrollbar pr-1">
+                          {/* Recently Used Emojis */}
+                          {!emojiSearch && recentEmojis.length > 0 && (
+                            <div className="mb-2">
+                              <div className="text-[10px] font-bold uppercase text-[#00a884] px-1 mb-1">Recent</div>
+                              <div className="grid grid-cols-8 gap-0.5">
+                                {recentEmojis.map((emo) => (
+                                  <button
+                                    key={emo}
+                                    type="button"
+                                    onClick={() => {
+                                      setMessageInput((prev) => prev + emo);
+                                      addRecentEmoji(emo);
+                                    }}
+                                    className="text-lg leading-none p-1 rounded hover:bg-white/10 active:scale-90 transition"
+                                  >
+                                    {emo}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )}
+
+                          {EMOJI_GROUPS.map((group) => {
+                            const filtered = emojiSearch
+                              ? group.emojis.filter((e) => group.label.toLowerCase().includes(emojiSearch.toLowerCase()))
+                              : group.emojis;
+                            if (filtered.length === 0) return null;
+                            return (
+                              <div key={group.label} className="mb-2 last:mb-0">
+                                <div className="text-[10px] font-bold uppercase text-slate-400 px-1 mb-1">{group.label}</div>
+                                <div className="grid grid-cols-8 gap-0.5">
+                                  {filtered.map((emo) => (
+                                    <button
+                                      key={emo}
+                                      type="button"
+                                      onClick={() => {
+                                        setMessageInput((prev) => prev + emo);
+                                        addRecentEmoji(emo);
+                                      }}
+                                      className="text-lg leading-none p-1 rounded hover:bg-white/10 active:scale-90 transition"
+                                    >
+                                      {emo}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </>
                   )}
@@ -3493,13 +3644,18 @@ export default function WhatsAppPage() {
                     </button>
                   </div>
                 ) : (
-                  <input
-                    type="text"
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
+                    onChange={(e) => {
+                      setMessageInput(e.target.value);
+                      e.target.style.height = "auto";
+                      e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+                    }}
                     onKeyDown={handleKeyDown}
-                    placeholder={`Message ${selectedChat.name}... (Type / for quick replies)`}
-                    className="flex-1 px-4 py-2.5 bg-[#2a3942] text-slate-100 placeholder-slate-400 rounded-xl text-sm outline-none border border-transparent focus:border-[#00a884]"
+                    placeholder={`Message ${selectedChat.name}... (Type / for quick replies, Shift+Enter for new line)`}
+                    className="flex-1 px-4 py-2 bg-[#2a3942] text-slate-100 placeholder-slate-400 rounded-2xl text-sm outline-none border border-transparent focus:border-[#00a884] wa-auto-textarea leading-relaxed max-h-32 transition-[height] duration-75"
                     disabled={sending}
                   />
                 )}
@@ -4491,32 +4647,169 @@ export default function WhatsAppPage() {
         </div>
       )}
 
-      {/* Fullscreen Photo Lightbox Modal */}
-      {lightboxImage && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
-          <div className="absolute top-4 right-4 flex items-center gap-3 z-10">
-            <a
-              href={lightboxImage.src}
-              download={lightboxImage.title || "photo.jpg"}
-              className="px-4 py-2 bg-[#00a884] hover:bg-[#008f70] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-lg"
-            >
-              <Paperclip size={14} /> Download image
-            </a>
+      {/* WhatsApp Floating Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-[#233138] border border-slate-700/80 rounded-xl shadow-2xl py-1.5 w-52 text-slate-200 text-xs wa-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Quick Reactions Bar inside context menu */}
+          <div className="flex items-center justify-around px-2 py-1.5 border-b border-white/10 mb-1">
+            {["👍", "❤️", "😂", "😮", "🙏", "🔥"].map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  handleReact(contextMenu.message.id, emoji);
+                  setContextMenu(null);
+                }}
+                className="text-base hover:scale-125 transition active:scale-95 p-0.5"
+                title={`React ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setReplyingTo(contextMenu.message);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 hover:bg-[#182229] flex items-center gap-2.5 transition"
+          >
+            <ChevronLeft size={14} className="rotate-180" />
+            <span>Reply</span>
+          </button>
+
+          {contextMenu.message?.body && (
             <button
-              onClick={() => setLightboxImage(null)}
-              className="p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition"
+              type="button"
+              onClick={() => {
+                handleCopyMessage(contextMenu.message.body);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-[#182229] flex items-center gap-2.5 transition"
             >
-              <X size={20} />
+              <Copy size={14} />
+              <span>Copy Text</span>
             </button>
-          </div>
-          <div className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl shadow-2xl border border-white/10">
-            <img src={lightboxImage.src} alt="Preview" className="w-full h-full object-contain" />
-          </div>
-          {lightboxImage.title && (
-            <p className="text-white/80 text-sm font-semibold mt-3 bg-black/50 px-4 py-1.5 rounded-full border border-white/10">
-              {lightboxImage.title}
-            </p>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              handleToggleStar(contextMenu.message.id);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 hover:bg-[#182229] flex items-center gap-2.5 transition"
+          >
+            <Star size={14} className={starredMsgIds.has(contextMenu.message.id) ? "text-amber-400 fill-amber-400" : ""} />
+            <span>{starredMsgIds.has(contextMenu.message.id) ? "Unstar Message" : "Star Message"}</span>
+          </button>
+
+          {contextMenu.message?.body && (
+            <button
+              type="button"
+              onClick={() => {
+                setMessageInput(`Forwarded: "${contextMenu.message.body}"\n`);
+                setContextMenu(null);
+                textareaRef.current?.focus();
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-[#182229] flex items-center gap-2.5 transition"
+            >
+              <Forward size={14} />
+              <span>Forward</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Fullscreen Photo Lightbox Modal with Zoom, Rotate, & Keyboard Controls */}
+      {lightboxImage && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-between p-4 backdrop-blur-md select-none wa-lightbox-enter">
+          {/* Top Lightbox Toolbar */}
+          <div className="w-full flex items-center justify-between z-10 px-2 py-1 max-w-5xl">
+            <div className="flex items-center gap-2">
+              <span className="text-white/90 text-sm font-semibold truncate max-w-xs sm:max-w-md">
+                {lightboxImage.title || "Photo Preview"}
+              </span>
+              <span className="text-white/40 text-xs hidden sm:inline">• {Math.round(lightboxZoom * 100)}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))}
+                className="p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition"
+                title="Zoom Out (-)"
+              >
+                <ZoomOut size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((z) => Math.min(3, Number((z + 0.25).toFixed(2))))}
+                className="p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition"
+                title="Zoom In (+)"
+              >
+                <ZoomIn size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxRotation((r) => (r + 90) % 360)}
+                className="p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition"
+                title="Rotate Clockwise (R)"
+              >
+                <RotateCw size={18} />
+              </button>
+              <a
+                href={lightboxImage.src}
+                download={lightboxImage.title || "photo.jpg"}
+                className="px-3 py-1.5 bg-[#00a884] hover:bg-[#008f70] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-lg"
+                title="Download"
+              >
+                <Download size={14} />
+                <span className="hidden sm:inline">Download</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="p-2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition ml-1"
+                title="Close (Esc)"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Central Image Viewport */}
+          <div className="flex-1 w-full flex items-center justify-center overflow-hidden my-2">
+            <img
+              src={lightboxImage.src}
+              alt="Preview"
+              className="max-w-[90vw] max-h-[78vh] object-contain transition-transform duration-200 shadow-2xl rounded-lg"
+              style={{
+                transform: `scale(${lightboxZoom}) rotate(${lightboxRotation}deg)`,
+              }}
+            />
+          </div>
+
+          {/* Bottom Caption / Reset Bar */}
+          <div className="flex items-center gap-3 z-10">
+            {lightboxZoom !== 1 || lightboxRotation !== 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLightboxZoom(1);
+                  setLightboxRotation(0);
+                }}
+                className="text-xs text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1 rounded-full transition"
+              >
+                Reset View
+              </button>
+            ) : null}
+          </div>
         </div>
       )}
     </div>
