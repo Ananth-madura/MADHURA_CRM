@@ -25,24 +25,27 @@ function cleanPhone(phone) {
 /**
  * Sends an interactive reminder with 2-way confirmation buttons/options.
  */
-async function sendInteractiveReminder(params = {}) {
-  const {
-    phone,
-    contactName = "Customer",
-    reminderType = "appointment_reminder",
-    title = "Interactive Reminder",
-    messageText,
-    options = [],
-    refTable = null,
-    refId = null,
-    staffName = null,
-    sessionKey = null,
-  } = params;
-
+async function sendInteractiveReminder({
+  phone,
+  contactName,
+  reminderType = "appointment_reminder",
+  title = "Service Notification",
+  messageText = null,
+  options = null,
+  refTable = null,
+  refId = null,
+  staffName = null,
+  sessionKey = null,
+  flow_id = null,
+  flowId = null,
+  template_id = null,
+  templateId = null,
+}) {
   const normalizedPhone = cleanPhone(phone);
-  if (!normalizedPhone || normalizedPhone.length < 10) {
-    throw new Error("Valid recipient phone number is required");
-  }
+  if (!normalizedPhone) throw new Error("A valid phone number is required to send a WhatsApp reminder.");
+
+  const linkedFlowId = flow_id || flowId || null;
+  const linkedTemplateId = template_id || templateId || null;
 
   const defaultOptionsMap = {
     appointment_reminder: [
@@ -90,8 +93,8 @@ async function sendInteractiveReminder(params = {}) {
   const [insertRes] = await db.promise().query(
     `INSERT INTO wa_interactive_reminders (
       phone, contact_name, reminder_type, reference_table, reference_id,
-      title, message_text, options_payload, status, scheduled_for, sent_at, assigned_staff_name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', NOW(), NOW(), ?)`,
+      title, message_text, options_payload, status, scheduled_for, sent_at, assigned_staff_name, flow_id, template_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', NOW(), NOW(), ?, ?, ?)`,
     [
       normalizedPhone,
       contactName,
@@ -102,6 +105,8 @@ async function sendInteractiveReminder(params = {}) {
       formattedText,
       JSON.stringify(finalOptions),
       staffName,
+      linkedFlowId,
+      linkedTemplateId,
     ]
   );
   const reminderId = insertRes.insertId;
@@ -359,6 +364,20 @@ async function handleInboundConfirmation(phone, messageText, interactiveReplyId 
      VALUES (?, 'outbound', 'text', ?, 'sent', NOW())`,
     [normalizedPhone, acknowledgementText]
   ).catch(() => {});
+
+  // 4. Auto-launch linked Conversational Flow Bot (if configured on this reminder)
+  if (reminder.flow_id) {
+    try {
+      const [flowRows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ? AND status = 'active' LIMIT 1", [reminder.flow_id]);
+      if (flowRows.length > 0) {
+        const waFlowEngine = require("./waFlowEngine");
+        console.log(`🤖 [WA Reminder -> Flow] Starting Flow "${flowRows[0].name}" for response from +${normalizedPhone}`);
+        await waFlowEngine.startFlowRun(flowRows[0], normalizedPhone, sessionKey);
+      }
+    } catch (fErr) {
+      console.warn(`[WA Reminder -> Flow] Failed to launch linked flow:`, fErr.message);
+    }
+  }
 
   return true;
 }

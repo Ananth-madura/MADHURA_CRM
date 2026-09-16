@@ -40,7 +40,7 @@ const PLACEHOLDERS = [
 ];
 
 const DEFAULT_FORM = {
-  name: "", description: "", type: "text", template_id: "", message_text: "", media_type: "image", media_url: "", group_id: "",
+  name: "", description: "", type: "text", template_id: "", flow_id: "", message_text: "", media_type: "image", media_url: "", group_id: "",
   scheduled_at: "", whatsapp_number: "",
   daily_limit: 800, start_time: "09:00", end_time: "20:00", timezone: "Asia/Kolkata",
   random_delay_min: 7, random_delay_max: 17, pause_every: 25,
@@ -65,6 +65,7 @@ export default function WACampaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [groups, setGroups] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [flows, setFlows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -85,14 +86,16 @@ export default function WACampaigns() {
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [cRes, gRes, tRes] = await Promise.all([
+      const [cRes, gRes, tRes, flRes] = await Promise.all([
         axios.get(`${API}/api/wa/campaigns`, { headers: headers() }),
         axios.get(`${API}/api/wa/groups`, { headers: headers() }),
         axios.get(`${API}/api/wa/templates`, { headers: headers() }),
+        axios.get(`${API}/api/wa/flows`, { headers: headers() }).catch(() => ({ data: [] })),
       ]);
       setCampaigns(cRes.data || []);
       setGroups(gRes.data || []);
       setTemplates(tRes.data || []);
+      setFlows(flRes.data || []);
     } catch (err) {
       console.error(err);
     }
@@ -139,6 +142,7 @@ export default function WACampaigns() {
       await axios.post(`${API}/api/wa/campaigns`, {
         ...form,
         template_id: form.template_id || null,
+        flow_id: form.flow_id || null,
         scheduled_at: form.scheduled_at || null,
         daily_limit: parseInt(form.daily_limit) || 0,
         random_delay_min: parseInt(form.random_delay_min) || 35,
@@ -396,6 +400,16 @@ export default function WACampaigns() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${STATUS_COLORS[c.status] || "bg-gray-100"}`}>
                       {c.status}
                     </span>
+                    {c.template_name && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border bg-purple-50 text-purple-700 border-purple-200">
+                        📄 {c.template_name}
+                      </span>
+                    )}
+                    {c.flow_name && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border bg-amber-50 text-amber-700 border-amber-200">
+                        🤖 {c.flow_name}
+                      </span>
+                    )}
                     {isLive && (
                       <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" /> Live Pacing Active
@@ -601,6 +615,34 @@ export default function WACampaigns() {
                     <option value="template">📄 Approved Template</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Attached Flow Bot Picker */}
+              <div className="p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-2xl border border-amber-200">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-amber-900 uppercase flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-amber-600" />
+                    Attached Flow Bot / Auto-Responder (Optional)
+                  </label>
+                  <span className="text-[10px] text-amber-700 font-semibold bg-amber-100 px-2 py-0.5 rounded-full">
+                    2-Way Bot Auto-Pilot
+                  </span>
+                </div>
+                <select
+                  value={f.flow_id || ""}
+                  onChange={e => setForm({ ...f, flow_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-amber-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 bg-white font-medium text-slate-800"
+                >
+                  <option value="">None (Standard Outbound Broadcast)</option>
+                  {flows.map(fl => (
+                    <option key={fl.id} value={fl.id}>
+                      🤖 {fl.name} ({fl.node_count || 1} bot steps)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                  When recipients reply to this campaign, the system will automatically engage them in this Flow Bot conversation!
+                </p>
               </div>
 
               {/* Media Settings */}

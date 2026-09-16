@@ -54,6 +54,7 @@ import {
   ExternalLink,
   CornerDownLeft,
   Phone,
+  Users,
 } from "lucide-react";
 import axios from "axios";
 import { API } from "../config/api";
@@ -516,6 +517,35 @@ export default function WhatsAppPage() {
   const [selectedDripId, setSelectedDripId] = useState("");
   const [enrollingDrip, setEnrollingDrip] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Interactive Reminders state
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderType, setReminderType] = useState("appointment_reminder");
+  const [reminderTitle, setReminderTitle] = useState("Service Appointment Confirmation");
+  const [reminderText, setReminderText] = useState("Hello {name}! This is a reminder regarding your scheduled service with Madhura Tech tomorrow. Please confirm your availability:");
+  const [reminderOptions, setReminderOptions] = useState([
+    { id: "btn_confirm", label: "✅ Confirm Visit", action: "confirm_appointment" },
+    { id: "btn_reschedule", label: "🔄 Reschedule", action: "reschedule_appointment" },
+    { id: "btn_cancel", label: "📞 Call Support", action: "request_callback" },
+  ]);
+  const [reminderFlowId, setReminderFlowId] = useState("");
+  const [sendingReminder, setSendingReminder] = useState(false);
+
+  // Campaign Groups enrollment state
+  const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
+  const [campaignGroups, setCampaignGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [addingToGroup, setAddingToGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  // Automations triggering state
+  const [showAutomationModal, setShowAutomationModal] = useState(false);
+  const [automations, setAutomations] = useState([]);
+  const [automationsLoading, setAutomationsLoading] = useState(false);
+  const [selectedAutomationId, setSelectedAutomationId] = useState("");
+  const [runningAutomation, setRunningAutomation] = useState(false);
 
   // Add as CRM Client state
   const [showAddClientForm, setShowAddClientForm] = useState(false);
@@ -1732,6 +1762,205 @@ export default function WhatsAppPage() {
       alert("Failed to enroll: " + (err.response?.data?.error || err.message));
     } finally {
       setEnrollingDrip(false);
+    }
+  };
+
+  const REMINDER_PRESETS = {
+    appointment_reminder: {
+      title: "Service Appointment Confirmation",
+      text: "Hello {name}! This is a reminder regarding your scheduled visit with Madhura Tech tomorrow. Please confirm your availability:",
+      options: [
+        { id: "btn_confirm", label: "✅ Confirm Visit", action: "confirm_appointment" },
+        { id: "btn_reschedule", label: "🔄 Reschedule", action: "reschedule_appointment" },
+        { id: "btn_cancel", label: "📞 Call Support", action: "request_callback" },
+      ]
+    },
+    payment_due: {
+      title: "Payment Due & Invoice Notice",
+      text: "Hello {name}! A friendly reminder regarding your pending invoice from Madhura Tech. Total amount due: ₹{amount}. Please choose an option below:",
+      options: [
+        { id: "btn_paid", label: "💳 Already Paid", action: "confirm_payment" },
+        { id: "btn_invoice", label: "📄 Send Invoice", action: "send_invoice_copy" },
+        { id: "btn_call_acc", label: "📞 Speak to Accounts", action: "request_callback" },
+      ]
+    },
+    quotation_followup: {
+      title: "Quotation & Proposal Follow-up",
+      text: "Hello {name}! We wanted to follow up on the commercial quotation {quotation_no} we prepared for you. Would you like to proceed or discuss changes?",
+      options: [
+        { id: "btn_approve_quote", label: "👍 Approve & Proceed", action: "approve_quotation" },
+        { id: "btn_modify_quote", label: "💬 Need Changes", action: "request_callback" },
+        { id: "btn_reject_quote", label: "❌ Not Interested", action: "reject_quotation" },
+      ]
+    },
+    amc_renewal: {
+      title: "AMC Contract Expiry & Renewal",
+      text: "Hello {name}! Your comprehensive AMC service maintenance contract is due for renewal soon. Ensure continuous coverage and prioritized support:",
+      options: [
+        { id: "btn_renew_amc", label: "🛡️ Renew AMC", action: "renew_amc" },
+        { id: "btn_inspect", label: "📋 Schedule Inspection", action: "reschedule_appointment" },
+        { id: "btn_call_amc", label: "📞 Speak to Engineer", action: "request_callback" },
+      ]
+    },
+  };
+
+  const handleReminderTypeChange = (type) => {
+    setReminderType(type);
+    const p = REMINDER_PRESETS[type] || REMINDER_PRESETS.appointment_reminder;
+    setReminderTitle(p.title);
+    setReminderText(p.text);
+    setReminderOptions([...p.options]);
+  };
+
+  const handleSendReminderNow = async () => {
+    if (!selectedChat) return;
+    setSendingReminder(true);
+    try {
+      const token = localStorage.getItem("token");
+      let phone = selectedChat.id.replace(/\D/g, "");
+      if (phone.length === 10) phone = "91" + phone;
+
+      await axios.post(
+        `${API}/api/wa/reminders/send-now`,
+        {
+          phone,
+          contact_name: selectedChat.name,
+          reminder_type: reminderType,
+          title: reminderTitle,
+          message_text: reminderText,
+          options: reminderOptions,
+          flow_id: reminderFlowId || null,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setShowReminderModal(false);
+      await fetchMessages(selectedChat.id, 15);
+      alert(`✅ Interactive reminder sent to ${selectedChat.name}!`);
+    } catch (err) {
+      alert("Failed to send reminder: " + (err.response?.data?.error || err.message));
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  const fetchCampaignGroups = useCallback(async () => {
+    try {
+      setGroupsLoading(true);
+      const token = localStorage.getItem("token");
+      const { data } = await axios.get(`${API}/api/wa/groups`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCampaignGroups(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("Failed to load groups:", err.message);
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, []);
+
+  const handleAddToCampaignGroups = async () => {
+    if (!selectedChat || selectedGroupIds.length === 0) return;
+    setAddingToGroup(true);
+    try {
+      const token = localStorage.getItem("token");
+      let cleanPhone = selectedChat.id.replace(/\D/g, "").slice(-10);
+      for (const groupId of selectedGroupIds) {
+        await axios.post(
+          `${API}/api/wa/groups/${groupId}/contacts`,
+          {
+            contacts: [{
+              name: selectedChat.name,
+              phone: cleanPhone,
+              country_code: "91",
+              notes: `Enrolled from WhatsApp Chat on ${new Date().toLocaleDateString("en-IN")}`
+            }]
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+      setShowAddToGroupModal(false);
+      setSelectedGroupIds([]);
+      alert(`👥 ${selectedChat.name} added to ${selectedGroupIds.length} campaign group(s)!`);
+    } catch (err) {
+      alert("Failed to add to group: " + (err.response?.data?.error || err.message));
+    } finally {
+      setAddingToGroup(false);
+    }
+  };
+
+  const handleCreateNewGroupAndAdd = async () => {
+    if (!newGroupName.trim() || !selectedChat) return;
+    setCreatingGroup(true);
+    try {
+      const token = localStorage.getItem("token");
+      const { data: newGrp } = await axios.post(
+        `${API}/api/wa/groups`,
+        { name: newGroupName.trim(), description: "Created from WhatsApp Chat" },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      let cleanPhone = selectedChat.id.replace(/\D/g, "").slice(-10);
+      await axios.post(
+        `${API}/api/wa/groups/${newGrp.id}/contacts`,
+        {
+          contacts: [{
+            name: selectedChat.name,
+            phone: cleanPhone,
+            country_code: "91",
+            notes: "Added upon group creation in Chat"
+          }]
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewGroupName("");
+      await fetchCampaignGroups();
+      setShowAddToGroupModal(false);
+      alert(`✅ Created group "${newGrp.name}" and added ${selectedChat.name}!`);
+    } catch (err) {
+      alert("Failed to create group: " + (err.response?.data?.error || err.message));
+    } finally {
+      setCreatingGroup(false);
+    }
+  };
+
+  const fetchAutomations = useCallback(async () => {
+    try {
+      setAutomationsLoading(true);
+      const token = localStorage.getItem("token");
+      const { data } = await axios.get(`${API}/api/wa/automations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAutomations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("Failed to load automations:", err.message);
+    } finally {
+      setAutomationsLoading(false);
+    }
+  }, []);
+
+  const handleTriggerAutomation = async (automationId) => {
+    if (!selectedChat || !automationId) return;
+    setRunningAutomation(true);
+    try {
+      const token = localStorage.getItem("token");
+      let phone = selectedChat.id.replace(/\D/g, "");
+      if (phone.length === 10) phone = "91" + phone;
+
+      await axios.post(
+        `${API}/api/wa/automations/${automationId}/trigger`,
+        {
+          phone,
+          contact_name: selectedChat.name,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowAutomationModal(false);
+      await fetchMessages(selectedChat.id, 15);
+      alert(`⚡ Automation triggered successfully for ${selectedChat.name}!`);
+    } catch (err) {
+      alert("Failed to trigger automation: " + (err.response?.data?.error || err.message));
+    } finally {
+      setRunningAutomation(false);
     }
   };
 
@@ -2996,10 +3225,46 @@ export default function WhatsAppPage() {
                   <button
                     onClick={() => setShowFlowModal(true)}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-950/60 text-amber-300 hover:bg-amber-900/50 rounded-lg transition text-xs font-semibold border border-amber-800/40 shadow-sm"
-                    title="Trigger an automated Chatbot Flow for this contact"
+                    title="Launch an interactive Chatbot Flow for this contact"
                   >
                     <Zap size={14} />
-                    <span className="hidden sm:inline">Trigger Flow</span>
+                    <span className="hidden sm:inline">Flow Bot</span>
+                  </button>
+
+                  {/* Trigger CRM Automation Button */}
+                  <button
+                    onClick={() => {
+                      fetchAutomations();
+                      setShowAutomationModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-950/60 text-purple-300 hover:bg-purple-900/50 rounded-lg transition text-xs font-semibold border border-purple-800/40 shadow-sm"
+                    title="Execute CRM Workflow Automation Rule"
+                  >
+                    <Sparkles size={14} />
+                    <span className="hidden md:inline">Automation</span>
+                  </button>
+
+                  {/* Send Interactive Reminder Button */}
+                  <button
+                    onClick={() => setShowReminderModal(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-orange-950/60 text-orange-300 hover:bg-orange-900/50 rounded-lg transition text-xs font-semibold border border-orange-800/40 shadow-sm"
+                    title="Send 2-Way Interactive Confirmation Notice"
+                  >
+                    <Bell size={14} />
+                    <span className="hidden md:inline">Reminder</span>
+                  </button>
+
+                  {/* Add to Campaign Group Button */}
+                  <button
+                    onClick={() => {
+                      fetchCampaignGroups();
+                      setShowAddToGroupModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-950/60 text-blue-300 hover:bg-blue-900/50 rounded-lg transition text-xs font-semibold border border-blue-800/40 shadow-sm"
+                    title="Enroll contact into Bulk Campaign Target Groups"
+                  >
+                    <Users size={14} />
+                    <span className="hidden lg:inline">Campaigns</span>
                   </button>
 
                   {/* Template Picker Button */}
@@ -3559,6 +3824,59 @@ export default function WhatsAppPage() {
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-slate-100 group-hover:text-amber-300">Trigger Chatbot Flow</p>
                           <p className="text-[10px] text-slate-400 truncate">Automated customer flow & bot reply</p>
+                        </div>
+                      </button>
+
+                      {/* Trigger CRM Automation */}
+                      <button
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          fetchAutomations();
+                          setShowAutomationModal(true);
+                        }}
+                        className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-[#202c33] rounded-xl transition text-xs font-medium text-slate-200 group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-105 transition">
+                          <Sparkles size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-100 group-hover:text-purple-300">Trigger CRM Automation</p>
+                          <p className="text-[10px] text-slate-400 truncate">Run automated invoice, receipt, or welcome rule</p>
+                        </div>
+                      </button>
+
+                      {/* Send Interactive Reminder */}
+                      <button
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          setShowReminderModal(true);
+                        }}
+                        className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-[#202c33] rounded-xl transition text-xs font-medium text-slate-200 group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center group-hover:scale-105 transition">
+                          <Bell size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-100 group-hover:text-orange-300">Send Interactive Reminder</p>
+                          <p className="text-[10px] text-slate-400 truncate">2-way buttons: Confirm, Reschedule, Call</p>
+                        </div>
+                      </button>
+
+                      {/* Enroll in Campaign Group */}
+                      <button
+                        onClick={() => {
+                          setShowAttachMenu(false);
+                          fetchCampaignGroups();
+                          setShowAddToGroupModal(true);
+                        }}
+                        className="w-full text-left flex items-center gap-3 p-2.5 hover:bg-[#202c33] rounded-xl transition text-xs font-medium text-slate-200 group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-105 transition">
+                          <Users size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-100 group-hover:text-blue-300">Enroll in Campaign Group</p>
+                          <p className="text-[10px] text-slate-400 truncate">Add contact to bulk campaign target audience</p>
                         </div>
                       </button>
 
@@ -4286,7 +4604,10 @@ export default function WhatsAppPage() {
 
             {/* WhatsApp CRM & Marketing Hub Navigation Bar */}
             <div className="py-4 border-b border-gray-100 space-y-2">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">WhatsApp Suite Hub</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">⚡ Unified WhatsApp Hub</h4>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">All Linked</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => navigate("/dashboard/whatsapp/campaigns")}
@@ -4313,28 +4634,90 @@ export default function WhatsAppPage() {
                 </button>
 
                 <button
-                  onClick={() => navigate("/dashboard/whatsapp/analytics")}
-                  className="flex items-center gap-2 p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl transition text-xs font-semibold text-left border border-emerald-200/60"
+                  onClick={() => navigate("/dashboard/whatsapp/reminders")}
+                  className="flex items-center gap-2 p-2.5 bg-orange-50 hover:bg-orange-100 text-orange-800 rounded-xl transition text-xs font-semibold text-left border border-orange-200/60"
                 >
-                  <BarChart3 size={15} className="text-emerald-600 shrink-0" />
-                  <span className="truncate">Analytics</span>
+                  <Bell size={15} className="text-orange-600 shrink-0" />
+                  <span className="truncate">Reminders</span>
                 </button>
               </div>
             </div>
 
-            {/* Quick Actions & Inquiries */}
+            {/* Quick Actions & Instant Bot Tools */}
             <div className="py-4 space-y-2.5">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quick Inquiries & Bot Tools</h4>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Execute for this Contact</h4>
               
               <button
                 onClick={() => {
                   setShowContactInfoDrawer(false);
                   setShowFlowModal(true);
                 }}
-                className="w-full py-2.5 px-3.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+                className="w-full py-2.5 px-3.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
               >
-                <Zap size={15} className="text-amber-600" />
-                <span>Trigger Chatbot Flow</span>
+                <div className="flex items-center gap-2">
+                  <Zap size={15} className="text-amber-600" />
+                  <span>Launch Chatbot Flow</span>
+                </div>
+                <span className="text-[10px] bg-amber-200/70 px-2 py-0.5 rounded-full font-mono">5 Bots</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowContactInfoDrawer(false);
+                  fetchAutomations();
+                  setShowAutomationModal(true);
+                }}
+                className="w-full py-2.5 px-3.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-purple-600" />
+                  <span>Trigger CRM Automation</span>
+                </div>
+                <span className="text-[10px] bg-purple-200/70 px-2 py-0.5 rounded-full font-mono">11 Rules</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowContactInfoDrawer(false);
+                  setShowReminderModal(true);
+                }}
+                className="w-full py-2.5 px-3.5 bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Bell size={15} className="text-orange-600" />
+                  <span>Send 2-Way Interactive Reminder</span>
+                </div>
+                <span className="text-[10px] bg-orange-200/70 px-2 py-0.5 rounded-full font-mono">Buttons</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowContactInfoDrawer(false);
+                  fetchCampaignGroups();
+                  setShowAddToGroupModal(true);
+                }}
+                className="w-full py-2.5 px-3.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Users size={15} className="text-blue-600" />
+                  <span>Enroll in Campaign Group</span>
+                </div>
+                <span className="text-[10px] bg-blue-200/70 px-2 py-0.5 rounded-full font-mono">Bulk</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowContactInfoDrawer(false);
+                  fetchDripSequences();
+                  setShowDripModal(true);
+                }}
+                className="w-full py-2.5 px-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-indigo-600" />
+                  <span>Enroll in Drip Sequence</span>
+                </div>
+                <span className="text-[10px] bg-indigo-200/70 px-2 py-0.5 rounded-full font-mono">Nurture</span>
               </button>
 
               <button
@@ -4342,15 +4725,18 @@ export default function WhatsAppPage() {
                   setShowContactInfoDrawer(false);
                   setShowOptionsModal(true);
                 }}
-                className="w-full py-2.5 px-3.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300/80 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+                className="w-full py-2.5 px-3.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80 rounded-xl text-xs font-bold flex items-center justify-between transition"
               >
-                <ListOrdered size={15} className="text-blue-600" />
-                <span>Send Inquiry Options Menu</span>
+                <div className="flex items-center gap-2">
+                  <ListOrdered size={15} className="text-slate-600" />
+                  <span>Send Inquiry Options Menu</span>
+                </div>
+                <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full font-mono">Quick</span>
               </button>
 
               <a
                 href={`tel:+${selectedChat.id?.replace(/\D/g, "")}`}
-                className="w-full py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
+                className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300/80 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
               >
                 <PhoneCall size={15} className="text-emerald-600" />
                 <span>Direct Call +{selectedChat.id?.replace(/\D/g, "")}</span>
@@ -5153,82 +5539,358 @@ export default function WhatsAppPage() {
         </div>
       )}
 
-      {/* Launch Chatbot Flow Modal */}
-      {showFlowModal && selectedChat && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowFlowModal(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-100" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 border-b pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg">
-                  🤖
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">Launch Chatbot Flow</h3>
-                  <p className="text-xs text-gray-500">For {selectedChat.name} (+{selectedChat.id.replace(/\D/g, "")})</p>
-                </div>
+      {/* Send Interactive Reminder Modal */}
+      {showReminderModal && selectedChat && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowReminderModal(false)}>
+          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-slate-200" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowReminderModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4 border-b border-[#222d34] pb-3">
+              <div className="p-3 bg-orange-500/20 text-orange-400 rounded-xl">
+                <Bell size={24} />
               </div>
-              <button onClick={() => setShowFlowModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
+              <div>
+                <h3 className="text-lg font-bold text-white">Send Interactive Reminder</h3>
+                <p className="text-xs text-slate-400">
+                  Deliver 2-way confirmation notice to <span className="text-[#00a884] font-semibold">{selectedChat.name}</span> (+{selectedChat.id.replace(/\D/g, "")})
+                </p>
+              </div>
             </div>
 
-            {flowsLoading ? (
-              <div className="py-8 text-center">
-                <Loader2 size={24} className="animate-spin text-emerald-600 mx-auto mb-2" />
-                <p className="text-xs text-gray-500">Loading active chatbot flows...</p>
-              </div>
-            ) : flows.length === 0 ? (
-              <div className="py-6 text-center text-gray-500 text-xs">
-                <p className="font-bold">No active flows found.</p>
-                <p className="mt-1 text-gray-400">Create flows in the Chatbot Flows manager first.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Select Smart Flow to Trigger</label>
-                  <select
-                    value={selectedFlowId}
-                    onChange={(e) => setSelectedFlowId(e.target.value)}
-                    className="w-full px-3 py-2.5 border rounded-xl text-xs font-semibold bg-white outline-none focus:ring-2 focus:ring-[#25D366]"
-                  >
-                    <option value="">-- Choose a Flow --</option>
-                    {flows.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name} ({f.status === "active" ? "🟢 Active" : "⚪ Draft"})
-                      </option>
-                    ))}
-                  </select>
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Reminder Category</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "appointment_reminder", label: "📅 Service Visit / Appointment" },
+                    { id: "payment_due", label: "💰 Payment Due Notice" },
+                    { id: "quotation_followup", label: "💼 Quotation Follow-up" },
+                    { id: "amc_renewal", label: "🛡️ AMC Renewal Due" },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => handleReminderTypeChange(cat.id)}
+                      className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition ${
+                        reminderType === cat.id
+                          ? "bg-orange-500/20 border-orange-500 text-orange-200"
+                          : "bg-[#202c33] border-[#2a3942] text-slate-300 hover:bg-[#2a3942]"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 space-y-1">
-                  <p className="font-bold flex items-center gap-1">
-                    <span>⚡ Instant Auto-Pilot</span>
-                  </p>
-                  <p className="text-[11px] text-emerald-700 leading-relaxed">
-                    The bot will immediately send the entry message with interactive options to this contact and handle their replies dynamically.
-                  </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Title / Notification Tag</label>
+                <input
+                  type="text"
+                  value={reminderTitle}
+                  onChange={(e) => setReminderTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-slate-200 outline-none focus:border-[#00a884]"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-300 uppercase">Message Body</label>
+                  <span className="text-[10px] text-[#00a884] font-mono">Placeholders Supported</span>
                 </div>
+                <textarea
+                  value={reminderText}
+                  onChange={(e) => setReminderText(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-[#202c33] border border-[#2a3942] rounded-xl text-xs text-slate-200 outline-none focus:border-[#00a884] resize-none"
+                />
+              </div>
 
-                <div className="flex justify-end gap-2.5 pt-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">
+                  Interactive Response Buttons (Customer taps on WhatsApp)
+                </label>
+                <div className="space-y-1.5">
+                  {reminderOptions.map((opt, idx) => (
+                    <div key={opt.id || idx} className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-slate-400 w-5 text-right">{idx + 1}.</span>
+                      <input
+                        type="text"
+                        value={opt.label}
+                        onChange={(e) => {
+                          const updated = [...reminderOptions];
+                          updated[idx] = { ...updated[idx], label: e.target.value };
+                          setReminderOptions(updated);
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-[#202c33] border border-[#2a3942] rounded-lg text-xs text-slate-200 outline-none focus:border-[#00a884]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                <label className="block text-xs font-bold text-amber-300 uppercase mb-1 flex items-center gap-1.5">
+                  <Zap size={13} className="text-amber-400" />
+                  Auto-Launch Flow Bot on Response (Optional)
+                </label>
+                <select
+                  value={reminderFlowId}
+                  onChange={(e) => setReminderFlowId(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#202c33] border border-amber-500/40 rounded-xl text-xs text-slate-200 outline-none focus:border-amber-400"
+                >
+                  <option value="">None (Standard Confirmation Acknowledgment)</option>
+                  {flows.map((fl) => (
+                    <option key={fl.id} value={fl.id}>
+                      🤖 {fl.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-amber-300/80 mt-1 leading-relaxed">
+                  When the customer responds to this reminder, our bot engine will automatically engage them in this conversational flow!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-[#222d34] mt-4">
+              <button
+                type="button"
+                onClick={() => setShowReminderModal(false)}
+                className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] rounded-xl text-xs text-slate-300 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sendingReminder || !reminderText.trim()}
+                onClick={handleSendReminderNow}
+                className="px-5 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl text-xs font-bold hover:brightness-110 disabled:opacity-50 transition shadow-lg flex items-center gap-1.5"
+              >
+                {sendingReminder ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                <span>{sendingReminder ? "Sending..." : "Send Reminder Now"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Contact to Campaign Group Modal */}
+      {showAddToGroupModal && selectedChat && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowAddToGroupModal(false)}>
+          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-slate-200" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowAddToGroupModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4 border-b border-[#222d34] pb-3">
+              <div className="p-3 bg-blue-500/20 text-blue-400 rounded-xl">
+                <Users size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Enroll in Bulk Campaign Group</h3>
+                <p className="text-xs text-slate-400">
+                  Add <span className="text-[#00a884] font-semibold">{selectedChat.name}</span> (+{selectedChat.id.replace(/\D/g, "")}) to campaign target lists
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              <div>
+                <p className="text-xs font-bold text-slate-300 uppercase mb-2">Select Target Group(s):</p>
+                {groupsLoading ? (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    <Loader2 size={24} className="animate-spin text-[#00a884] mx-auto mb-2" />
+                    Loading campaign groups...
+                  </div>
+                ) : campaignGroups.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3 text-center">No campaign groups found. Create one below!</p>
+                ) : (
+                  <div className="space-y-2 max-h-52 overflow-y-auto">
+                    {campaignGroups.map((grp) => {
+                      const isSelected = selectedGroupIds.includes(grp.id);
+                      return (
+                        <div
+                          key={grp.id}
+                          onClick={() => {
+                            setSelectedGroupIds((prev) =>
+                              prev.includes(grp.id) ? prev.filter((id) => id !== grp.id) : [...prev, grp.id]
+                            );
+                          }}
+                          className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
+                            isSelected
+                              ? "bg-blue-500/20 border-blue-500 text-white"
+                              : "bg-[#202c33] border-[#2a3942] text-slate-300 hover:bg-[#2a3942]"
+                          }`}
+                        >
+                          <div>
+                            <p className="text-xs font-bold">{grp.name}</p>
+                            {grp.description && <p className="text-[11px] text-slate-400 mt-0.5">{grp.description}</p>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 text-slate-300 font-mono">
+                              {grp.contact_count || grp.total_contacts || 0} contacts
+                            </span>
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? "bg-blue-500 border-blue-500 text-white" : "border-slate-500"}`}>
+                              {isSelected && <CheckCircle2 size={12} />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Create new group inline */}
+              <div className="p-3 bg-[#182229] rounded-xl border border-[#222d34] space-y-2">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">Or Create New Campaign Group</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    placeholder="e.g. High-Value Clients, Festive 2026..."
+                    className="flex-1 px-3 py-1.5 bg-[#202c33] border border-[#2a3942] rounded-lg text-xs text-slate-200 outline-none focus:border-[#00a884]"
+                  />
                   <button
                     type="button"
-                    onClick={() => setShowFlowModal(false)}
-                    className="px-4 py-2 border rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                    disabled={creatingGroup || !newGroupName.trim()}
+                    onClick={handleCreateNewGroupAndAdd}
+                    className="px-3 py-1.5 bg-[#00a884] text-[#111b21] rounded-lg text-xs font-bold hover:bg-[#008f70] disabled:opacity-50 transition shrink-0"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedFlowId || triggeringFlow}
-                    onClick={() => handleTriggerFlowForChat(selectedFlowId)}
-                    className="px-5 py-2 bg-[#25D366] text-white rounded-xl text-xs font-bold hover:bg-[#1ebe5d] disabled:opacity-50 transition shadow-md flex items-center gap-1.5"
-                  >
-                    {triggeringFlow ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    <span>{triggeringFlow ? "Starting Flow..." : "Launch Flow Now"}</span>
+                    {creatingGroup ? "Creating..." : "Create & Add"}
                   </button>
                 </div>
               </div>
-            )}
+            </div>
+
+            <div className="flex justify-between items-center pt-4 border-t border-[#222d34] mt-4">
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard/whatsapp/campaigns")}
+                className="text-xs text-blue-400 hover:underline font-bold"
+              >
+                Open Campaigns Manager →
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddToGroupModal(false)}
+                  className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] rounded-xl text-xs text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={addingToGroup || selectedGroupIds.length === 0}
+                  onClick={handleAddToCampaignGroups}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-500 disabled:opacity-50 transition shadow flex items-center gap-1.5"
+                >
+                  {addingToGroup ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
+                  <span>{addingToGroup ? "Adding..." : `Add to ${selectedGroupIds.length} Group(s)`}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trigger CRM Automation Modal */}
+      {showAutomationModal && selectedChat && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowAutomationModal(false)}>
+          <div className="bg-[#111b21] border border-[#222d34] rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-slate-200" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowAutomationModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4 border-b border-[#222d34] pb-3">
+              <div className="p-3 bg-purple-500/20 text-purple-400 rounded-xl">
+                <Sparkles size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Execute CRM Automation Workflow</h3>
+                <p className="text-xs text-slate-400">
+                  Trigger automated CRM message sequence for <span className="text-[#00a884] font-semibold">{selectedChat.name}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+              <p className="text-xs font-bold text-slate-300 uppercase">Select Active Automation Rule:</p>
+              {automationsLoading ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  <Loader2 size={24} className="animate-spin text-purple-400 mx-auto mb-2" />
+                  Loading automation rules...
+                </div>
+              ) : automations.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">No active automations found.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {automations.map((rule) => {
+                    const isSelected = selectedAutomationId === rule.id;
+                    return (
+                      <div
+                        key={rule.id}
+                        onClick={() => setSelectedAutomationId(rule.id)}
+                        className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
+                          isSelected
+                            ? "bg-purple-500/20 border-purple-500 text-white"
+                            : "bg-[#202c33] border-[#2a3942] text-slate-300 hover:bg-[#2a3942]"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-xs font-bold text-slate-100">{rule.name}</p>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/40 text-purple-300 font-mono">
+                              {rule.trigger_label || rule.trigger_type}
+                            </span>
+                            {rule.flow_name && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                                🤖 {rule.flow_name}
+                              </span>
+                            )}
+                          </div>
+                          {rule.message_text && (
+                            <p className="text-[11px] text-slate-400 truncate mt-1">{rule.message_text}</p>
+                          )}
+                        </div>
+                        {isSelected && <CheckCircle2 size={18} className="text-purple-400 shrink-0 ml-2" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center pt-4 border-t border-[#222d34] mt-4">
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard/whatsapp/automations")}
+                className="text-xs text-purple-400 hover:underline font-bold"
+              >
+                Open Automations Manager →
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAutomationModal(false)}
+                  className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] rounded-xl text-xs text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={runningAutomation || !selectedAutomationId}
+                  onClick={() => handleTriggerAutomation(selectedAutomationId)}
+                  className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-xs font-bold hover:brightness-110 disabled:opacity-50 transition shadow flex items-center gap-1.5"
+                >
+                  {runningAutomation ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  <span>{runningAutomation ? "Executing..." : "Execute Automation"}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

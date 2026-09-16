@@ -659,6 +659,9 @@ async function ensureWATables() {
   await addColumnIfNotExists("wa_campaigns", "exclude_prev_recipients", "TINYINT(1) DEFAULT 0");
   await addColumnIfNotExists("wa_campaigns", "duplicate_filter", "TINYINT(1) DEFAULT 1");
   await addColumnIfNotExists("wa_campaigns", "session_key", "VARCHAR(64) DEFAULT NULL");
+  await addColumnIfNotExists("wa_campaigns", "flow_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_interactive_reminders", "flow_id", "INT DEFAULT NULL");
+  await addColumnIfNotExists("wa_interactive_reminders", "template_id", "INT DEFAULT NULL");
   try {
     await queryAsync("ALTER TABLE wa_campaigns MODIFY COLUMN status ENUM('draft','scheduled','running','completed','paused','failed','cancelled') DEFAULT 'draft'");
   } catch (_) {}

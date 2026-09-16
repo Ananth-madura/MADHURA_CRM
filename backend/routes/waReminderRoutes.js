@@ -154,7 +154,7 @@ router.put("/settings", verifyToken, async (req, res) => {
 // ── 5. Instant Interactive Send ─────────────────────────────────────────────
 router.post("/send-now", verifyToken, async (req, res) => {
   try {
-    const { phone, contact_name, reminder_type, title, message_text, options, ref_table, ref_id } = req.body;
+    const { phone, contact_name, reminder_type, title, message_text, options, ref_table, ref_id, flow_id, template_id } = req.body;
     if (!phone) return res.status(400).json({ error: "Phone number is required" });
 
     const result = await waConfirmation.sendInteractiveReminder({
@@ -166,6 +166,8 @@ router.post("/send-now", verifyToken, async (req, res) => {
       options,
       refTable: ref_table || null,
       refId: ref_id || null,
+      flow_id: flow_id || null,
+      template_id: template_id || null,
     });
 
     res.json({ success: true, message: "Interactive reminder sent successfully!", result });

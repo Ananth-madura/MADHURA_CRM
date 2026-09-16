@@ -21,7 +21,17 @@ const upload = multer({
 // ── List campaigns ────────────────────────────────────────────────────────────
 router.get("/", auth, async (req, res) => {
   try {
-    const [rows] = await db.promise().query("SELECT * FROM wa_campaigns ORDER BY created_at DESC");
+    const [rows] = await db.promise().query(`
+      SELECT c.*, 
+             t.name as template_name, 
+             f.name as flow_name, 
+             g.name as group_name 
+      FROM wa_campaigns c
+      LEFT JOIN wa_templates t ON c.template_id = t.id
+      LEFT JOIN wa_flows f ON c.flow_id = f.id
+      LEFT JOIN wa_contact_groups g ON c.group_id = g.id
+      ORDER BY c.created_at DESC
+    `);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -203,7 +213,7 @@ router.post("/", auth, async (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const {
-      name, description, type, template_id, message_text, media_type, media_url, group_id, scheduled_at,
+      name, description, type, template_id, flow_id, message_text, media_type, media_url, group_id, scheduled_at,
       whatsapp_number, daily_limit, start_time, end_time, timezone, random_delay_min, random_delay_max,
       pause_every, pause_duration_min, pause_duration_max, retry_failed, max_retries, retry_delay_min,
       retry_delay_max, exclude_prev_recipients, duplicate_filter, pool_id, routing_strategy = "round_robin",
@@ -220,14 +230,14 @@ router.post("/", auth, async (req, res) => {
 
     const [result] = await db.promise().query(
       `INSERT INTO wa_campaigns (
-        name, description, type, template_id, message_text, media_type, media_url, group_id, status,
+        name, description, type, template_id, flow_id, message_text, media_type, media_url, group_id, status,
         scheduled_at, total_contacts, whatsapp_number, daily_limit, start_time, end_time, timezone,
         random_delay_min, random_delay_max, pause_every, pause_duration_min, pause_duration_max,
         retry_failed, max_retries, retry_delay_min, retry_delay_max, exclude_prev_recipients,
         duplicate_filter, pool_id, routing_strategy, spintax_enabled, warmup_mode, tenant_id, created_by, session_key
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        name, description || null, type || "text", template_id || null, message_text || null,
+        name, description || null, type || "text", template_id || null, flow_id || null, message_text || null,
         media_type || null, media_url || null, group_id || null,
         scheduled_at ? "scheduled" : "draft", scheduled_at || null, totalContacts,
         whatsapp_number || null, parseInt(daily_limit) || 0,
@@ -243,7 +253,14 @@ router.post("/", auth, async (req, res) => {
         String(req.user?.id || "1")
       ]
     );
-    const [row] = await db.promise().query("SELECT * FROM wa_campaigns WHERE id = ?", [result.insertId]);
+    const [row] = await db.promise().query(`
+      SELECT c.*, t.name as template_name, f.name as flow_name, g.name as group_name
+      FROM wa_campaigns c
+      LEFT JOIN wa_templates t ON c.template_id = t.id
+      LEFT JOIN wa_flows f ON c.flow_id = f.id
+      LEFT JOIN wa_contact_groups g ON c.group_id = g.id
+      WHERE c.id = ?
+    `, [result.insertId]);
     res.status(201).json(row[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -265,7 +282,14 @@ router.post("/stop-all", auth, async (req, res) => {
 // ── Get campaign detail ───────────────────────────────────────────────────────
 router.get("/:id", auth, async (req, res) => {
   try {
-    const [rows] = await db.promise().query("SELECT * FROM wa_campaigns WHERE id = ?", [req.params.id]);
+    const [rows] = await db.promise().query(`
+      SELECT c.*, t.name as template_name, f.name as flow_name, g.name as group_name
+      FROM wa_campaigns c
+      LEFT JOIN wa_templates t ON c.template_id = t.id
+      LEFT JOIN wa_flows f ON c.flow_id = f.id
+      LEFT JOIN wa_contact_groups g ON c.group_id = g.id
+      WHERE c.id = ?
+    `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "Campaign not found" });
     const [messages] = await db.promise().query(
       "SELECT * FROM wa_campaign_messages WHERE campaign_id = ? ORDER BY created_at ASC LIMIT 500",
@@ -281,7 +305,7 @@ router.get("/:id", auth, async (req, res) => {
 router.put("/:id", auth, async (req, res) => {
   try {
     const {
-      name, description, type, template_id, message_text, group_id, scheduled_at, status,
+      name, description, type, template_id, flow_id, message_text, group_id, scheduled_at, status,
       whatsapp_number, daily_limit, start_time, end_time, timezone, random_delay_min, random_delay_max,
       pause_every, pause_duration_min, pause_duration_max, retry_failed, max_retries, retry_delay_min,
       retry_delay_max, exclude_prev_recipients, duplicate_filter
@@ -289,14 +313,14 @@ router.put("/:id", auth, async (req, res) => {
 
     await db.promise().query(
       `UPDATE wa_campaigns SET
-        name=?, description=?, type=?, template_id=?, message_text=?, group_id=?, scheduled_at=?, status=?,
+        name=?, description=?, type=?, template_id=?, flow_id=?, message_text=?, group_id=?, scheduled_at=?, status=?,
         whatsapp_number=?, daily_limit=?, start_time=?, end_time=?, timezone=?,
         random_delay_min=?, random_delay_max=?, pause_every=?, pause_duration_min=?, pause_duration_max=?,
         retry_failed=?, max_retries=?, retry_delay_min=?, retry_delay_max=?,
         exclude_prev_recipients=?, duplicate_filter=?, updated_at=NOW()
        WHERE id=?`,
       [
-        name, description, type, template_id, message_text, group_id, scheduled_at, status,
+        name, description, type, template_id || null, flow_id || null, message_text, group_id, scheduled_at, status,
         whatsapp_number || null, parseInt(daily_limit) || 0,
         start_time || "09:00", end_time || "21:00", timezone || "Asia/Kolkata",
         parseInt(random_delay_min) || 8, parseInt(random_delay_max) || 15,
@@ -313,7 +337,14 @@ router.put("/:id", auth, async (req, res) => {
       await db.promise().query("UPDATE wa_campaigns SET total_contacts = ? WHERE id = ?", [rows[0].count, req.params.id]);
     }
 
-    const [row] = await db.promise().query("SELECT * FROM wa_campaigns WHERE id = ?", [req.params.id]);
+    const [row] = await db.promise().query(`
+      SELECT c.*, t.name as template_name, f.name as flow_name, g.name as group_name
+      FROM wa_campaigns c
+      LEFT JOIN wa_templates t ON c.template_id = t.id
+      LEFT JOIN wa_flows f ON c.flow_id = f.id
+      LEFT JOIN wa_contact_groups g ON c.group_id = g.id
+      WHERE c.id = ?
+    `, [req.params.id]);
     res.json(row[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

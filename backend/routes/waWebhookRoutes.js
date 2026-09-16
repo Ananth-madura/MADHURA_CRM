@@ -222,6 +222,20 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
 
     const waFlowEngine = require("../services/waFlowEngine");
 
+    // If the contact is replying to a bulk campaign with an attached Flow Bot, auto-start that flow
+    if (campaignReply?.flowId) {
+      try {
+        const [flowRows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ? AND status = 'active' LIMIT 1", [campaignReply.flowId]);
+        if (flowRows.length > 0) {
+          console.log(`🤖 [WA Campaign -> Flow] Launching Flow "${flowRows[0].name}" for campaign reply from +${phone}`);
+          await waFlowEngine.startFlowRun(flowRows[0], phone, null);
+          return;
+        }
+      } catch (fErr) {
+        console.warn(`[WA Campaign -> Flow] Failed to trigger linked flow:`, fErr.message);
+      }
+    }
+
     // Attachment descriptor — resolve() downloads lazily, only if a collect_input
     // step actually wants the file.
     const mediaId = ["image", "document", "video", "audio", "sticker"].includes(msg.type)

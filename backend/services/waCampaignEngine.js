@@ -586,7 +586,7 @@ async function checkAndRecordCampaignReply(phone, messageText = "") {
 
   try {
     const [rows] = await db.promise().query(
-      `SELECT cm.id as message_id, cm.campaign_id, c.name as campaign_name, cm.reply_received
+      `SELECT cm.id as message_id, cm.campaign_id, c.name as campaign_name, c.flow_id, cm.reply_received
        FROM wa_campaign_messages cm
        LEFT JOIN wa_campaigns c ON cm.campaign_id = c.id
        WHERE (cm.phone = ? OR cm.phone LIKE ?)
@@ -597,7 +597,7 @@ async function checkAndRecordCampaignReply(phone, messageText = "") {
     );
 
     if (rows && rows.length > 0) {
-      const { message_id, campaign_id, campaign_name, reply_received } = rows[0];
+      const { message_id, campaign_id, campaign_name, flow_id, reply_received } = rows[0];
 
       // Mark reply on campaign message if not already set
       if (!reply_received) {
@@ -614,11 +614,12 @@ async function checkAndRecordCampaignReply(phone, messageText = "") {
         }
       }
 
-      console.log(`📢 [WA Campaign] Reply detected from +${clean} for Campaign "${campaign_name || campaign_id}" (ID: ${campaign_id})`);
+      console.log(`📢 [WA Campaign] Reply detected from +${clean} for Campaign "${campaign_name || campaign_id}" (ID: ${campaign_id}${flow_id ? `, Linked Flow #${flow_id}` : ""})`);
       return {
         isCampaignReply: true,
         campaignId: campaign_id,
         campaignName: campaign_name,
+        flowId: flow_id || null,
         messageId: message_id,
       };
     }
