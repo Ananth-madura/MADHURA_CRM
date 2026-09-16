@@ -950,6 +950,14 @@ async function ensureWATables() {
       );
       console.log("✅ Seeded default WhatsApp AI auto-reply settings (disabled)");
     }
+
+    // ── Seed Comprehensive Flow Bots & Activate Automations on Boot ─────────
+    try {
+      const waFlowSeedService = require("./waFlowSeedService");
+      await waFlowSeedService.seedAll(false);
+    } catch (seedFlowErr) {
+      console.warn("⚠️ Flow & Automation auto-seed notice:", seedFlowErr.message);
+    }
   } catch (seedErr) {
     console.error("Error seeding prebuilt WhatsApp data:", seedErr.message);
   }

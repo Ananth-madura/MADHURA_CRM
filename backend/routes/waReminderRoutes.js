@@ -541,6 +541,32 @@ router.post("/simulate-reply", verifyToken, async (req, res) => {
   }
 });
 
+// ── 11b. Manually Trigger All Interactive Schedulers Now ────────────────────
+router.post("/run-schedulers-now", verifyToken, async (req, res) => {
+  try {
+    const results = {
+      appointments: "triggered",
+      paymentDue: "triggered",
+      quotationFollowup: "triggered",
+      amcRenewal: "triggered",
+    };
+
+    // Run all 4 checks asynchronously
+    waReminderScheduler.runAppointmentReminderCheck().catch((e) => console.warn("[Manual Check] Appointments error:", e.message));
+    waReminderScheduler.runPaymentDueInteractiveCheck().catch((e) => console.warn("[Manual Check] Payments error:", e.message));
+    waReminderScheduler.runQuotationFollowupCheck().catch((e) => console.warn("[Manual Check] Quotations error:", e.message));
+    waReminderScheduler.runAmcRenewalCheck().catch((e) => console.warn("[Manual Check] AMC error:", e.message));
+
+    res.json({
+      success: true,
+      message: "All 4 automated interactive reminder checks (Appointments, Payments, Quotations, AMC) triggered successfully!",
+      results,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── 12. Search CRM Contacts for Quick Auto-Fill ─────────────────────────────
 router.get("/search-crm-contacts", verifyToken, async (req, res) => {
   try {

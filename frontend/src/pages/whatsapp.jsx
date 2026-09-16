@@ -1489,7 +1489,13 @@ export default function WhatsAppPage() {
       let phone = selectedChat.id.replace(/\D/g, "");
       if (phone.length === 10) phone = "91" + phone;
       const res = await axios.post(`${API}/api/wa/flows/${flowId}/trigger-phone`, { phone }, { headers });
-      alert(res.data?.message || "Flow triggered successfully!");
+      const selFlow = flows.find((f) => String(f.id) === String(flowId));
+      setActiveFlowRun({
+        flowId,
+        flowName: selFlow?.name || "Automated Bot Flow",
+        currentNode: "Active",
+        phone,
+      });
       setShowFlowModal(false);
       setShowAttachMenu(false);
       await fetchMessages(selectedChat.id);
