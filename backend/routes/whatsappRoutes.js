@@ -466,7 +466,7 @@ router.get("/contact-crm-details/:phone", async (req, res) => {
 
     // Fetch linked CRM records
     const [clients] = await db.promise().query(
-      "SELECT id, name, company_name, email, phone, address FROM clients WHERE phone LIKE ? OR phone LIKE ? LIMIT 1",
+      "SELECT id, name, company_name, email, phone, address, source FROM clients WHERE phone LIKE ? OR phone LIKE ? LIMIT 1",
       [`%${clean10}`, `%${digitsOnly}`]
     ).catch(() => [[]]);
 
@@ -516,6 +516,121 @@ router.get("/contact-crm-details/:phone", async (req, res) => {
       amcContracts,
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Add WhatsApp contact as a CRM Client ─────────────────────────────────────
+router.post("/add-to-crm-client", async (req, res) => {
+  try {
+    const { phone, name, company_name, email, city, service, notes } = req.body;
+    if (!phone) return res.status(400).json({ error: "phone is required" });
+
+    const clean10 = phone.replace(/\D/g, "").slice(-10);
+    if (clean10.length < 10) return res.status(400).json({ error: "Invalid phone number" });
+
+    const customerName = (name || "").trim() || "WhatsApp Contact";
+
+    // 1. Check if client already exists by phone
+    const [existing] = await db.promise().query(
+      "SELECT id, name, company_name, phone, email, source FROM clients WHERE phone LIKE ? OR phone LIKE ? LIMIT 1",
+      [`%${clean10}`, clean10]
+    );
+
+    if (existing && existing.length > 0) {
+      // Client already exists — update source to include WhatsApp if not already set
+      if (!existing[0].source) {
+        await db.promise().query(
+          "UPDATE clients SET source = 'WhatsApp' WHERE id = ?",
+          [existing[0].id]
+        );
+      }
+      // Link wa_contacts to this client
+      await db.promise().query(
+        `UPDATE wa_contacts SET crm_ref_type = 'clients', crm_ref_id = ? WHERE phone LIKE ?`,
+        [existing[0].id, `%${clean10}`]
+      ).catch(() => {});
+
+      return res.json({
+        success: true,
+        isExisting: true,
+        message: "Client already exists in CRM",
+        client: { ...existing[0], source: existing[0].source || "WhatsApp" },
+      });
+    }
+
+    // 2. Create new client with source = 'WhatsApp'
+    const userId = req.user?.id || null;
+    const [result] = await db.promise().query(
+      `INSERT INTO clients (name, company_name, email, phone, city, service, notes, client_status, source, lead_reference, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'WhatsApp', 'WhatsApp', ?, NOW())`,
+      [
+        customerName,
+        (company_name || "").trim() || null,
+        (email || "").trim() || null,
+        clean10,
+        (city || "").trim() || null,
+        (service || "").trim() || null,
+        (notes || "").trim() || `Client added from WhatsApp chat`,
+        userId,
+      ]
+    );
+    const newClientId = result.insertId;
+
+    // 3. Link wa_contacts to the new client
+    await db.promise().query(
+      `INSERT INTO wa_contacts (name, phone, country_code, source, crm_ref_type, crm_ref_id, opt_in_status, last_contacted)
+       VALUES (?, ?, '91', 'WhatsApp', 'clients', ?, 1, NOW())
+       ON DUPLICATE KEY UPDATE
+         name = COALESCE(NULLIF(VALUES(name), 'WhatsApp Contact'), name),
+         source = 'WhatsApp',
+         crm_ref_type = 'clients',
+         crm_ref_id = VALUES(crm_ref_id),
+         last_contacted = NOW()`,
+      [customerName, clean10, newClientId]
+    ).catch(() => {});
+
+    // 4. Send admin notification
+    try {
+      const notifMsg = `New Client from WhatsApp: ${customerName} (+91${clean10})${service ? ` — ${service}` : ""}`;
+      await db.promise().query(
+        `INSERT INTO admin_notifications (type, message, related_type, related_id, priority)
+         VALUES ('new_client', ?, 'clients', ?, 'high')`,
+        [notifMsg, newClientId]
+      );
+
+      const { getNotificationIO } = require("../sockets/notifications");
+      const helpers = getNotificationIO && getNotificationIO();
+      if (helpers) {
+        helpers.sendToAdmin("new_notification", {
+          id: Date.now(),
+          type: "new_client",
+          title: "🎉 New Client from WhatsApp!",
+          message: notifMsg,
+          related_type: "clients",
+          related_id: newClientId,
+          timestamp: new Date().toISOString(),
+          is_read: 0,
+        });
+      }
+    } catch (_) {}
+
+    // 5. Return the new client
+    const [newClient] = await db.promise().query(
+      "SELECT * FROM clients WHERE id = ?",
+      [newClientId]
+    );
+
+    res.json({
+      success: true,
+      isExisting: false,
+      message: "Client created successfully from WhatsApp",
+      client: newClient[0] || { id: newClientId, name: customerName, phone: clean10, source: "WhatsApp" },
+    });
+
+    console.log(`🎉 [WA → CRM] New client created: ${customerName} (+91${clean10}) — ID ${newClientId}`);
+  } catch (err) {
+    console.error("[WA → CRM] Error creating client:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

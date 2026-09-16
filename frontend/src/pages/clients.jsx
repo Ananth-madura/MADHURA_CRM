@@ -806,13 +806,15 @@ const Clients = () => {
   }, [open]);
 
   const getSourceBadge = (source) => {
+    const key = String(source || "").toLowerCase();
     const badges = {
+      whatsapp: { bg: "#dcfce7", text: "#15803d", label: "WhatsApp" },
       telecall: { bg: N.sky, text: "#0075de", label: "Tele Call" },
       walkin: { bg: N.mint, text: N.green, label: "Walk-in" },
       field: { bg: N.lavender, text: N.primary, label: "Field Visit" },
       direct: { bg: N.surface, text: N.steel, label: "Direct" }
     };
-    const badge = badges[source] || badges.direct;
+    const badge = badges[key] || badges.direct;
     return <span className="px-2 py-1 rounded-full text-xs font-semibold" style={{ background: badge.bg, color: badge.text }}>{badge.label}</span>;
   };
 
@@ -944,6 +946,7 @@ const Clients = () => {
         <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
           className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[160px]" style={{ borderColor: N.hairline, color: N.ink }}>
           <option value="all">All Sources</option>
+          <option value="whatsapp">WhatsApp</option>
           <option value="telecall">Tele Call</option>
           <option value="walkin">Walk-in</option>
           <option value="field">Field Visit</option>
@@ -1030,7 +1033,7 @@ const Clients = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3" style={{ color: N.charcoal }}>{c.company_name || "-"}</td>
-                    <td className="px-4 py-3">{getSourceBadge(c.original_lead_type || "direct")}</td>
+                    <td className="px-4 py-3">{getSourceBadge(c.source || c.original_lead_type || "direct")}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1" style={{ color: N.charcoal }}>
                         <User size={12} style={{ color: N.stone }} />
@@ -1338,7 +1341,7 @@ const Clients = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <p className="text-[11px] font-bold text-gray-500 uppercase">Source Type</p>
-                    <div className="mt-1">{getSourceBadge(selectedClientDetails.original_lead_type)}</div>
+                    <div className="mt-1">{getSourceBadge(selectedClientDetails.source || selectedClientDetails.original_lead_type)}</div>
                   </div>
                   <div>
                     <p className="text-[11px] font-bold text-gray-500 uppercase">Lead ID</p>

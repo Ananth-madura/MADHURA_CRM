@@ -517,6 +517,12 @@ export default function WhatsAppPage() {
   const [enrollingDrip, setEnrollingDrip] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
+  // Add as CRM Client state
+  const [showAddClientForm, setShowAddClientForm] = useState(false);
+  const [addClientData, setAddClientData] = useState({ name: "", company_name: "", email: "", city: "", service: "", notes: "" });
+  const [addClientLoading, setAddClientLoading] = useState(false);
+  const [addClientResult, setAddClientResult] = useState(null); // { success, message, isExisting, client }
+
   // Voice note recording
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
@@ -894,6 +900,9 @@ export default function WhatsAppPage() {
     setShowMobileChat(true);
     setMsgLimit(10);
     setUnreadWhileScrolled(0);
+    setShowAddClientForm(false);
+    setAddClientResult(null);
+    setAddClientData({ name: "", company_name: "", email: "", city: "", service: "", notes: "" });
 
     // Instant message display from cache in 0ms!
     if (messagesCacheRef.current[chat.id]) {
@@ -4102,6 +4111,169 @@ export default function WhatsAppPage() {
                   className="w-full py-2 bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-100 transition border border-gray-200"
                 >
                   Load CRM Invoices & Quotes
+                </button>
+              )}
+            </div>
+
+            {/* ── Add as CRM Client ─────────────────────────────────────── */}
+            <div className="py-4 border-b border-gray-100 space-y-2.5">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">CRM Client Status</h4>
+
+              {/* Already a client — show linked info */}
+              {crmDetails?.client ? (
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200/60 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-800">Linked CRM Client</span>
+                    {crmDetails.client.source && (
+                      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300/60">
+                        {crmDetails.client.source}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-emerald-900 font-semibold">{crmDetails.client.name || crmDetails.client.company_name}</p>
+                  {crmDetails.client.company_name && crmDetails.client.name !== crmDetails.client.company_name && (
+                    <p className="text-[10px] text-emerald-700">{crmDetails.client.company_name}</p>
+                  )}
+                  {crmDetails.client.email && (
+                    <p className="text-[10px] text-emerald-700">{crmDetails.client.email}</p>
+                  )}
+                  <button
+                    onClick={() => navigate(`/dashboard/clients`)}
+                    className="mt-1 text-[10px] text-emerald-700 font-bold hover:underline flex items-center gap-1"
+                  >
+                    <ExternalLink size={10} /> View in CRM Clients
+                  </button>
+                </div>
+              ) : addClientResult?.success ? (
+                /* Just added — show success */
+                <div className={`p-3 rounded-xl border space-y-1.5 ${addClientResult.isExisting ? "bg-blue-50 border-blue-200/60" : "bg-emerald-50 border-emerald-200/60"}`}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={16} className={addClientResult.isExisting ? "text-blue-600" : "text-emerald-600"} />
+                    <span className={`text-xs font-bold ${addClientResult.isExisting ? "text-blue-800" : "text-emerald-800"}`}>
+                      {addClientResult.isExisting ? "Already in CRM" : "✅ Added to CRM!"}
+                    </span>
+                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-300/60">
+                      WhatsApp
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-800 font-semibold">{addClientResult.client?.name}</p>
+                  {addClientResult.client?.company_name && (
+                    <p className="text-[10px] text-gray-600">{addClientResult.client.company_name}</p>
+                  )}
+                  <button
+                    onClick={() => navigate(`/dashboard/clients`)}
+                    className="mt-1 text-[10px] text-emerald-700 font-bold hover:underline flex items-center gap-1"
+                  >
+                    <ExternalLink size={10} /> View in CRM Clients
+                  </button>
+                </div>
+              ) : showAddClientForm ? (
+                /* Inline add form */
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
+                  <div className="space-y-1.5">
+                    <input
+                      type="text"
+                      placeholder="Customer Name *"
+                      value={addClientData.name}
+                      onChange={(e) => setAddClientData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Company Name"
+                      value={addClientData.company_name}
+                      onChange={(e) => setAddClientData(prev => ({ ...prev, company_name: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800"
+                    />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={addClientData.email}
+                        onChange={(e) => setAddClientData(prev => ({ ...prev, email: e.target.value }))}
+                        className="px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800"
+                      />
+                      <input
+                        type="text"
+                        placeholder="City"
+                        value={addClientData.city}
+                        onChange={(e) => setAddClientData(prev => ({ ...prev, city: e.target.value }))}
+                        className="px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Service / Product Interest"
+                      value={addClientData.service}
+                      onChange={(e) => setAddClientData(prev => ({ ...prev, service: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800"
+                    />
+                    <textarea
+                      placeholder="Notes (optional)"
+                      value={addClientData.notes}
+                      onChange={(e) => setAddClientData(prev => ({ ...prev, notes: e.target.value }))}
+                      rows={2}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400 outline-none text-gray-800 resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={addClientLoading || !addClientData.name.trim()}
+                      onClick={async () => {
+                        setAddClientLoading(true);
+                        try {
+                          const token = localStorage.getItem("token");
+                          const cleanPhone = selectedChat.id?.replace(/\D/g, "").slice(-10);
+                          const res = await axios.post(`${API}/api/whatsapp/add-to-crm-client`, {
+                            phone: cleanPhone,
+                            ...addClientData,
+                          }, { headers: { Authorization: `Bearer ${token}` } });
+                          setAddClientResult(res.data);
+                          setShowAddClientForm(false);
+                          // Refresh CRM details
+                          fetchContactCrmDetails(selectedChat.id);
+                        } catch (err) {
+                          alert(err.response?.data?.error || "Failed to add client");
+                        }
+                        setAddClientLoading(false);
+                      }}
+                      className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                    >
+                      {addClientLoading ? (
+                        <><Loader2 size={13} className="animate-spin" /> Saving...</>
+                      ) : (
+                        <><UserPlus size={13} /> Save as Client</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { setShowAddClientForm(false); setAddClientData({ name: "", company_name: "", email: "", city: "", service: "", notes: "" }); }}
+                      className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Show "Add as Client" button */
+                <button
+                  onClick={() => {
+                    // Pre-fill name from chat
+                    setAddClientData({
+                      name: selectedChat.name || "",
+                      company_name: "",
+                      email: "",
+                      city: "",
+                      service: "",
+                      notes: "",
+                    });
+                    setAddClientResult(null);
+                    setShowAddClientForm(true);
+                  }}
+                  className="w-full py-2.5 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300/80 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+                >
+                  <UserPlus size={15} className="text-emerald-600" />
+                  <span>Add as CRM Client (Source: WhatsApp)</span>
                 </button>
               )}
             </div>

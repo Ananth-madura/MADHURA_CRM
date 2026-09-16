@@ -735,6 +735,20 @@ class WhatsAppService {
             return;
           }
 
+          // ── 🔗 AUTO-CAPTURE: Create CRM lead for first-time inbound WhatsApp contacts ──
+          if (!msg.fromMe && !isGroup && cleanPhone) {
+            try {
+              const waLeadCapture = require("./waLeadCapture");
+              const contactName = msg._data?.notifyName || msg.notifyName || null;
+              waLeadCapture.captureLeadFromWhatsApp({
+                phone: cleanPhone,
+                name: contactName || undefined,
+                notes: (liveMsg.body || "").slice(0, 500) || "Customer messaged via WhatsApp",
+                sourceDetail: "WhatsApp Inbound",
+              }).catch(() => {});
+            } catch (_) {}
+          }
+
           // Bot automations only run on inbound 1-to-1 chats, never on groups
           if (!msg.fromMe && !isGroup && cleanPhone) {
             const bodyTrimmed = (msg.body || "").trim().toLowerCase();

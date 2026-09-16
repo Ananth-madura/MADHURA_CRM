@@ -947,16 +947,26 @@ async function seedDefaultEmployees() {
 }
 
 const ready = new Promise((resolve, reject) => {
-  db.connect((err) => {
-    if (err) {
-      console.error("MySQL connection failed:", err.message);
-      return reject(err);
-    }
-    console.log(`MySQL Connected (${process.env.DB_HOST}:${dbPort})`);
+  let attempts = 0;
+  const maxAttempts = 15;
 
-    db.query(
-      `CREATE DATABASE IF NOT EXISTS \`${escapedDbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-      async (err) => {
+  function attemptConnect() {
+    attempts++;
+    db.connect((err) => {
+      if (err) {
+        if (attempts < maxAttempts) {
+          console.warn(`⏳ [MySQL Connection Retry] Attempt ${attempts}/${maxAttempts} failed (${err.message}). Retrying in 3 seconds...`);
+          setTimeout(attemptConnect, 3000);
+          return;
+        }
+        console.error("❌ MySQL connection failed after max retries:", err.message);
+        return reject(err);
+      }
+      console.log(`✅ MySQL Connected (${process.env.DB_HOST}:${dbPort})`);
+
+      db.query(
+        `CREATE DATABASE IF NOT EXISTS \`${escapedDbName}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+        async (err) => {
         if (err) {
           console.error(`Database creation failed for ${dbName}:`, err.message);
           return reject(err);
@@ -1015,6 +1025,9 @@ const ready = new Promise((resolve, reject) => {
       }
     );
   });
+}
+
+attemptConnect();
 });
 
 db.ready = ready;

@@ -148,6 +148,17 @@ async function handleIncomingMessage(msg, metadata, contacts = []) {
     [contactProfileName || `+${phone}`, phone.slice(-10), messageText]
   ).catch(() => {});
 
+  // ── 🔗 AUTO-CAPTURE: Create CRM lead for first-time inbound WhatsApp Cloud API contacts ──
+  try {
+    const waLeadCapture = require("../services/waLeadCapture");
+    waLeadCapture.captureLeadFromWhatsApp({
+      phone: phone,
+      name: contactProfileName || undefined,
+      notes: (messageText || "").slice(0, 500) || "Customer messaged via WhatsApp Cloud API",
+      sourceDetail: "WhatsApp Cloud API Inbound",
+    }).catch(() => {});
+  } catch (_) {}
+
   // ── 3. Check if contact is replying to a bulk campaign (Campaign Isolation) ──
   const waCampaignEngine = require("../services/waCampaignEngine");
   const campaignReply = await waCampaignEngine.checkAndRecordCampaignReply(phone, messageText).catch(() => ({ isCampaignReply: false }));
