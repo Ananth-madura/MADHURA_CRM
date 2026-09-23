@@ -300,7 +300,7 @@ async function ensureWATables() {
     `CREATE TABLE IF NOT EXISTS wa_welcome_settings (
       id INT PRIMARY KEY DEFAULT 1,
       enabled TINYINT(1) DEFAULT 1,
-      welcome_type ENUM('text','template','ai') DEFAULT 'text',
+      welcome_type ENUM('text','template','ai','buttons') DEFAULT 'text',
       welcome_text TEXT DEFAULT NULL,
       template_id INT DEFAULT NULL,
       cooldown_hours INT DEFAULT 24,
@@ -620,6 +620,14 @@ async function ensureWATables() {
 
   // 1. wa_automations column additions & type changes
   try { await queryAsync("ALTER TABLE wa_automations MODIFY COLUMN trigger_type VARCHAR(100) NOT NULL"); } catch (_) {}
+  // wa_welcome_settings: native interactive welcome menu
+  // 'buttons' lets the welcome auto-reply send real tappable WhatsApp reply
+  // buttons instead of a "reply with 1/2/3" text menu. welcome_buttons holds
+  // [{id,title}] — the id is the stable action key, never the shown title.
+  try { await queryAsync("ALTER TABLE wa_welcome_settings MODIFY COLUMN welcome_type ENUM('text','template','ai','buttons') DEFAULT 'text'"); } catch (_) {}
+  await addColumnIfNotExists("wa_welcome_settings", "welcome_buttons", "TEXT DEFAULT NULL");
+  await addColumnIfNotExists("wa_welcome_settings", "welcome_footer", "VARCHAR(60) DEFAULT NULL");
+
   await addColumnIfNotExists("wa_automations", "media_type", "VARCHAR(20) DEFAULT NULL");
   await addColumnIfNotExists("wa_automations", "media_url", "TEXT DEFAULT NULL");
   await addColumnIfNotExists("wa_automations", "sequence_delay_seconds", "INT DEFAULT 7");

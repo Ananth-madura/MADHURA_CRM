@@ -1985,216 +1985,122 @@ class WaFlowEngine {
     }
   }
 
+  /**
+   * Native reply buttons (<=3) or list (>3), via the provider abstraction.
+   * Titles are normalized centrally so an authored "1. Our Services" reaches
+   * Meta as "Our Services" — the ordinal only ever appears in the text fallback.
+   */
   async sendFlowButtons(phone, text, buttons, headerText, footerText, sessionKey = null) {
-    const waCloud = require("./whatsappCloudApi");
-    const waLoadBalancer = require("./waLoadBalancer");
-    const mdToWa = require("./mdToWa");
-
-    let cleanPhone = String(phone || "").replace(/\D/g, "");
-    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
-
-    // Standardized numbered text menu for WhatsApp Web and fallback
-    let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
-    (buttons || []).forEach((b, idx) => {
-      const rawTitle = b.title || b.label || b.text || b.name || `Option ${idx + 1}`;
-      const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
-      menuBody += `*${idx + 1}.* ${cleanTitle}\n`;
-    });
-    if (footerText) menuBody += `\n_${footerText}_`;
-    else menuBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
-
-    // Record & broadcast interactive menu
-    const msgId = await this.recordAndEmitBotMessage(cleanPhone, menuBody, "interactive", {
-      type: "buttons",
+    return this._dispatchInteractive({
+      phone,
+      body: text,
       header: headerText,
       footer: footerText,
-      buttons,
-      text
-    }, sessionKey);
-
-    if (waCloud.isConfigured() && buttons && buttons.length) {
-      try {
-        const sent = buttons.length > 3
-          ? await waCloud.sendInteractiveList(
-              cleanPhone,
-              text,
-              "View Options",
-              buttons.slice(0, 10).map((b, i) => ({
-                id: b.reply_id || b.id || `btn_${i + 1}`,
-                title: String(b.title || b.label || b.text || b.name || `Option ${i + 1}`).slice(0, 24),
-                description: b.description || undefined,
-              })),
-              headerText,
-              footerText
-            )
-          : await waCloud.sendInteractiveButtons(
-              cleanPhone,
-              text,
-              buttons.map((b, i) => ({
-                id: b.reply_id || b.id || `btn_${i + 1}`,
-                title: String(b.title || b.label || b.text || b.name || `Option ${i + 1}`).slice(0, 20),
-              })),
-              headerText,
-              footerText
-            );
-        if (sent) return sent;
-      } catch (cloudErr) {
-        console.warn(`[WA Flow] Cloud API button send failed, attempting text fallback: ${cloudErr.message}`);
-      }
-    }
-
-    try {
-      const result = await waLoadBalancer.sendTextMessage(cleanPhone, menuBody, sessionKey);
-      return result;
-    } catch (err) {
-      console.error(`❌ [WA FlowEngine] Failed to deliver buttons to +${cleanPhone}:`, err?.message || err);
-      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
-      return null;
-    }
+      items: buttons,
+      sessionKey,
+      buttonText: "View Options",
+      payloadType: "buttons",
+      payloadExtra: { buttons },
+    });
   }
 
   async sendFlowList(phone, text, rows, buttonText = "View Options", title = null, sessionKey = null) {
-    const waCloud = require("./whatsappCloudApi");
-    const waLoadBalancer = require("./waLoadBalancer");
-    const mdToWa = require("./mdToWa");
-
-    let cleanPhone = String(phone || "").replace(/\D/g, "");
-    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
-
-    let listBody = (title ? `*${title}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
-    (rows || []).forEach((r, idx) => {
-      const rawTitle = r.title || r.label || r.text || r.name || `Option ${idx + 1}`;
-      const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
-      listBody += `*${idx + 1}.* ${cleanTitle}`;
-      if (r.description) listBody += ` - _${r.description}_`;
-      listBody += "\n";
+    return this._dispatchInteractive({
+      phone,
+      body: text,
+      header: title,
+      footer: null,
+      items: rows,
+      forceList: true,
+      buttonText,
+      sessionKey,
+      payloadType: "list",
+      payloadExtra: { title, button_text: buttonText, rows },
     });
-    listBody += `\n_Reply with option number (1, 2, 3...) or option name_`;
-
-    const msgId = await this.recordAndEmitBotMessage(cleanPhone, listBody, "interactive", {
-      type: "list",
-      title,
-      button_text: buttonText,
-      rows,
-      text
-    }, sessionKey);
-
-    if (waCloud.isConfigured() && rows && rows.length) {
-      try {
-        const formattedSections = [{
-          title: title || "Options",
-          rows: rows.slice(0, 10).map((r, i) => ({
-            id: r.id || r.reply_id || `row_${i + 1}`,
-            title: String(r.title || r.label || r.text || r.name || `Option ${i + 1}`).slice(0, 24),
-            description: r.description ? String(r.description).slice(0, 72) : undefined
-          }))
-        }];
-        const sent = await waCloud.sendInteractiveList(cleanPhone, text, buttonText, formattedSections, title);
-        if (sent) return sent;
-      } catch (cloudErr) {
-        console.warn(`[WA Flow] Cloud API list send failed, falling back to text: ${cloudErr.message}`);
-      }
-    }
-
-    try {
-      const result = await waLoadBalancer.sendTextMessage(cleanPhone, listBody, sessionKey);
-      return result;
-    } catch (err) {
-      console.error(`❌ [WA FlowEngine] Failed to deliver list to +${cleanPhone}:`, err?.message || err);
-      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
-      return null;
-    }
   }
 
   async sendFlowInteractiveMenu(phone, text, sections, headerText = null, footerText = null, sessionKey = null) {
-    const waCloud = require("./whatsappCloudApi");
+    return this._dispatchInteractive({
+      phone,
+      body: text,
+      header: headerText,
+      footer: footerText,
+      items: sections,
+      sectioned: true,
+      buttonText: "Select Option",
+      sessionKey,
+      payloadType: "interactive_menu",
+      payloadExtra: { sections },
+    });
+  }
+
+  /**
+   * Shared interactive dispatcher for the three send_* node types.
+   *
+   * Records + broadcasts the bot message to Live Chat first (so the CRM shows
+   * the menu even if delivery later fails), then hands off to waLoadBalancer,
+   * which owns the cloud-vs-text decision, failover and quota accounting.
+   */
+  async _dispatchInteractive({
+    phone,
+    body,
+    header,
+    footer,
+    items,
+    sectioned = false,
+    forceList = false,
+    buttonText = "View Options",
+    sessionKey = null,
+    payloadType,
+    payloadExtra = {},
+  }) {
     const waLoadBalancer = require("./waLoadBalancer");
-    const mdToWa = require("./mdToWa");
+    const waInteractive = require("./waInteractive");
 
     let cleanPhone = String(phone || "").replace(/\D/g, "");
     if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
-    const allButtons = [];
-    (sections || []).forEach(sec => {
-      (sec.buttons || sec.options || sec.rows || []).forEach(b => {
-        allButtons.push({
-          ...b,
-          sectionTitle: sec.title
-        });
-      });
-    });
+    // A sectioned menu, an explicit list, or more options than a button row
+    // holds (3) must go out as a WhatsApp list.
+    const sections = waInteractive.normalizeSections(items, header || "Options");
+    const flat = waInteractive.flattenSections(sections);
+    const hasDescriptions = flat.some((r) => r.description);
+    const asList =
+      forceList || sectioned || hasDescriptions || flat.length > waInteractive.LIMITS.maxButtons || sections.length > 1;
 
-    let menuBody = (headerText ? `*${headerText}*\n\n` : "") + mdToWa.toWhatsApp(text) + "\n\n";
-    let globalIdx = 1;
-    (sections || []).forEach(sec => {
-      if (sec.title) {
-        menuBody += `*${sec.title}*\n`;
-      }
-      (sec.buttons || sec.options || sec.rows || []).forEach(b => {
-        const rawTitle = b.label || b.title || b.text || b.name || `Option ${globalIdx}`;
-        const cleanTitle = String(rawTitle).replace(/^\d+[\s.)-]+\s*/, "").trim();
-        menuBody += `*${globalIdx}.* ${cleanTitle}`;
-        if (b.description) menuBody += ` - _${b.description}_`;
-        menuBody += "\n";
-        globalIdx++;
-      });
-      menuBody += "\n";
-    });
-    if (footerText) menuBody += `_${footerText}_`;
-    else menuBody += `_Reply with option number (1, 2, 3...) or tap an option below._`;
-
-    const msgId = await this.recordAndEmitBotMessage(cleanPhone, menuBody.trim(), "interactive", {
-      type: "interactive_menu",
-      header: headerText,
-      footer: footerText,
-      sections,
-      buttons: allButtons,
-      text
-    }, sessionKey);
-
-    if (waCloud.isConfigured() && allButtons.length) {
-      try {
-        if (allButtons.length <= 3 && sections.length === 1 && !allButtons.some(b => b.description)) {
-          const sent = await waCloud.sendInteractiveButtons(
-            cleanPhone,
-            text,
-            allButtons.map((b, i) => ({
-              id: b.id || b.reply_id || `btn_${i + 1}`,
-              title: String(b.label || b.title || b.text || b.name || `Option ${i + 1}`).slice(0, 20),
-            })),
-            headerText,
-            footerText
-          );
-          if (sent) return sent;
-        } else {
-          const formattedSections = sections.map((sec, sIdx) => ({
-            title: (sec.title || `Section ${sIdx + 1}`).slice(0, 24),
-            rows: (sec.buttons || sec.options || sec.rows || []).slice(0, 10).map((b, i) => ({
-              id: b.id || b.reply_id || `opt_${sIdx + 1}_${i + 1}`,
-              title: String(b.label || b.title || b.text || b.name || `Option ${i + 1}`).slice(0, 24),
-              description: b.description ? String(b.description).slice(0, 72) : undefined,
-            }))
-          }));
-          const sent = await waCloud.sendInteractiveList(
-            cleanPhone,
-            text,
-            "Select Option",
-            formattedSections,
-            headerText,
-            footerText
-          );
-          if (sent) return sent;
-        }
-      } catch (cloudErr) {
-        console.warn(`[WA Flow] Cloud API menu send failed, falling back to text: ${cloudErr.message}`);
-      }
+    if (!flat.length) {
+      console.warn(`[WA Flow] ${payloadType} node for +${cleanPhone} has no options — nothing to send.`);
+      return null;
     }
 
+    const fallbackText = waInteractive.buildNumberedText({
+      body,
+      header,
+      footer,
+      items: flat,
+      sectioned: asList && sections.length > 1,
+    });
+
+    const msgId = await this.recordAndEmitBotMessage(
+      cleanPhone,
+      fallbackText,
+      "interactive",
+      { type: payloadType, header, footer, text: body, ...payloadExtra },
+      sessionKey
+    );
+
     try {
-      const result = await waLoadBalancer.sendTextMessage(cleanPhone, menuBody.trim(), sessionKey);
-      return result;
+      const opts = { phone: cleanPhone, body, header, footer, fallbackText, sessionKey };
+      const res = asList
+        ? await waLoadBalancer.sendInteractiveList({ ...opts, sections, buttonText })
+        : await waLoadBalancer.sendInteractiveButtons({ ...opts, buttons: flat });
+
+      console.log(
+        `🔘 [WA Flow] ${payloadType} -> +${cleanPhone} via ${res?.engineUsed || "WA"} (${res?.native ? "native interactive" : "text fallback"})`
+      );
+      return res;
     } catch (err) {
-      console.error(`❌ [WA FlowEngine] Failed to deliver interactive menu to +${cleanPhone}:`, err?.message || err);
+      console.error(`❌ [WA FlowEngine] Failed to deliver ${payloadType} to +${cleanPhone}:`, err?.message || err);
       await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
       return null;
     }

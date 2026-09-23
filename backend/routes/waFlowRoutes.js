@@ -73,8 +73,8 @@ router.post("/", auth, async (req, res) => {
       { node_key: "welcome_menu", node_type: "send_buttons", config: { 
           text: "Hello {name}! Welcome to Madhura Tech. How can we assist you today?",
           buttons: [
-            { reply_id: "btn_services", title: "1. 🛠️ Services", next_node_key: "services_msg" },
-            { reply_id: "btn_support", title: "2. 👤 Live Support", next_node_key: "support_handoff" }
+            { reply_id: "btn_services", title: "🛠️ Services", next_node_key: "services_msg" },
+            { reply_id: "btn_support", title: "👤 Live Support", next_node_key: "support_handoff" }
           ]
         }, position_x: 100, position_y: 220 
       },
@@ -959,13 +959,13 @@ router.post("/seed", auth, async (req, res) => {
             node_key: "main_menu",
             node_type: "send_buttons",
             config: {
-              text: "👋 {Hi|Hello|Greetings} {name}! Welcome to {company}.\nHow can we help you today? Please choose an option or reply with the number:",
+              text: "👋 {Hi|Hello|Greetings} {name}! Welcome to {company}.\nHow can we help you today? Tap an option below 👇",
               footer_text: "Madhura Tech Smart Assistant • Reply MENU anytime",
               buttons: [
-                { reply_id: "opt_services", title: "1. 🛠️ Our Services", next_node_key: "services_menu" },
-                { reply_id: "opt_booking", title: "2. 📅 Book Service", next_node_key: "ask_booking_date" },
-                { reply_id: "opt_hours", title: "3. 🕒 Hours & Address", next_node_key: "hours_info" },
-                { reply_id: "opt_agent", title: "4. 👤 Live Agent", next_node_key: "agent_handoff" },
+                { reply_id: "opt_services", title: "🛠️ Our Services", next_node_key: "services_menu" },
+                { reply_id: "opt_booking", title: "📅 Book Service", next_node_key: "ask_booking_date" },
+                { reply_id: "opt_hours", title: "🕒 Hours & Address", next_node_key: "hours_info" },
+                { reply_id: "opt_agent", title: "👤 Live Agent", next_node_key: "agent_handoff" },
               ]
             }
           },
@@ -1237,9 +1237,9 @@ router.post("/seed", auth, async (req, res) => {
             config: {
               text: "Nice to meet you, {lead_name}! Which service category are you looking for?",
               buttons: [
-                { reply_id: "opt_ac", title: "1. ❄️ HVAC / AC AMC", next_node_key: "ask_location" },
-                { reply_id: "opt_elec", title: "2. ⚡ Electrical Audit", next_node_key: "ask_location" },
-                { reply_id: "opt_fire", title: "3. 🧯 Fire Safety", next_node_key: "ask_location" }
+                { reply_id: "opt_ac", title: "❄️ HVAC / AC AMC", next_node_key: "ask_location" },
+                { reply_id: "opt_elec", title: "⚡ Electrical Audit", next_node_key: "ask_location" },
+                { reply_id: "opt_fire", title: "🧯 Fire Safety", next_node_key: "ask_location" }
               ]
             }
           },

@@ -244,22 +244,22 @@ async function handleInboundBillKeyword(phone, messageText, sessionKey = null) {
   const formattedStatement = formatCustomerBillingStatement(billingData);
 
   const cleanPhone = phone.replace(/\D/g, "");
-  const waCloud = require("./whatsappCloudApi");
   const waLoadBalancer = require("./waLoadBalancer");
   const mdToWa = require("./mdToWa");
 
   try {
-    if (waCloud.isConfigured() && billingData.found) {
-      // Send with interactive quick action buttons
-      const buttons = [
-        { id: "btn_paid", title: "💳 Pay Online / UPI" },
-        { id: "btn_support", title: "📞 Call Accounts" },
-      ];
-      await waCloud.sendInteractiveButtons(
-        cleanPhone,
-        formattedStatement,
-        buttons
-      );
+    if (billingData.found) {
+      // Statement + native quick actions; falls back to numbered text when no
+      // Cloud API sender is available (a throw here used to drop the statement).
+      await waLoadBalancer.sendInteractiveButtons({
+        phone: cleanPhone,
+        body: formattedStatement,
+        buttons: [
+          { id: "btn_paid", title: "💳 Pay Online / UPI" },
+          { id: "btn_support", title: "📞 Call Accounts" },
+        ],
+        sessionKey,
+      });
     } else {
       await waLoadBalancer.sendTextMessage(cleanPhone, mdToWa.toWhatsApp(formattedStatement), sessionKey).catch((sendErr) => {
         console.warn(`⚠️ [WA Customer Billing] Message queued / engine warn: ${sendErr.message}`);

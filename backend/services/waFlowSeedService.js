@@ -48,13 +48,13 @@ async function seedFlowBots() {
           node_key: "main_menu",
           node_type: "send_buttons",
           config: {
-            text: "👋 Hello {name}! Welcome to Madhura Tech.\nHow can we help you today? Please choose an option or reply with the number:",
+            text: "👋 Hello {name}! Welcome to Madhura Tech.\nHow can we help you today? Tap an option below 👇",
             footer_text: "Madhura Tech Smart Assistant • Reply MENU anytime",
             buttons: [
-              { reply_id: "opt_services", title: "1. 🛠️ Our Services", next_node_key: "services_menu" },
-              { reply_id: "opt_booking", title: "2. 📅 Book Service", next_node_key: "ask_booking_date" },
-              { reply_id: "opt_hours", title: "3. 🕒 Hours & Address", next_node_key: "hours_info" },
-              { reply_id: "opt_agent", title: "4. 👤 Live Agent", next_node_key: "agent_handoff" },
+              { reply_id: "opt_services", title: "🛠️ Our Services", next_node_key: "services_menu" },
+              { reply_id: "opt_booking", title: "📅 Book Service", next_node_key: "ask_booking_date" },
+              { reply_id: "opt_hours", title: "🕒 Hours & Address", next_node_key: "hours_info" },
+              { reply_id: "opt_agent", title: "👤 Live Agent", next_node_key: "agent_handoff" },
             ]
           }
         },
@@ -456,9 +456,9 @@ async function seedFlowBots() {
           config: {
             text: "Nice to meet you, {lead_name}! Which service category are you looking for?",
             buttons: [
-              { reply_id: "opt_ac", title: "1. ❄️ HVAC / AC AMC", next_node_key: "ask_location" },
-              { reply_id: "opt_elec", title: "2. ⚡ Electrical Audit", next_node_key: "ask_location" },
-              { reply_id: "opt_fire", title: "3. 🧯 Fire Safety", next_node_key: "ask_location" }
+              { reply_id: "opt_ac", title: "❄️ HVAC / AC AMC", next_node_key: "ask_location" },
+              { reply_id: "opt_elec", title: "⚡ Electrical Audit", next_node_key: "ask_location" },
+              { reply_id: "opt_fire", title: "🧯 Fire Safety", next_node_key: "ask_location" }
             ]
           }
         },

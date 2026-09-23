@@ -81,35 +81,84 @@ router.post("/", async (req, res) => {
   }
 });
 
+/**
+ * Atomically claim a webhook event so a retried delivery is processed once.
+ *
+ * Meta re-delivers on timeout or a non-200, and this handler has side effects
+ * (lead capture, flow dispatch, auto-replies) that must not run twice. The
+ * claim relies on UNIQUE(event_type, wa_message_id, status) on
+ * wa_webhook_events — added by migrations/wa_webhook_idempotency.js. Until that
+ * migration is run, INSERT IGNORE always inserts and this returns true, so
+ * behaviour is exactly as before rather than silently wrong.
+ *
+ * @returns {Promise<boolean>} true if this process owns the event
+ */
+async function claimEvent(eventType, msgId, phone, status, payload) {
+  if (!msgId) return true; // nothing to key on — let it through
+  try {
+    const [res] = await db.promise().query(
+      "INSERT IGNORE INTO wa_webhook_events (event_type, wa_message_id, phone, status, payload) VALUES (?, ?, ?, ?, ?)",
+      [eventType, msgId, phone, status, JSON.stringify(payload)]
+    );
+    return res.affectedRows > 0;
+  } catch (err) {
+    console.warn(`[WA Webhook] Idempotency claim failed for ${msgId}: ${err.message}`);
+    return true; // never drop a real message because bookkeeping failed
+  }
+}
+
 async function handleIncomingMessage(msg, metadata, contacts = []) {
   const phone = msg.from;
   const msgId = msg.id;
   const timestamp = msg.timestamp ? new Date(parseInt(msg.timestamp) * 1000) : new Date();
   const contactProfileName = contacts?.[0]?.profile?.name || null;
 
+  if (!(await claimEvent("incoming_message", msgId, phone, "received", msg))) {
+    console.log(`🔁 [WA Webhook] Duplicate delivery of ${msgId} from +${phone} — already processed, skipping.`);
+    return;
+  }
+
   let messageText = "";
   let messageType = "text";
+  // Normalized interactive response — the actionId is the operator-defined
+  // reply id, which is what automations key on. Stored in its own column so a
+  // tap is queryable ("who tapped quote_view?") without parsing raw payloads.
+  let interaction = null;
 
   if (msg.type === "text") {
     messageText = msg.text.body;
   } else if (msg.type === "interactive") {
     messageType = "interactive";
-    messageText = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || "";
+    const buttonReply = msg.interactive?.button_reply;
+    const listReply = msg.interactive?.list_reply;
+    const reply = buttonReply || listReply;
+    messageText = reply?.title || "";
+    if (reply) {
+      interaction = {
+        type: buttonReply ? "button_reply" : "list_reply",
+        actionId: reply.id || null,
+        title: reply.title || null,
+        description: listReply?.description || null,
+        messageId: msgId,
+        phone,
+        timestamp: timestamp.toISOString(),
+      };
+      console.log(
+        `👆 [WA Interactive] ${interaction.type} from +${phone}: actionId="${interaction.actionId}" title="${interaction.title}" msgId=${msgId}`
+      );
+    }
   } else {
     messageType = msg.type;
     messageText = msg[msg.type]?.caption || msg[msg.type]?.id || "";
   }
 
   await db.promise().query(
-    `INSERT INTO wa_message_logs (phone, direction, message_type, message_text, wa_message_id, status, metadata, created_at)
-     VALUES (?, 'inbound', ?, ?, ?, 'delivered', ?, ?)`,
-    [phone, messageType, messageText, msgId, JSON.stringify(msg), timestamp]
+    `INSERT INTO wa_message_logs (phone, direction, message_type, message_text, wa_message_id, status, metadata, interactive_payload, created_at)
+     VALUES (?, 'inbound', ?, ?, ?, 'delivered', ?, ?, ?)`,
+    [phone, messageType, messageText, msgId, JSON.stringify(msg), interaction ? JSON.stringify(interaction) : null, timestamp]
   );
 
-  await db.promise().query(
-    "INSERT INTO wa_webhook_events (event_type, wa_message_id, phone, status, payload) VALUES (?, ?, ?, ?, ?)",
-    ["incoming_message", msgId, phone, "received", JSON.stringify(msg)]
-  );
+  // (the wa_webhook_events row was already written by claimEvent above)
 
   // Emit socket event for real-time live chat update
   const chatId = `${phone}@c.us`;
@@ -285,6 +334,12 @@ async function handleStatusUpdate(status) {
   const timestamp = status.timestamp ? new Date(parseInt(status.timestamp) * 1000) : new Date();
   const errorMsg = statusName === "failed" ? (status.errors?.[0]?.message || "Unknown error") : null;
 
+  // Claimed per (message, status) so sent/delivered/read each apply once —
+  // otherwise a retry double-counts campaign delivered_count / read_count.
+  if (!(await claimEvent("status_update", msgId, phone, statusName, status))) {
+    return;
+  }
+
   const statusColumnMap = { sent: "sent_at", delivered: "delivered_at", read: "read_at", failed: "sent_at" };
   const statusColumn = statusColumnMap[statusName];
 
@@ -331,10 +386,7 @@ async function handleStatusUpdate(status) {
     }
   }
 
-  await db.promise().query(
-    "INSERT INTO wa_webhook_events (event_type, wa_message_id, phone, status, payload) VALUES (?, ?, ?, ?, ?)",
-    ["status_update", msgId, phone, statusName, JSON.stringify(status)]
-  );
+  // (the wa_webhook_events row was already written by claimEvent above)
 }
 
 module.exports = router;

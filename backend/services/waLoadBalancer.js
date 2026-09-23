@@ -80,6 +80,9 @@ class WALoadBalancer {
               sendText: async (phone, text) => waCloud.sendText(phone, text),
               sendTemplate: async (phone, tmplName, lang, components) => waCloud.sendTemplate(phone, tmplName, lang, components),
               sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => waCloud.sendMedia(phone, mediaType, mediaUrl, caption, filename),
+              supportsInteractive: true,
+              sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
+              sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
             });
           } else if (member.sender_type === "web_session") {
             const memberSessionKey = member.session_key || String(member.account_id || member.id);
@@ -165,6 +168,9 @@ class WALoadBalancer {
             sendText: async (phone, text) => waCloud.sendText(phone, text),
             sendTemplate: async (phone, tmplName, lang, components) => waCloud.sendTemplate(phone, tmplName, lang, components),
             sendMedia: async (phone, mediaType, mediaUrl, caption, filename) => waCloud.sendMedia(phone, mediaType, mediaUrl, caption, filename),
+            supportsInteractive: true,
+            sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
+            sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
           }
         : null;
 
@@ -202,6 +208,9 @@ class WALoadBalancer {
               sendText: async (phone, text) => waCloud.sendText(phone, text),
               sendTemplate: async (phone, tmplName, lang, components) => waCloud.sendTemplate(phone, tmplName, lang, components),
               sendMedia: async (phone, mediaType, mediaUrl, caption) => waCloud.sendMedia(phone, mediaType, mediaUrl, caption),
+              supportsInteractive: true,
+              sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
+              sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
             });
           }
         });
@@ -403,6 +412,101 @@ class WALoadBalancer {
       }
       throw primaryErr;
     }
+  }
+
+  /**
+   * Send a NATIVE WhatsApp interactive message (reply buttons or list).
+   *
+   * Native interactive UI only exists on the Cloud API — whatsapp-web.js
+   * deprecated Buttons/List and cannot render them. So this tries every
+   * interactive-capable (cloud) engine in turn, and only if none can deliver
+   * does it degrade to the numbered text equivalent through the normal text
+   * path. That degradation is a delivery guarantee, not a fake button: the
+   * customer still gets the message, and the flow/menu matchers already accept
+   * a typed number or option name as well as a tapped reply id.
+   *
+   * @param {'buttons'|'list'} kind
+   */
+  async sendInteractive(kind, opts = {}) {
+    const waInteractive = require("./waInteractive");
+    const {
+      body,
+      header = null,
+      footer = null,
+      buttonText = "View Options",
+      fallbackText = null,
+      sessionKey = null,
+      preferredEngine = null,
+      poolId = null,
+      routingStrategy = "round_robin",
+      tenantId = 1,
+    } = opts;
+
+    let phone = String(opts.phone || opts.phoneNumber || "").replace(/\D/g, "");
+    if (phone.length === 10) phone = "91" + phone;
+    if (!phone) throw new Error("Interactive send requires a phone number");
+
+    const isList = kind === "list";
+    // Normalize ONCE: ids stay stable, authored "1. " prefixes are stripped so
+    // native button labels never look like the old type-a-number menu.
+    const sections = isList ? waInteractive.normalizeSections(opts.sections || opts.rows, header || "Options") : null;
+    const buttons = isList ? null : waInteractive.normalizeButtons(opts.buttons);
+    const items = isList ? waInteractive.flattenSections(sections) : buttons;
+
+    if (!items.length) throw new Error("Interactive send requires at least one button/row");
+
+    const text =
+      fallbackText ||
+      waInteractive.buildNumberedText({ body, header, footer, items, sectioned: isList });
+
+    const engines = await this.getActiveEngines(sessionKey, preferredEngine, poolId, tenantId);
+    const poolKey = poolId ? `pool_${poolId}` : `session_${sessionKey || "def"}`;
+    const interactiveEngines = engines.filter((e) => e.supportsInteractive);
+
+    if (interactiveEngines.length) {
+      // Keep round-robin/least-loaded semantics, but only across capable senders.
+      const primary = this.selectEngine(interactiveEngines, routingStrategy, `${poolKey}_interactive`);
+      const ordered = [primary, ...interactiveEngines.filter((e) => e.id !== primary.id)];
+
+      for (const engine of ordered) {
+        try {
+          const result = isList
+            ? await engine.sendList(phone, body, buttonText, sections, header, footer)
+            : await engine.sendButtons(phone, body, buttons, header, footer);
+          await this.recordSuccess(engine);
+          return {
+            success: true,
+            native: true,
+            kind,
+            engineUsed: engine.name,
+            senderPhone: engine.phone,
+            failover: engine.id !== primary.id,
+            result,
+          };
+        } catch (err) {
+          console.warn(`⚠️ [WA LoadBalancer] Interactive ${kind} via '${engine.name}' failed: ${err.message}`);
+          await this.recordFailure(engine, err);
+          this.stats.failoverCount++;
+          this.stats.lastFailoverAt = new Date().toISOString();
+        }
+      }
+    }
+
+    // No Cloud API sender available (or all of them failed) — deliver the text
+    // equivalent rather than dropping the message silently.
+    console.warn(
+      `↩️ [WA LoadBalancer] No interactive-capable sender delivered ${kind} to +${phone}; falling back to numbered text.`
+    );
+    const res = await this.sendTextMessage(phone, text, sessionKey, preferredEngine, poolId, routingStrategy, tenantId);
+    return { ...res, native: false, kind, fallbackText: text };
+  }
+
+  sendInteractiveButtons(opts = {}) {
+    return this.sendInteractive("buttons", opts);
+  }
+
+  sendInteractiveList(opts = {}) {
+    return this.sendInteractive("list", opts);
   }
 
   async getLoadBalancerStats(tenantId = 1) {

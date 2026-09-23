@@ -106,6 +106,8 @@ export default function WhatsAppAutomations() {
     enabled: false,
     welcome_type: "text",
     welcome_text: "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
+    welcome_buttons: [],
+    welcome_footer: "",
     cooldown_hours: 24,
     working_hours_only: false,
     start_time: "09:00",
@@ -383,7 +385,16 @@ export default function WhatsAppAutomations() {
     setWelcomeTestResult(null);
     try {
       const { data } = await axios.post(`${API}/api/wa/automations/test-welcome`, { phone: welcomeTestPhone }, { headers: headers() });
-      setWelcomeTestResult({ success: true, message: `Welcome message sent via ${data.engineUsed || "WhatsApp"}` });
+      setWelcomeTestResult({
+        success: true,
+        message: `Welcome message sent via ${data.engineUsed || "WhatsApp"}`,
+        // native === false means no Cloud API sender was available, so the
+        // customer received the numbered-text version, not tappable buttons.
+        warning:
+          welcomeSettings.welcome_type === "buttons" && data.native === false
+            ? "Delivered as numbered text — native buttons need the WhatsApp Cloud API connected."
+            : null,
+      });
     } catch (err) {
       setWelcomeTestResult({ success: false, message: err.response?.data?.error || "Send failed" });
     }
@@ -827,6 +838,137 @@ export default function WhatsAppAutomations() {
               />
             </div>
 
+            {/* Message Type: plain text vs REAL tappable WhatsApp buttons */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">Welcome Message Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: "text", label: "Plain Text", hint: "Simple greeting, no options" },
+                  { key: "buttons", label: "Tappable Buttons", hint: "Native WhatsApp reply buttons" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() =>
+                      setWelcomeSettings((s) => ({
+                        ...s,
+                        welcome_type: opt.key,
+                        // Seed one button so switching to 'buttons' is never an invalid save
+                        welcome_buttons:
+                          opt.key === "buttons" && !(s.welcome_buttons || []).length
+                            ? [{ id: "welcome_services", title: "Our Services" }]
+                            : s.welcome_buttons || [],
+                      }))
+                    }
+                    className={`text-left p-3 rounded-xl border transition ${
+                      (welcomeSettings.welcome_type || "text") === opt.key
+                        ? "border-amber-500 bg-amber-50 shadow-sm"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <span className="block text-xs font-bold text-gray-900">{opt.label}</span>
+                    <span className="block text-[11px] text-gray-500 mt-0.5">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+              {welcomeSettings.welcome_type === "buttons" && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2">
+                  Native buttons are delivered by the <strong>WhatsApp Cloud API</strong>. If only a QR/web session is
+                  connected, the same message is delivered as a numbered text menu instead — customers still get it.
+                </p>
+              )}
+            </div>
+
+            {welcomeSettings.welcome_type === "buttons" && (
+              <div className="space-y-3 p-3.5 rounded-2xl border border-gray-200 bg-gray-50/60">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-gray-700 uppercase">
+                    Reply Buttons ({(welcomeSettings.welcome_buttons || []).length}/3)
+                  </label>
+                  <button
+                    type="button"
+                    disabled={(welcomeSettings.welcome_buttons || []).length >= 3}
+                    onClick={() =>
+                      setWelcomeSettings((s) => ({
+                        ...s,
+                        welcome_buttons: [
+                          ...(s.welcome_buttons || []),
+                          { id: `welcome_opt_${(s.welcome_buttons || []).length + 1}`, title: "" },
+                        ],
+                      }))
+                    }
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Add Button
+                  </button>
+                </div>
+
+                {(welcomeSettings.welcome_buttons || []).map((btn, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Title (shown)</label>
+                      <input
+                        value={btn.title || ""}
+                        maxLength={20}
+                        onChange={(e) =>
+                          setWelcomeSettings((s) => {
+                            const btns = [...(s.welcome_buttons || [])];
+                            btns[idx] = { ...btns[idx], title: e.target.value };
+                            return { ...s, welcome_buttons: btns };
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white outline-none focus:ring-2 focus:ring-amber-500"
+                        placeholder="Check my quote"
+                      />
+                      <span className="text-[10px] text-gray-400">{(btn.title || "").length}/20 chars</span>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Action ID (stable)</label>
+                      <input
+                        value={btn.id || ""}
+                        onChange={(e) =>
+                          setWelcomeSettings((s) => {
+                            const btns = [...(s.welcome_buttons || [])];
+                            // Keep ids machine-safe: automations key on these, not on the title
+                            btns[idx] = { ...btns[idx], id: e.target.value.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase() };
+                            return { ...s, welcome_buttons: btns };
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white font-mono outline-none focus:ring-2 focus:ring-amber-500"
+                        placeholder="quote_view"
+                      />
+                      <span className="text-[10px] text-gray-400">Never renamed when the title changes</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setWelcomeSettings((s) => ({
+                          ...s,
+                          welcome_buttons: (s.welcome_buttons || []).filter((_, i) => i !== idx),
+                        }))
+                      }
+                      className="mt-5 p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"
+                      title="Remove button"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-0.5">Footer (optional)</label>
+                  <input
+                    value={welcomeSettings.welcome_footer || ""}
+                    maxLength={60}
+                    onChange={(e) => setWelcomeSettings((s) => ({ ...s, welcome_footer: e.target.value }))}
+                    className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Madhura Tech • Reply MENU anytime"
+                  />
+                  <span className="text-[10px] text-gray-400">{(welcomeSettings.welcome_footer || "").length}/60 chars</span>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">
@@ -880,12 +1022,44 @@ export default function WhatsAppAutomations() {
               </div>
             </div>
 
-            {/* Live Message Preview */}
+            {/* Live Message Preview — mirrors how WhatsApp renders the bubble */}
             <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
-              <span className="text-[11px] font-bold uppercase text-emerald-800 tracking-wider">Live Customer Preview</span>
-              <p className="text-xs text-emerald-950 mt-1 whitespace-pre-line leading-relaxed font-sans bg-white p-3 rounded-xl border border-emerald-100 shadow-sm">
-                {evaluateMessagePlaceholders(welcomeSettings.welcome_text || "Hello {name}! Welcome to Madhura Tech.")}
-              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase text-emerald-800 tracking-wider">Live Customer Preview</span>
+                <span className="text-[10px] text-emerald-700/70">UI preview only — not a live send</span>
+              </div>
+              <div className="mt-2 bg-white p-3 rounded-xl border border-emerald-100 shadow-sm">
+                <p className="text-xs text-emerald-950 whitespace-pre-line leading-relaxed font-sans">
+                  {evaluateMessagePlaceholders(welcomeSettings.welcome_text || "Hello {name}! Welcome to Madhura Tech.")}
+                </p>
+
+                {welcomeSettings.welcome_type === "buttons" && welcomeSettings.welcome_footer && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">{welcomeSettings.welcome_footer}</p>
+                )}
+
+                {welcomeSettings.welcome_type === "buttons" &&
+                  (welcomeSettings.welcome_buttons || []).filter((b) => b.title).length > 0 && (
+                    <div className="mt-2.5 -mx-3 -mb-3">
+                      {(welcomeSettings.welcome_buttons || [])
+                        .filter((b) => b.title)
+                        .map((b, i) => (
+                          <div
+                            key={i}
+                            className="border-t border-gray-200 py-2 text-center text-[13px] font-medium text-[#00a5f4]"
+                            title={`Action ID: ${b.id || "(none)"}`}
+                          >
+                            {b.title}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+              </div>
+
+              {welcomeSettings.welcome_type === "buttons" && (
+                <p className="text-[10px] text-emerald-800/80 mt-2">
+                  Taps return the <strong>Action ID</strong>, not the label — so renaming a button never breaks an automation.
+                </p>
+              )}
             </div>
 
             <div className="pt-4 border-t flex justify-end">
@@ -921,9 +1095,16 @@ export default function WhatsAppAutomations() {
               </button>
             </div>
             {welcomeTestResult && (
-              <p className={`text-xs font-semibold ${welcomeTestResult.success ? "text-emerald-700" : "text-rose-700"}`}>
-                {welcomeTestResult.message}
-              </p>
+              <div className="space-y-1">
+                <p className={`text-xs font-semibold ${welcomeTestResult.success ? "text-emerald-700" : "text-rose-700"}`}>
+                  {welcomeTestResult.message}
+                </p>
+                {welcomeTestResult.warning && (
+                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                    ⚠️ {welcomeTestResult.warning}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -111,37 +111,22 @@ async function sendInteractiveReminder({
   );
   const reminderId = insertRes.insertId;
 
-  // 2. Dispatch interactive message (Cloud API buttons vs Baileys Web numbered menu)
-  const waCloud = require("./whatsappCloudApi");
+  // 2. Dispatch as native interactive; waLoadBalancer degrades to numbered text
+  //    when no Cloud API sender can deliver (previously a Cloud API throw here
+  //    dropped the reminder entirely instead of falling back).
   const waLoadBalancer = require("./waLoadBalancer");
-  const mdToWa = require("./mdToWa");
+  const waInteractive = require("./waInteractive");
 
   try {
-    if (waCloud.isConfigured() && finalOptions.length <= 3) {
-      // Send native Meta interactive buttons
-      await waCloud.sendInteractiveButtons(
-        normalizedPhone,
-        formattedText,
-        finalOptions.map((o) => ({ id: o.id, title: o.label.slice(0, 20) }))
-      );
-    } else if (waCloud.isConfigured() && finalOptions.length <= 10) {
-      // Send native Meta interactive list
-      await waCloud.sendInteractiveList(
-        normalizedPhone,
-        formattedText,
-        "Choose Option",
-        finalOptions.map((o) => ({ id: o.id, title: o.label.slice(0, 24) }))
-      );
-    } else {
-      // Baileys / Web session numbered text
-      const optionsText = finalOptions
-        .map((o, idx) => `${idx + 1}️⃣  *${o.label}*`)
-        .join("\n");
-      const fullText = `${formattedText}\n\n*Please reply with option number (1, 2, or 3) or tap below:*\n${optionsText}`;
-      await waLoadBalancer.sendTextMessage(normalizedPhone, mdToWa.toWhatsApp(fullText), sessionKey).catch((sendErr) => {
-        console.warn(`⚠️ [WA Interactive Reminder] Live dispatch queued/warn (+${normalizedPhone}): ${sendErr.message}`);
-      });
-    }
+    const items = finalOptions.map((o) => ({ id: o.id, title: o.label }));
+    const opts = { phone: normalizedPhone, body: formattedText, sessionKey };
+    const res =
+      items.length <= waInteractive.LIMITS.maxButtons
+        ? await waLoadBalancer.sendInteractiveButtons({ ...opts, buttons: items })
+        : await waLoadBalancer.sendInteractiveList({ ...opts, sections: items, buttonText: "Choose Option" });
+    console.log(
+      `🔔 [WA Interactive Reminder] #${reminderId} -> +${normalizedPhone} via ${res?.engineUsed || "WA"} (${res?.native ? "native interactive" : "text fallback"})`
+    );
 
     // Log outbound message in wa_message_logs
     await queryAsync(

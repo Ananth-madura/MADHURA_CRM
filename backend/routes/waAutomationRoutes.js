@@ -555,7 +555,9 @@ router.put("/welcome-settings", auth, async (req, res) => {
     const { updateWelcomeSettings } = require("../services/waAutomationService");
     res.json(await updateWelcomeSettings(req.body));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Config validation (e.g. type 'buttons' with no buttons) is a client error.
+    const isValidation = /requires at least one button/i.test(err.message);
+    res.status(isValidation ? 400 : 500).json({ error: err.message });
   }
 });
 
@@ -570,8 +572,25 @@ router.post("/test-welcome", auth, async (req, res) => {
     const text = formatMessagePlaceholders(settings.welcome_text || "Hello {name}! Welcome to Madhura Tech.", crmData.name || "Test User", crmData);
 
     const waLoadBalancer = require("../services/waLoadBalancer");
-    const result = await waLoadBalancer.sendTextMessage(cleanPhone, `[TEST WELCOME] ${text}`);
-    res.json({ success: true, engineUsed: result.engineUsed });
+
+    // Send the test in the SAME shape as production, so the operator actually
+    // verifies native buttons render before enabling the auto-reply.
+    const result =
+      settings.welcome_type === "buttons" && settings.welcome_buttons?.length
+        ? await waLoadBalancer.sendInteractiveButtons({
+            phone: cleanPhone,
+            body: `[TEST WELCOME] ${text}`,
+            footer: settings.welcome_footer || null,
+            buttons: settings.welcome_buttons,
+          })
+        : await waLoadBalancer.sendTextMessage(cleanPhone, `[TEST WELCOME] ${text}`);
+
+    res.json({
+      success: true,
+      engineUsed: result.engineUsed,
+      // false means it degraded to numbered text — the Cloud API is not wired up.
+      native: result.native ?? false,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

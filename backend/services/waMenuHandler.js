@@ -15,40 +15,39 @@ async function getOptions(automationId) {
   );
 }
 
-function buildMenuText(options) {
-  return "Please choose an option by replying with its number:\n" + options.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
-}
-
 // Sends the clickable option list for an automation and remembers it so the
 // customer's next message can be matched back to one of the options.
 async function sendMenu(phone, automationId, sessionKey) {
   const options = await getOptions(automationId);
   if (!options.length) return;
 
-  const waCloud = require("./whatsappCloudApi");
   const waLoadBalancer = require("./waLoadBalancer");
+  const waInteractive = require("./waInteractive");
   const cleanPhone = phone.replace(/\D/g, "");
 
+  // Option row ids are the wa_automation_options primary keys — handleMenuReply
+  // matches the tapped id straight back against this automation's own rows, so
+  // an inbound id can never address anything the operator did not configure.
+  const items = options.map((o) => ({ id: String(o.id), title: o.label }));
+  const body = "Please choose an option:";
+
+  // Native interactive caps at 3 buttons / 10 rows, but the text fallback has
+  // no such limit — so build it from every option rather than the capped set.
+  const fallbackText = waInteractive.buildNumberedText({
+    body,
+    items: items.map((it, i) => ({ ...it, title: waInteractive.normalizeTitle(it.title, i) })),
+  });
+  const opts = { phone: cleanPhone, body, fallbackText, sessionKey };
+
   try {
-    if (waCloud.isConfigured() && options.length <= 3) {
-      await waCloud.sendInteractiveButtons(
-        cleanPhone,
-        "Please choose an option:",
-        options.map((o) => ({ id: String(o.id), title: o.label }))
-      );
-    } else if (waCloud.isConfigured() && options.length <= 10) {
-      await waCloud.sendInteractiveList(
-        cleanPhone,
-        "Please choose an option:",
-        "View Options",
-        options.map((o) => ({ id: String(o.id), title: o.label }))
-      );
+    if (items.length <= waInteractive.LIMITS.maxButtons) {
+      await waLoadBalancer.sendInteractiveButtons({ ...opts, buttons: items });
     } else {
-      await waLoadBalancer.sendTextMessage(cleanPhone, buildMenuText(options), sessionKey);
+      await waLoadBalancer.sendInteractiveList({ ...opts, sections: items, buttonText: "View Options" });
     }
   } catch (e) {
-    console.error("[WA Menu] Interactive send failed, falling back to text:", e.message);
-    await waLoadBalancer.sendTextMessage(cleanPhone, buildMenuText(options), sessionKey).catch(() => {});
+    console.error(`[WA Menu] Failed to deliver menu for automation #${automationId} to +${cleanPhone}:`, e.message);
+    return;
   }
 
   await queryAsync(
@@ -137,4 +136,4 @@ async function handleMenuReply(phone, msg, sessionKey) {
   return true;
 }
 
-module.exports = { sendMenu, handleMenuReply, getOptions, buildMenuText };
+module.exports = { sendMenu, handleMenuReply, getOptions };

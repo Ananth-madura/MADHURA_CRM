@@ -618,6 +618,28 @@ function startAutomationScheduler(intervalMs = 60 * 1000) {
   console.log("✅ Delayed WhatsApp Automation scheduler started (restart-safe)");
 }
 
+/**
+ * Welcome-menu buttons are stored as JSON text. Ids are operator-defined and
+ * stable; they are what the flow/menu matchers key on, never the shown title.
+ * Caps mirror Meta's: 3 buttons, 20-char titles.
+ */
+function parseWelcomeButtons(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((b) => b && (b.title || b.label))
+      .slice(0, 3)
+      .map((b, i) => ({
+        id: String(b.id || b.reply_id || `welcome_opt_${i + 1}`).slice(0, 256),
+        title: String(b.title || b.label).slice(0, 20),
+      }));
+  } catch (_) {
+    return [];
+  }
+}
+
 async function getWelcomeSettings() {
   try {
     const [rows] = await db.promise().query("SELECT * FROM wa_welcome_settings WHERE id = 1");
@@ -626,6 +648,8 @@ async function getWelcomeSettings() {
         enabled: false,
         welcome_type: "text",
         welcome_text: "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
+        welcome_buttons: [],
+        welcome_footer: null,
         template_id: null,
         cooldown_hours: 24,
         working_hours_only: false,
@@ -637,6 +661,8 @@ async function getWelcomeSettings() {
       enabled: Boolean(rows[0].enabled),
       welcome_type: rows[0].welcome_type || "text",
       welcome_text: rows[0].welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
+      welcome_buttons: parseWelcomeButtons(rows[0].welcome_buttons),
+      welcome_footer: rows[0].welcome_footer || null,
       template_id: rows[0].template_id || null,
       cooldown_hours: rows[0].cooldown_hours != null ? rows[0].cooldown_hours : 24,
       working_hours_only: !!rows[0].working_hours_only,
@@ -649,14 +675,20 @@ async function getWelcomeSettings() {
 }
 
 async function updateWelcomeSettings(settings) {
-  const { enabled, welcome_type, welcome_text, template_id, cooldown_hours, working_hours_only, start_time, end_time } = settings;
+  const { enabled, welcome_type, welcome_text, welcome_buttons, welcome_footer, template_id, cooldown_hours, working_hours_only, start_time, end_time } = settings;
+  const normalizedButtons = parseWelcomeButtons(welcome_buttons);
+  if (welcome_type === "buttons" && !normalizedButtons.length) {
+    throw new Error("Welcome type 'buttons' requires at least one button with a title.");
+  }
   await db.promise().query(
-    `INSERT INTO wa_welcome_settings (id, enabled, welcome_type, welcome_text, template_id, cooldown_hours, working_hours_only, start_time, end_time)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO wa_welcome_settings (id, enabled, welcome_type, welcome_text, welcome_buttons, welcome_footer, template_id, cooldown_hours, working_hours_only, start_time, end_time)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        enabled = VALUES(enabled),
        welcome_type = VALUES(welcome_type),
        welcome_text = VALUES(welcome_text),
+       welcome_buttons = VALUES(welcome_buttons),
+       welcome_footer = VALUES(welcome_footer),
        template_id = VALUES(template_id),
        cooldown_hours = VALUES(cooldown_hours),
        working_hours_only = VALUES(working_hours_only),
@@ -667,6 +699,8 @@ async function updateWelcomeSettings(settings) {
       enabled ? 1 : 0,
       welcome_type || "text",
       welcome_text || "Hello {name}! Welcome to Madhura Tech. Thank you for reaching out to us. How can we help you today?",
+      normalizedButtons.length ? JSON.stringify(normalizedButtons) : null,
+      welcome_footer ? String(welcome_footer).slice(0, 60) : null,
       template_id || null,
       parseInt(cooldown_hours != null ? cooldown_hours : 24, 10),
       working_hours_only ? 1 : 0,
@@ -810,7 +844,17 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey, 
   const waLoadBalancer = require("./waLoadBalancer");
   try {
     let res;
-    if (settings.welcome_type === "template" && settings.template_id) {
+    if (settings.welcome_type === "buttons" && settings.welcome_buttons?.length) {
+      // Real tappable WhatsApp reply buttons. waLoadBalancer degrades to the
+      // numbered text equivalent only when no Cloud API sender can deliver.
+      res = await waLoadBalancer.sendInteractiveButtons({
+        phone: cleanPhone,
+        body: messageText,
+        footer: settings.welcome_footer || null,
+        buttons: settings.welcome_buttons,
+        sessionKey,
+      });
+    } else if (settings.welcome_type === "template" && settings.template_id) {
       const [tmplRows] = await db.promise().query("SELECT * FROM wa_templates WHERE id = ? LIMIT 1", [settings.template_id]);
       if (tmplRows.length > 0) {
         const bodyComp = buildTemplateBodyComponent(tmplRows[0].body, resolvedName, crmData);
@@ -1060,6 +1104,7 @@ module.exports = {
   buildTemplateBodyComponent,
   lookupCrmDataByPhone,
   getWelcomeSettings,
+  parseWelcomeButtons,
   updateWelcomeSettings,
   maybeSendWelcomeReply,
   executeAutomationSend,
