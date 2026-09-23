@@ -357,6 +357,31 @@ router.get("/account-balance", async (req, res) => {
   }
 });
 
+// Bot status for the open chat. DB-only on purpose: the inbox needs this pill
+// even when no WhatsApp session is connected, so it must not depend on one.
+router.get("/chat/:phone/bot-status", async (req, res) => {
+  try {
+    const last10 = req.params.phone.replace(/\D/g, "").slice(-10);
+    const [rows] = await db.promise().query(
+      `SELECT ai_enabled, ai_paused_until, assigned_agent_name, ticket_status
+         FROM wa_contacts WHERE phone LIKE ? LIMIT 1`,
+      [`%${last10}`]
+    );
+    const c = rows[0];
+    const pausedUntil =
+      c && c.ai_paused_until && new Date(c.ai_paused_until) > new Date() ? c.ai_paused_until : null;
+    res.json({
+      enabled: c ? c.ai_enabled !== 0 : true,
+      pausedUntil,
+      paused: Boolean(pausedUntil) || (c ? c.ai_enabled === 0 : false),
+      assignedAgentName: c?.assigned_agent_name || null,
+      ticketStatus: c?.ticket_status || "open",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Per-chat AI switch. The global toggle stays on the Accounts page; this lets a
 // human take one conversation off the bot without disabling it everywhere.
 router.patch("/chat/:phone/ai", async (req, res) => {
@@ -383,15 +408,9 @@ router.post("/send", async (req, res) => {
     }
     const result = await s(req).sendMessage(chatId, message, { quotedMessageId, replyToMessageId });
 
-    // A human just replied in this chat, so mute the bot here for a while.
-    try {
-      const minutes = Number(process.env.WA_AI_TAKEOVER_MIN || 30);
-      const last10 = chatId.replace(/\D/g, "").slice(-10);
-      await db.promise().query(
-        "UPDATE wa_contacts SET ai_paused_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE phone LIKE ?",
-        [minutes, `%${last10}`]
-      );
-    } catch (_) {}
+    // A human just replied in this chat, so mute the WHOLE bot here for a
+    // while — flow engine, menus and welcome included, not just the AI.
+    await require("../services/waBotGate").pauseBot(chatId, undefined, "manual reply").catch(() => {});
 
     res.json(result);
   } catch (err) {
@@ -647,6 +666,11 @@ router.post("/assign-agent", async (req, res) => {
       [agentId || null, `%${clean10}`]
     );
 
+    // Handing a chat to a human pauses the bot; unassigning gives it back.
+    const waBotGate = require("../services/waBotGate");
+    if (agentId) await waBotGate.pauseBot(clean10, 24 * 60, "assigned to agent").catch(() => {});
+    else await waBotGate.resumeBot(clean10).catch(() => {});
+
     res.json({ success: true, agentId: agentId || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -701,6 +725,7 @@ router.post("/send-media", async (req, res) => {
     const { chatId, mediaUrl, mediaType, filename, caption } = req.body;
     if (!chatId || !mediaUrl) return res.status(400).json({ error: "chatId and mediaUrl required" });
     const result = await s(req).sendMediaMessage(chatId, mediaUrl, mediaType || "document", caption || "", filename || "");
+    await require("../services/waBotGate").pauseBot(chatId, undefined, "manual media reply").catch(() => {});
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -712,6 +737,7 @@ router.post("/send-location", async (req, res) => {
     const { chatId, lat, lng, name } = req.body;
     if (!chatId || lat == null || lng == null) return res.status(400).json({ error: "chatId, lat and lng required" });
     const result = await s(req).sendLocationMessage(chatId, lat, lng, name || "");
+    await require("../services/waBotGate").pauseBot(chatId, undefined, "manual location reply").catch(() => {});
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -776,6 +802,11 @@ router.post("/chat/:chatId/assign", async (req, res) => {
       "UPDATE wa_contacts SET assigned_agent_id = ?, assigned_agent_name = ? WHERE phone = ?",
       [agentId || null, agentName || null, phone]
     );
+
+    const waBotGate = require("../services/waBotGate");
+    if (agentId) await waBotGate.pauseBot(phone, 24 * 60, "assigned to agent").catch(() => {});
+    else await waBotGate.resumeBot(phone).catch(() => {});
+
     res.json({ success: true, message: `Chat assigned to ${agentName || "unassigned"}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -791,6 +822,13 @@ router.post("/chat/:chatId/ticket-status", async (req, res) => {
       "UPDATE wa_contacts SET ticket_status = ? WHERE phone = ?",
       [status || "open", phone]
     );
+
+    // Resolving the ticket hands the conversation back to the bot; marking it
+    // spam keeps the bot out of it for good.
+    const waBotGate = require("../services/waBotGate");
+    if (status === "resolved") await waBotGate.resumeBot(phone).catch(() => {});
+    else if (status === "spam") await waBotGate.pauseBot(phone, 365 * 24 * 60, "marked spam").catch(() => {});
+
     res.json({ success: true, status });
   } catch (err) {
     res.status(500).json({ error: err.message });

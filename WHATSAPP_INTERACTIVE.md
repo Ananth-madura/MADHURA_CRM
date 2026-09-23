@@ -212,7 +212,7 @@ await waLoadBalancer.sendInteractiveList({
 | Text | `waLoadBalancer.sendTextMessage(phone, text, sessionKey)` |
 | Image / document / video | `waLoadBalancer.sendMediaMessage(phone, type, url, caption, filename, sessionKey)` |
 | Template | `waLoadBalancer.sendTemplateMessage(phone, name, lang, components, sessionKey)` |
-| CTA URL button | `whatsappCloudApi.sendTemplate(...)` with a template whose button is `type: URL` — see [limitations](#8-limitations) |
+| CTA URL button | `whatsappCloudApi.sendTemplate(...)` with a template whose button is `type: URL` — see [limitations](#9-limitations) |
 
 ---
 
@@ -329,7 +329,124 @@ Also available, if not already applied: `node backend/migrations/wa_dedupe_messa
 
 ---
 
-## 8. Automation workflows
+## 8. Bot control — when the bot must stay quiet
+
+`services/waBotGate.js` is the single authority for *"may the bot engage this
+contact right now?"*. Every bot-initiated inbound handler asks it first.
+
+```
+      customer message arrives
+                │
+     ┌──────────┴──────────┐
+     │  always processed   │   opt-out / STOP
+     │  (never gated)      │   waConfirmationService  (answering a reminder
+     └──────────┬──────────┘                          the operator sent)
+                │
+                ▼
+         waBotGate.botMayReply(phone)
+                │
+   ┌────────────┴────────────┐
+   │ blocked                 │ allowed
+   ▼                         ▼
+ stay silent            waFlowEngine.dispatchInbound
+ (logged, one line)     waMenuHandler.handleMenuReply
+                        welcome auto-reply
+                        waAiReply
+```
+
+The gate blocks on any of:
+
+| Reason | Set by |
+|---|---|
+| `agent_takeover` | a manual reply / media / location from the CRM inbox, assigning the chat to an agent, a flow `handoff` node, the customer typing "agent", the AI handoff tool |
+| `bot_disabled_for_contact` | `wa_contacts.ai_enabled = 0` — the per-chat bot switch |
+| `contact_unsubscribed` | replied STOP / UNSUBSCRIBE |
+| `contact_blocked` | `wa_contacts.is_blocked` |
+| `invalid_phone` | fewer than 10 digits |
+
+A contact with **no `wa_contacts` row at all** is allowed — a first-time sender
+still gets greeted. That is deliberate and was chosen explicitly; see
+[new contacts](#new-contacts).
+
+### Takeover window
+
+**24 hours**, matching Wati/WACTO. Override with `WA_AI_TAKEOVER_MIN` (minutes)
+in `backend/.env`.
+
+The window is applied by `waBotGate.pauseBot()`, which is the only writer. It
+is triggered by:
+
+| Action | Window |
+|---|---|
+| Agent sends a text, media or location by hand | `WA_AI_TAKEOVER_MIN` (24h) |
+| Chat assigned to an agent | 24h |
+| Flow `handoff` node, or customer types "agent" | `WA_AI_TAKEOVER_MIN` (24h) |
+| Ticket marked **spam** | 1 year |
+| Ticket marked **resolved**, or chat unassigned | pause cleared — bot resumes |
+
+The pause also lapses on its own when the window expires, so a forgotten
+ticket never silences a contact permanently.
+
+### Giving the chat back to the bot
+
+In the WhatsApp inbox, an open chat whose bot is paused shows a pill in the
+chat header:
+
+```
+┌────────────────────────────────────────────────┐
+│ ● Bot paused              [ Let bot reply ]    │
+└────────────────────────────────────────────────┘
+```
+
+Clicking **Let bot reply** calls `PATCH /api/whatsapp/chat/:phone/ai` with
+`{ enabled: true }`, which re-enables the bot and clears the pause. Marking the
+ticket resolved does the same thing.
+
+Read the state directly with:
+
+```bash
+GET /api/whatsapp/chat/:phone/bot-status
+# => { enabled, paused, pausedUntil, assignedAgentName, ticketStatus }
+```
+
+This endpoint is DB-only by design — the pill must render even when no
+WhatsApp session is connected.
+
+### New contacts
+
+A brand-new number that has never been in the CRM **does** get the bot's
+automatic reply. This is the configured choice: the bot works as a 24/7
+receptionist, and the takeover rules above are what stop it from talking over
+a human.
+
+To change that, gate on the contact lookup the gate already performs —
+`shouldBotEngage` returns `contact: null` for an unknown number, so a single
+`if (!contact) return { allowed: false, reason: "unknown_contact" }` in
+`waBotGate.js` makes the bot silent for numbers with no CRM record.
+
+### Diagnosing "the bot stopped replying"
+
+Almost always an active pause. Check, in order:
+
+```sql
+SELECT phone, ai_enabled, ai_paused_until, assigned_agent_id, ticket_status,
+       is_blocked, is_unsubscribed
+  FROM wa_contacts WHERE phone LIKE '%9876543210';
+```
+
+- `ai_paused_until` in the future → an agent (or a handoff) owns the chat. Resolve the ticket or click **Let bot reply**.
+- `ai_enabled = 0` → the per-chat switch is off.
+- `is_unsubscribed = 1` → they sent STOP. Only they can undo it (reply START).
+
+Server logs name the reason on every suppression:
+
+```
+🤫 [WA BotGate] Flow bot suppressed for +919876543210 — agent_takeover (bot paused until ...)
+```
+
+---
+
+## 9. Automation workflows
 
 A tapped id drives the flow graph:
 
@@ -365,7 +482,7 @@ Welcome buttons are configured at **Dashboard → WhatsApp → Automations → W
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 ```bash
 # Unit / routing self-check — no DB, no network
@@ -431,7 +548,7 @@ bypass automations by design.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -463,7 +580,7 @@ SELECT phone, message_type, error, created_at
 
 ---
 
-## 11. Production deployment
+## 12. Production deployment
 
 ```bash
 cd backend  && npm ci && pm2 start ecosystem.production.config.js
@@ -478,7 +595,7 @@ reverse-proxy config.
 
 ---
 
-## 12. Migration from whatsapp-web.js
+## 13. Migration from whatsapp-web.js
 
 **No migration is required. Nothing was removed.** QR login, session handling, contact
 sync, inbound handling, outbound sends, CRM integration and existing automations all work
@@ -506,3 +623,17 @@ Added in this change — everything else described above already existed:
 - **Inbound taps are queryable** — the normalized `{ type, actionId, title, ... }` is stored in `wa_message_logs.interactive_payload` and logged.
 - **Seed data de-numbered** — flow button titles no longer carry `"1. "`, `"2. "` prefixes.
 - **`tests/test_wa_interactive.js`** (new) — 12 checks over normalization and provider routing, no DB or network.
+
+### Bot control (second pass)
+
+- **`services/waBotGate.js`** (new) — one authority for "may the bot engage this contact?". A takeover pause already existed (`wa_contacts.ai_paused_until`, written by a manual inbox reply, a flow `handoff` node and the AI handoff tool) but **only `waAiReply` ever read it**. So an agent takeover muted the AI while the flow bot kept talking, and a `handoff` was undone by the customer's very next message — the run was marked `handed_off`, found no active run, fell through to trigger matching, and an `all_inbound` flow restarted the bot. The gate makes that column authoritative for the flow engine, the menu handler and the welcome auto-reply too.
+- **Takeover window 30 min → 24 hours** (`WA_AI_TAKEOVER_MIN`), matching Wati/WACTO. The old window let the bot re-enter a chat an agent was still handling.
+- **Every manual reply now pauses the bot** — `/send-media` and `/send-location` previously did not, so sending a PDF by hand left the bot live.
+- **Assign pauses, resolve resumes** — assigning a chat to an agent pauses the bot for 24h, unassigning or marking the ticket resolved hands it back, marking it spam keeps the bot out for a year.
+- **Flow handoff aligned** — the `handoff` node and the "agent" keyword used a separate 120-minute window; both now use the shared pause, so a handoff outlasts the bot.
+- **Visible and undoable** — the backend already exposed the pause state but no UI read it. The inbox chat header now shows a `● Bot paused  [ Let bot reply ]` pill, backed by a new DB-only `GET /api/whatsapp/chat/:phone/bot-status`.
+- **`tests/test_wa_bot_gate.js`** (new) — 9 checks over the gate's decisions, including that it fails *open* on a DB error and still greets an unknown first-time sender.
+
+Unchanged by choice: a brand-new number with no CRM record still gets the bot's
+automatic reply. See [new contacts](#new-contacts) for the one-line change if you
+ever want the opposite.

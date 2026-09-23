@@ -427,6 +427,11 @@ export default function WhatsAppPage() {
     }
   });
   const [selectedChat, setSelectedChat] = useState(null);
+  // Bot pause state for the open chat. The bot mutes itself for 24h whenever an
+  // agent replies by hand, so the operator needs to see that and be able to
+  // hand the conversation back.
+  const [botStatus, setBotStatus] = useState(null);
+  const [botResuming, setBotResuming] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
   const [chatsLoading, setChatsLoading] = useState(false);
@@ -1016,6 +1021,9 @@ export default function WhatsAppPage() {
       // Mark message as delivered/sent in thread
       const realId = res.data?.id || res.data?.result?.id || tempId;
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: realId, status: "sent", quotedMsg: quotedText ? { body: quotedText } : null } : m));
+
+      // Replying by hand pauses the bot server-side — surface that immediately.
+      fetchBotStatus(selectedChat.id);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || "Failed to send message";
       setError(`Failed to send message: ${msg}`);
@@ -2546,6 +2554,41 @@ export default function WhatsAppPage() {
     };
   }, [selectedChat]);
 
+  // ── Bot pause indicator ────────────────────────────────────────────────────
+  const fetchBotStatus = useCallback(async (chatId) => {
+    if (!chatId || chatId.includes("@g.us")) return setBotStatus(null);
+    const phone = chatId.replace(/\D/g, "");
+    if (!phone) return setBotStatus(null);
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await axios.get(`${API}/api/whatsapp/chat/${phone}/bot-status`, { headers, timeout: 8000 });
+      setBotStatus(data);
+    } catch (_) {
+      setBotStatus(null); // pill simply hides if the lookup fails
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBotStatus(selectedChat?.id);
+  }, [selectedChat?.id, fetchBotStatus]);
+
+  const handleResumeBot = async () => {
+    if (!selectedChat?.id) return;
+    setBotResuming(true);
+    try {
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const phone = selectedChat.id.replace(/\D/g, "");
+      // This endpoint re-enables the bot AND clears ai_paused_until.
+      await axios.patch(`${API}/api/whatsapp/chat/${phone}/ai`, { enabled: true }, { headers });
+      await fetchBotStatus(selectedChat.id);
+    } catch (err) {
+      alert(err.response?.data?.error || "Could not hand the chat back to the bot");
+    }
+    setBotResuming(false);
+  };
+
   // Close context menu on scroll or click outside
   useEffect(() => {
     if (!contextMenu) return;
@@ -3221,6 +3264,34 @@ export default function WhatsAppPage() {
                 </div>
 
                 <div className="flex items-center gap-1.5 sm:gap-2">
+                  {/* Bot paused indicator — the bot mutes itself for 24h once an
+                      agent replies by hand, so make that visible and undoable. */}
+                  {botStatus?.paused && !selectedChat.isGroup && (
+                    <div
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-600/50 shadow-sm"
+                      title={
+                        botStatus.pausedUntil
+                          ? `Bot is quiet until ${new Date(botStatus.pausedUntil).toLocaleString()}`
+                          : "Bot is switched off for this contact"
+                      }
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block shrink-0" />
+                      <span className="text-[11px] font-bold text-slate-300 whitespace-nowrap">
+                        {botStatus.assignedAgentName
+                          ? `You have this chat (${botStatus.assignedAgentName})`
+                          : "Bot paused"}
+                      </span>
+                      <button
+                        onClick={handleResumeBot}
+                        disabled={botResuming}
+                        className="text-[11px] font-bold text-[#00a884] hover:text-[#25D366] disabled:opacity-50 whitespace-nowrap"
+                        title="Let the bot answer this contact again"
+                      >
+                        {botResuming ? "..." : "Let bot reply"}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Trigger Chatbot Flow Button */}
                   <button
                     onClick={() => setShowFlowModal(true)}

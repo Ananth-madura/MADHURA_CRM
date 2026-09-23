@@ -765,6 +765,11 @@ async function maybeSendWelcomeReply(targetPhoneOrJid, contactName, sessionKey, 
     }
   } catch (_) {}
 
+  // ── 🛡️ 3b. Agent Takeover / Per-Contact Bot Switch ────────────────────────
+  if (!(await require("./waBotGate").botMayReply(cleanPhone, "Welcome auto-reply", options))) {
+    return false;
+  }
+
   // ── 🛡️ 4. Active Flow Continuity Guard ─────────────────────────────────────
   // If the contact is currently engaged in an active conversational flow run,
   // let the flow engine handle their replies; do NOT interrupt with a welcome message.

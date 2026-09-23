@@ -193,6 +193,14 @@ class WaFlowEngine {
     if (options.isHistoric) return false;
     const cleanPhone = phone.replace(/\D/g, "");
 
+    // A live agent takeover, a previous handoff, or a per-contact bot switch
+    // mutes the flow bot — including advancing a run that is already open.
+    // Without this, a `handoff` node was undone by the customer's very next
+    // message, because an `all_inbound` flow simply started a fresh run.
+    if (!(await require("./waBotGate").botMayReply(cleanPhone, "Flow bot", options))) {
+      return true; // treat as handled so no downstream auto-reply fires either
+    }
+
     try {
       // 1. Check for an active flow run for this phone
       const [activeRuns] = await db.promise().query(
@@ -444,11 +452,10 @@ class WaFlowEngine {
         "UPDATE wa_flow_runs SET status = 'handed_off', ended_at = NOW(), end_reason = 'user_agent_command' WHERE id = ?",
         [runId]
       );
-      // Mute AI auto-reply for 2 hours
-      await db.promise().query(
-        "UPDATE wa_contacts SET ai_paused_until = DATE_ADD(NOW(), INTERVAL 120 MINUTE) WHERE phone LIKE ?",
-        [`%${cleanPhone.slice(-10)}`]
-      );
+      // A human owns this conversation now — mute the whole bot, on the same
+      // window a manual agent reply uses, so the bot cannot re-engage before
+      // anyone has actually picked the chat up.
+      await require("./waBotGate").pauseBot(cleanPhone, undefined, "customer asked for an agent");
       try {
         const app = require("../server");
         const io = app.get && app.get("io");
@@ -1188,11 +1195,9 @@ class WaFlowEngine {
             "UPDATE wa_flow_runs SET status = 'handed_off', ended_at = NOW(), end_reason = 'agent_handoff', vars = ? WHERE id = ?",
             [JSON.stringify(vars), runId]
           );
-          // Mute AI auto-reply for this phone for 2 hours
-          await db.promise().query(
-            "UPDATE wa_contacts SET ai_paused_until = DATE_ADD(NOW(), INTERVAL 120 MINUTE) WHERE phone LIKE ?",
-            [`%${cleanPhone.slice(-10)}`]
-          );
+          // Same window as a manual agent reply: the handoff must outlast the
+          // bot, or the customer's next message simply restarts it.
+          await require("./waBotGate").pauseBot(cleanPhone, undefined, "flow handoff node");
 
           // Emit live handoff alert to Live Chat agents
           try {

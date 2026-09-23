@@ -62,6 +62,11 @@ async function sendMenu(phone, automationId, sessionKey) {
 // Returns true if it was handled (caller should skip further auto-reply logic).
 async function handleMenuReply(phone, msg, sessionKey) {
   const cleanPhone = phone.replace(/\D/g, "");
+
+  if (!(await require("./waBotGate").botMayReply(cleanPhone, "Menu auto-reply"))) {
+    return true; // handled: stay quiet while an agent owns this conversation
+  }
+
   const rows = await queryAsync("SELECT * FROM wa_pending_menus WHERE phone = ?", [cleanPhone]);
   const pending = rows[0];
   if (!pending) return false;
