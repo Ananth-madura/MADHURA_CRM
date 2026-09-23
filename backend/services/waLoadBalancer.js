@@ -83,6 +83,7 @@ class WALoadBalancer {
               supportsInteractive: true,
               sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
               sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
+              sendCTA: async (phone, body, displayText, url, header, footer) => waCloud.sendCTAUrl(phone, body, displayText, url, header, footer),
             });
           } else if (member.sender_type === "web_session") {
             const memberSessionKey = member.session_key || String(member.account_id || member.id);
@@ -171,6 +172,7 @@ class WALoadBalancer {
             supportsInteractive: true,
             sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
             sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
+            sendCTA: async (phone, body, displayText, url, header, footer) => waCloud.sendCTAUrl(phone, body, displayText, url, header, footer),
           }
         : null;
 
@@ -211,6 +213,7 @@ class WALoadBalancer {
               supportsInteractive: true,
               sendButtons: async (phone, body, buttons, header, footer) => waCloud.sendInteractiveButtons(phone, body, buttons, header, footer),
               sendList: async (phone, body, buttonLabel, sections, header, footer) => waCloud.sendInteractiveList(phone, body, buttonLabel, sections, header, footer),
+              sendCTA: async (phone, body, displayText, url, header, footer) => waCloud.sendCTAUrl(phone, body, displayText, url, header, footer),
             });
           }
         });
@@ -507,6 +510,88 @@ class WALoadBalancer {
 
   sendInteractiveList(opts = {}) {
     return this.sendInteractive("list", opts);
+  }
+
+  /**
+   * Native CTA URL button — one tappable button that opens a link.
+   *
+   * Handled separately from sendInteractive() because a CTA carries no reply
+   * ids to normalize, and it degrades differently: there are no options to
+   * number, so the fallback appends the URL as a real link. WhatsApp renders a
+   * preview for it, so the customer still gets something tappable — just not
+   * a button with the label hidden over it.
+   *
+   * @param {object} opts
+   * @param {string} opts.phone
+   * @param {string} opts.body
+   * @param {string} opts.displayText button label, <= 20 chars
+   * @param {string} opts.url must be http(s)
+   */
+  async sendCTAButtonMessage(opts = {}) {
+    const {
+      body,
+      displayText = "Open",
+      url,
+      header = null,
+      footer = null,
+      fallbackText = null,
+      sessionKey = null,
+      preferredEngine = null,
+      poolId = null,
+      routingStrategy = "round_robin",
+      tenantId = 1,
+    } = opts;
+
+    let phone = String(opts.phone || opts.phoneNumber || "").replace(/\D/g, "");
+    if (phone.length === 10) phone = "91" + phone;
+    if (!phone) throw new Error("CTA send requires a phone number");
+    if (!url) throw new Error("CTA send requires a url");
+    if (!/^https?:\/\//i.test(String(url))) {
+      throw new Error(`CTA url must start with http:// or https:// (got "${url}")`);
+    }
+
+    const mdToWa = require("./mdToWa");
+    const text =
+      fallbackText ||
+      [header ? `*${header}*` : null, mdToWa.toWhatsApp(String(body || "")).trim(), url, footer ? `_${footer}_` : null]
+        .filter(Boolean)
+        .join("\n\n");
+
+    const engines = await this.getActiveEngines(sessionKey, preferredEngine, poolId, tenantId);
+    const poolKey = poolId ? `pool_${poolId}` : `session_${sessionKey || "def"}`;
+    const ctaEngines = engines.filter((e) => typeof e.sendCTA === "function");
+
+    if (ctaEngines.length) {
+      const primary = this.selectEngine(ctaEngines, routingStrategy, `${poolKey}_cta`);
+      const ordered = [primary, ...ctaEngines.filter((e) => e.id !== primary.id)];
+
+      for (const engine of ordered) {
+        try {
+          const result = await engine.sendCTA(phone, body, displayText, url, header, footer);
+          await this.recordSuccess(engine);
+          return {
+            success: true,
+            native: true,
+            kind: "cta_url",
+            engineUsed: engine.name,
+            senderPhone: engine.phone,
+            failover: engine.id !== primary.id,
+            result,
+          };
+        } catch (err) {
+          console.warn(`⚠️ [WA LoadBalancer] CTA url via '${engine.name}' failed: ${err.message}`);
+          await this.recordFailure(engine, err);
+          this.stats.failoverCount++;
+          this.stats.lastFailoverAt = new Date().toISOString();
+        }
+      }
+    }
+
+    console.warn(
+      `↩️ [WA LoadBalancer] No CTA-capable sender delivered to +${phone}; falling back to a plain link.`
+    );
+    const res = await this.sendTextMessage(phone, text, sessionKey, preferredEngine, poolId, routingStrategy, tenantId);
+    return { ...res, native: false, kind: "cta_url", fallbackText: text };
   }
 
   async getLoadBalancerStats(tenantId = 1) {

@@ -137,6 +137,54 @@ class WhatsAppCloudApi {
     return data;
   }
 
+  /**
+   * Native CTA URL button — a single tappable button that opens a link.
+   *
+   * This is a FREE-FORM interactive message (interactive.type = "cta_url"), so
+   * it works inside the 24-hour customer-service window with no template and
+   * no template approval. Use it instead of pasting a raw link in body text:
+   * the URL is hidden behind the button label, which is what makes
+   * "Your quote is ready → [ Check my quote ]" look native.
+   *
+   * Only ONE button is supported by Meta, and it cannot be mixed with reply
+   * buttons in the same message.
+   */
+  async sendCTAUrl(to, bodyText, displayText, url, headerText = null, footerText = null) {
+    if (!this.isConfigured()) throw new Error("WhatsApp Cloud API not configured");
+    if (!url) throw new Error("CTA URL message requires a url");
+    // Meta rejects anything that is not a public http(s) link.
+    if (!/^https?:\/\//i.test(String(url))) {
+      throw new Error(`CTA URL must start with http:// or https:// (got "${url}")`);
+    }
+
+    const interactive = {
+      type: "cta_url",
+      body: { text: String(bodyText || "").slice(0, 1024) },
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: String(displayText || "Open").slice(0, 20),
+          url: String(url),
+        },
+      },
+    };
+    if (headerText) interactive.header = { type: "text", text: String(headerText).slice(0, 60) };
+    if (footerText) interactive.footer = { text: String(footerText).slice(0, 60) };
+
+    const { data } = await axios.post(
+      `${BASE_URL}/${this.phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive,
+      },
+      { headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json" } }
+    );
+    return data;
+  }
+
   async sendTemplate(to, templateName, languageCode = "en", components = []) {
     if (!this.isConfigured()) throw new Error("WhatsApp Cloud API not configured");
     const body = {

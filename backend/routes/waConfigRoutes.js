@@ -176,6 +176,82 @@ router.post("/test-template", verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Send one test interactive message so an operator can verify native UI
+ * renders on a real handset before wiring it into a flow.
+ *
+ *   POST /api/wa/config/test-interactive
+ *   { phone, kind: "buttons" | "list" | "cta", ...kind-specific fields }
+ *
+ * Goes through waLoadBalancer like production, so the response's `native` flag
+ * tells you whether it was a real button or the text fallback.
+ */
+router.post("/test-interactive", verifyToken, async (req, res) => {
+  const { phone, kind = "buttons" } = req.body;
+  if (!phone) return res.status(400).json({ success: false, message: "phone is required" });
+
+  try {
+    await configureForUser(req.user.id);
+    const waLoadBalancer = require("../services/waLoadBalancer");
+    const body = req.body.body || "This is a test interactive message from your CRM.";
+    let result;
+
+    if (kind === "cta") {
+      const { url, button_text } = req.body;
+      if (!url) return res.status(400).json({ success: false, message: "url is required for kind 'cta'" });
+      result = await waLoadBalancer.sendCTAButtonMessage({
+        phone,
+        body,
+        displayText: button_text || "Open Link",
+        url,
+        footer: req.body.footer || null,
+        header: req.body.header || null,
+      });
+    } else if (kind === "list") {
+      result = await waLoadBalancer.sendInteractiveList({
+        phone,
+        body,
+        header: req.body.header || null,
+        footer: req.body.footer || null,
+        buttonText: req.body.button_text || "View Options",
+        sections: req.body.sections ||
+          req.body.rows || [
+            { id: "test_row_1", title: "First option", description: "Tap to reply test_row_1" },
+            { id: "test_row_2", title: "Second option", description: "Tap to reply test_row_2" },
+          ],
+      });
+    } else if (kind === "buttons") {
+      result = await waLoadBalancer.sendInteractiveButtons({
+        phone,
+        body,
+        header: req.body.header || null,
+        footer: req.body.footer || null,
+        buttons: req.body.buttons || [
+          { id: "test_yes", title: "Yes" },
+          { id: "test_no", title: "No" },
+        ],
+      });
+    } else {
+      return res.status(400).json({ success: false, message: `Unknown kind "${kind}" — use buttons, list or cta` });
+    }
+
+    res.json({
+      success: true,
+      kind: result.kind,
+      // false => no Cloud API sender could deliver, so this went out as text
+      native: result.native,
+      engineUsed: result.engineUsed,
+      senderPhone: result.senderPhone,
+      failover: Boolean(result.failover),
+    });
+  } catch (err) {
+    const errMsg = err.response?.data?.error?.message || err.message;
+    res.status(400).json({ success: false, message: errMsg });
+  } finally {
+    resetToEnvConfig();
+  }
+});
+
 router.get("/phone-info", async (req, res) => {
   try {
     const info = await wa.getPhoneNumberInfo();

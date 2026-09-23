@@ -125,6 +125,11 @@ function cloudEngine(name, { fail = false, calls } = {}) {
       if (fail) throw new Error("token expired");
       return { messages: [{ id: "wamid.native" }] };
     },
+    sendCTA: async (...args) => {
+      calls?.push([name, "cta", ...args]);
+      if (fail) throw new Error("cta send failed");
+      return { messages: [{ id: "wamid.cta" }] };
+    },
     sendText: async (...args) => {
       calls?.push([name, "text", ...args]);
       return { messages: [{ id: "wamid.text" }] };
@@ -230,6 +235,83 @@ const run = async () => {
     ok("an empty option set is rejected rather than sent as a bare body", () => {
       assert.ok(threw, "expected a throw");
       assert.ok(/at least one button/i.test(threw.message), threw.message);
+    });
+  })();
+
+  console.log("\nwaLoadBalancer — CTA URL button");
+
+  await (async () => {
+    const calls = [];
+    const res = await withEngines([cloudEngine("cloud", { calls })], () =>
+      waLoadBalancer.sendCTAButtonMessage({
+        phone: "9876543210",
+        body: "Your quote is ready.",
+        displayText: "Check my quote",
+        url: "https://madhuratech.com/q/1024",
+      })
+    );
+    ok("cloud sender delivers a NATIVE cta_url button", () => {
+      assert.strictEqual(res.native, true);
+      assert.strictEqual(res.kind, "cta_url");
+      const [, kind, phone, , displayText, url] = calls[0];
+      assert.strictEqual(kind, "cta");
+      assert.strictEqual(phone, "919876543210");
+      assert.strictEqual(displayText, "Check my quote");
+      assert.strictEqual(url, "https://madhuratech.com/q/1024");
+    });
+  })();
+
+  await (async () => {
+    const calls = [];
+    const res = await withEngines([webEngine("web", { calls })], () =>
+      waLoadBalancer.sendCTAButtonMessage({
+        phone: "919876543210",
+        body: "Your quote is ready.",
+        displayText: "Check my quote",
+        url: "https://madhuratech.com/q/1024",
+      })
+    );
+    ok("web-only sender falls back to a real link, not a numbered menu", () => {
+      assert.strictEqual(res.native, false);
+      const sent = calls[0][3];
+      assert.ok(sent.includes("https://madhuratech.com/q/1024"), sent);
+      // There are no options to enumerate, so the reply-with-a-number hint
+      // would be nonsense here.
+      assert.ok(!/option number/i.test(sent), "CTA fallback must not add a menu hint: " + sent);
+    });
+  })();
+
+  await (async () => {
+    let threw = null;
+    await withEngines([cloudEngine("cloud")], async () => {
+      try {
+        await waLoadBalancer.sendCTAButtonMessage({
+          phone: "919876543210",
+          body: "hi",
+          displayText: "Open",
+          url: "madhuratech.com/q/1024", // no scheme — Meta rejects this
+        });
+      } catch (err) {
+        threw = err;
+      }
+    });
+    ok("a url without http(s) is rejected before hitting Meta", () => {
+      assert.ok(threw, "expected a throw");
+      assert.ok(/must start with http/i.test(threw.message), threw.message);
+    });
+  })();
+
+  await (async () => {
+    let threw = null;
+    await withEngines([cloudEngine("cloud")], async () => {
+      try {
+        await waLoadBalancer.sendCTAButtonMessage({ phone: "919876543210", body: "hi", displayText: "Open" });
+      } catch (err) {
+        threw = err;
+      }
+    });
+    ok("a missing url is rejected", () => {
+      assert.ok(threw && /requires a url/i.test(threw.message), threw?.message);
     });
   })();
 

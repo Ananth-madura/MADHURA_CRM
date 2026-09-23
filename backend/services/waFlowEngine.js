@@ -883,6 +883,20 @@ class WaFlowEngine {
           break;
         }
 
+        case "send_cta": {
+          await this.sendFlowCTA(
+            cleanPhone,
+            this.interpolate(config.text || config.body || "", vars),
+            this.interpolate(config.button_text || config.display_text || "Open", vars),
+            this.interpolate(config.url || "", vars),
+            config.header_text ? this.interpolate(config.header_text, vars) : null,
+            config.footer_text ? this.interpolate(config.footer_text, vars) : null,
+            sessionKey
+          );
+          nodeKey = config.next_node_key;
+          break;
+        }
+
         case "delay": {
           const delaySec = Math.min(Math.max(parseInt(config.delay_seconds, 10) || 3, 1), 30);
           console.log(`⏱️ [WA Flow] Pausing ${delaySec}s before next step for +${cleanPhone}`);
@@ -2007,6 +2021,62 @@ class WaFlowEngine {
       payloadType: "buttons",
       payloadExtra: { buttons },
     });
+  }
+
+  /**
+   * Native CTA URL button. Unlike reply buttons this produces no inbound reply
+   * id — the customer leaves for the link — so the flow always continues
+   * straight to next_node_key.
+   */
+  async sendFlowCTA(phone, text, displayText, url, headerText = null, footerText = null, sessionKey = null) {
+    const waLoadBalancer = require("./waLoadBalancer");
+    const mdToWa = require("./mdToWa");
+
+    let cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+
+    if (!url || !/^https?:\/\//i.test(String(url))) {
+      console.warn(`[WA Flow] send_cta node for +${cleanPhone} has an invalid url ("${url}") — skipping.`);
+      return null;
+    }
+
+    const fallbackText = [
+      headerText ? `*${headerText}*` : null,
+      mdToWa.toWhatsApp(String(text || "")).trim(),
+      url,
+      footerText ? `_${footerText}_` : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const msgId = await this.recordAndEmitBotMessage(
+      cleanPhone,
+      fallbackText,
+      "interactive",
+      { type: "cta_url", header: headerText, footer: footerText, text, button_text: displayText, url },
+      sessionKey
+    );
+
+    try {
+      const res = await waLoadBalancer.sendCTAButtonMessage({
+        phone: cleanPhone,
+        body: text,
+        displayText,
+        url,
+        header: headerText,
+        footer: footerText,
+        fallbackText,
+        sessionKey,
+      });
+      console.log(
+        `🔗 [WA Flow] cta_url -> +${cleanPhone} via ${res?.engineUsed || "WA"} (${res?.native ? "native button" : "plain link fallback"})`
+      );
+      return res;
+    } catch (err) {
+      console.error(`❌ [WA FlowEngine] Failed to deliver cta_url to +${cleanPhone}:`, err?.message || err);
+      await this.markBotMessageFailed(msgId, cleanPhone, err?.message || "Failed to send");
+      return null;
+    }
   }
 
   async sendFlowList(phone, text, rows, buttonText = "View Options", title = null, sessionKey = null) {

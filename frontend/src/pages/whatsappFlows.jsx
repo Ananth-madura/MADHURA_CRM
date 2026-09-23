@@ -61,6 +61,7 @@ const PALETTE_CATEGORIES = [
       { type: "send_message", label: "Text Message", icon: "💬", desc: "Standard text message", color: "border-blue-500 bg-blue-50 text-blue-900" },
       { type: "send_media", label: "Media / PDF", icon: "📷", desc: "Image, Video or PDF catalog", color: "border-indigo-500 bg-indigo-50 text-indigo-900" },
       { type: "send_template", label: "Template", icon: "🧾", desc: "Approved Meta HSM template", color: "border-lime-500 bg-lime-50 text-lime-900" },
+      { type: "send_cta", label: "Link Button", icon: "🔗", desc: "Tappable button that opens a URL", color: "border-sky-500 bg-sky-50 text-sky-900" },
     ]
   },
   {
@@ -1225,6 +1226,14 @@ export default function WhatsAppFlows() {
           { id: "row_2", title: "Item 2", description: "Details 2", next_node_key: "" }
         ]
       };
+    } else if (item.type === "send_cta") {
+      newConfig = {
+        text: "Your quotation is ready.",
+        button_text: "View Quote",
+        url: "https://",
+        footer_text: "",
+        next_node_key: ""
+      };
     } else if (item.type === "send_message") {
       newConfig = { text: "Thank you for contacting us!", next_node_key: "" };
     } else if (item.type === "collect_input" || item.type.startsWith("collect_")) {
@@ -2006,7 +2015,7 @@ export default function WhatsAppFlows() {
           )}
 
           {/* Generic fallback for any other node with next_node_key */}
-          {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(node.node_type) && !node.node_type?.includes("trigger") && (
+          {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "send_cta", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(node.node_type) && !node.node_type?.includes("trigger") && (
             <div className="space-y-1.5">
               <p className="text-slate-500 text-[10px] italic">Custom node configuration</p>
               <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
@@ -2538,6 +2547,122 @@ export default function WhatsAppFlows() {
           </div>
         )}
 
+        {selectedNode.node_type === "send_cta" && (
+          <div className="space-y-3">
+            <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-900 leading-relaxed">
+              A <strong>native CTA URL button</strong>. The link is hidden behind the button label, so the customer
+              sees a clean tappable button instead of a pasted URL. Needs the <strong>WhatsApp Cloud API</strong>; on a
+              QR/web session the same message goes out as text with the link appended.
+              <br />
+              Meta allows <strong>one</strong> link button per message, and it cannot be combined with reply buttons.
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Message Text *</label>
+                <span className="text-[10px] text-slate-400">Supports variables</span>
+              </div>
+              <textarea
+                value={cfg.text || ""}
+                onChange={(e) => updateConfig({ text: e.target.value })}
+                rows={3}
+                placeholder="Your quotation {quote_no} is ready."
+                className="w-full p-2.5 text-xs border rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-sans"
+              />
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {PLACEHOLDERS.slice(0, 6).map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => updateConfig({ text: `${cfg.text || ""} ${p.tag}` })}
+                    className="px-1.5 py-0.5 bg-slate-100 hover:bg-sky-50 hover:text-sky-700 text-slate-600 rounded text-[10px] font-mono transition"
+                  >
+                    + {p.tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Button Label *</label>
+                <input
+                  value={cfg.button_text || ""}
+                  maxLength={20}
+                  onChange={(e) => updateConfig({ button_text: e.target.value })}
+                  placeholder="View Quote"
+                  className="w-full p-2 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <span className="text-[10px] text-slate-400">{(cfg.button_text || "").length}/20 chars</span>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Footer (optional)</label>
+                <input
+                  value={cfg.footer_text || ""}
+                  maxLength={60}
+                  onChange={(e) => updateConfig({ footer_text: e.target.value })}
+                  placeholder="Madhura Tech"
+                  className="w-full p-2 text-xs border rounded-lg outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <span className="text-[10px] text-slate-400">{(cfg.footer_text || "").length}/60 chars</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Link URL *</label>
+              <input
+                value={cfg.url || ""}
+                onChange={(e) => updateConfig({ url: e.target.value })}
+                placeholder="https://madhuratech.com/quote/{quote_no}"
+                className="w-full p-2 text-xs border rounded-lg font-mono outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              {cfg.url && !/^https?:\/\//i.test(cfg.url) ? (
+                <span className="text-[10px] text-rose-600 font-semibold">
+                  Must start with http:// or https:// — Meta rejects anything else, and this step will be skipped.
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400">Variables are substituted before sending</span>
+              )}
+            </div>
+
+            {/* WhatsApp preview */}
+            <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200">
+              <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Preview</span>
+              <div className="mt-1.5 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <p className="text-xs text-slate-800 whitespace-pre-line p-2.5 leading-relaxed">
+                  {cfg.text || "Your message text..."}
+                </p>
+                {cfg.footer_text && <p className="text-[10px] text-slate-400 px-2.5 pb-1.5">{cfg.footer_text}</p>}
+                <div className="border-t border-slate-200 py-2 text-center text-[13px] font-medium text-[#00a5f4] flex items-center justify-center gap-1.5">
+                  <Globe size={12} />
+                  {cfg.button_text || "Button label"}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>
+              <select
+                value={cfg.next_node_key || ""}
+                onChange={(e) => updateConfig({ next_node_key: e.target.value })}
+                className="w-full p-2 text-xs border rounded-lg bg-white font-mono"
+              >
+                <option value="">-- End Flow or Stop --</option>
+                {nodes
+                  .filter((n) => n.node_key !== selectedNode.node_key)
+                  .map((n) => (
+                    <option key={n.node_key} value={n.node_key}>
+                      {n.node_key} ({n.node_type})
+                    </option>
+                  ))}
+              </select>
+              <span className="text-[10px] text-slate-400">
+                A link button returns no reply, so the flow continues here immediately after sending.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ── MEDIA / PDF CATALOG CONFIGURATION ─────────────────────── */}
         {selectedNode.node_type === "send_media" && (
           <div className="space-y-3">
@@ -3062,7 +3187,7 @@ export default function WhatsAppFlows() {
         )}
 
         {/* ── GENERIC FALLBACK FOR ANY NODE WITH NEXT STEP ────────────── */}
-        {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(selectedNode.node_type) && !selectedNode.node_type?.includes("trigger") && (
+        {!["interactive_menu", "send_buttons", "send_list", "send_message", "send_media", "send_template", "send_cta", "condition", "ai_intent", "ai_generate", "crm_lookup", "collect_input", "create_lead", "delay", "api_webhook", "set_variable", "handoff", "end", "start"].includes(selectedNode.node_type) && !selectedNode.node_type?.includes("trigger") && (
           <div className="space-y-3">
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1">Next Step Node</label>

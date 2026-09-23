@@ -191,6 +191,37 @@ await waLoadBalancer.sendInteractiveList({
 
 `sections` also accepts a **flat row array**, which is wrapped into a single section.
 
+### CTA URL button (one tappable link button)
+
+```js
+await waLoadBalancer.sendCTAButtonMessage({
+  phone: "919876543210",
+  body: "Your quotation #QT-1024 is ready.",
+  displayText: "Check my quote",          // the button label, <= 20 chars
+  url: "https://madhuratech.com/q/1024",  // must be http(s)
+  header: null,
+  footer: "Madhura Tech",
+  sessionKey: null,
+});
+```
+
+This is a **free-form** interactive message (`interactive.type = "cta_url"`), so it
+needs **no template and no template approval** — only the 24-hour customer-service
+window, same as reply buttons and lists. Use it instead of pasting a raw link into
+body text: the URL hides behind the label, which is what makes
+"Your quote is ready → `[ Check my quote ]`" look native.
+
+Meta limits it to **one** link button per message, and it cannot be mixed with reply
+buttons in the same message. Send them as two messages if you need both.
+
+Because a link button produces no inbound reply, there is no action id to match — the
+customer leaves for the URL — so a `send_cta` flow node always continues straight to
+its `next_node_key`.
+
+Fallback differs from buttons and lists: there are no options to number, so a
+web-session send appends the URL as a real link (WhatsApp renders a preview, so it
+stays tappable) rather than adding a "reply with a number" hint.
+
 ### Return value
 
 ```js
@@ -212,7 +243,7 @@ await waLoadBalancer.sendInteractiveList({
 | Text | `waLoadBalancer.sendTextMessage(phone, text, sessionKey)` |
 | Image / document / video | `waLoadBalancer.sendMediaMessage(phone, type, url, caption, filename, sessionKey)` |
 | Template | `waLoadBalancer.sendTemplateMessage(phone, name, lang, components, sessionKey)` |
-| CTA URL button | `whatsappCloudApi.sendTemplate(...)` with a template whose button is `type: URL` — see [limitations](#9-limitations) |
+| CTA URL button | `waLoadBalancer.sendCTAButtonMessage(...)` — see above |
 
 ---
 
@@ -520,6 +551,48 @@ Activate a flow whose entry node is `send_list` (Flows → the seeded
 *Interactive Main Business & Services Menu*), then message the business number from
 WhatsApp. The main menu has 4 options, so it is delivered as a native list.
 
+### Test any interactive type on a real handset
+
+One endpoint sends a live test through the normal production path, so you can verify
+native rendering before building a flow:
+
+```bash
+# reply buttons
+curl -X POST https://<host>/api/wa/config/test-interactive \
+  -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" \
+  -d '{"phone":"919876543210","kind":"buttons"}'
+
+# list
+curl ... -d '{"phone":"919876543210","kind":"list"}'
+
+# CTA link button
+curl ... -d '{"phone":"919876543210","kind":"cta",
+              "body":"Your quotation #QT-1024 is ready.",
+              "button_text":"Check my quote",
+              "url":"https://madhuratech.com/q/1024"}'
+```
+
+Response:
+
+```json
+{ "success": true, "kind": "cta_url", "native": true,
+  "engineUsed": "Meta Cloud API", "senderPhone": "911234567890", "failover": false }
+```
+
+`"native": false` means no Cloud API sender could deliver and it went out as text —
+check `GET /api/wa/automations/load-balancer-stats`.
+
+Pass `buttons`, `sections`/`rows`, `header` or `footer` to override the defaults.
+The recipient must have messaged you within the last 24 hours, or Meta rejects the
+send with `(#131047)`.
+
+### Send a CTA link button from a flow
+
+Flows → drag **🔗 Link Button** into the canvas. Fill in the message text, the button
+label (≤ 20 chars), and an `https://` URL — variables like `{quote_no}` are
+substituted before sending. The panel shows a WhatsApp-shaped preview and flags a URL
+missing its scheme, since Meta rejects those and the step is skipped.
+
 ### Simulate an inbound tap without a phone
 
 ```bash
@@ -637,3 +710,11 @@ Added in this change — everything else described above already existed:
 Unchanged by choice: a brand-new number with no CRM record still gets the bot's
 automatic reply. See [new contacts](#new-contacts) for the one-line change if you
 ever want the opposite.
+
+### CTA URL buttons (third pass)
+
+- **`whatsappCloudApi.sendCTAUrl()` + `waLoadBalancer.sendCTAButtonMessage()`** (new) — native `interactive.type = "cta_url"`: one tappable button that opens a link, with the URL hidden behind the label. **Correction to earlier notes in this file: this does NOT require a message template.** It is a free-form interactive message and works inside the 24-hour customer-service window exactly like reply buttons and lists. The earlier claim that CTA buttons were template-only was wrong.
+- **`send_cta` flow node** — plus a **🔗 Link Button** entry in the flow builder palette with a config panel (text, label, URL, footer), a WhatsApp-shaped preview, and validation that rejects a URL with no `http(s)` scheme. Since a link button returns no reply id, the node continues straight to `next_node_key`.
+- **Distinct fallback** — a CTA has no options to enumerate, so a web-session send appends the URL as a real link (WhatsApp still renders a tappable preview) instead of adding a nonsensical "reply with a number" hint. Pinned by a test.
+- **`POST /api/wa/config/test-interactive`** (new) — sends one live `buttons` / `list` / `cta` test through the production path and reports `native` true/false, so you can verify real rendering on a handset without building a flow first.
+- **`tests/test_wa_interactive.js`** grew from 12 to **16 checks**, covering CTA routing, the link-preserving fallback, and rejection of a missing or scheme-less URL.
