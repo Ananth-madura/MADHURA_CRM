@@ -797,8 +797,24 @@ class WhatsAppService {
               this.emitWaEvent("wa_campaign_reply", chatId, cleanPhone, {
                 campaignId: campaignReply.campaignId,
                 campaignName: campaignReply.campaignName,
+                flowId: campaignReply.flowId || null,
                 body: msg.body,
               });
+
+              // Direct Campaign -> Flow Bot Connection: If campaign has a linked flow, launch it!
+              if (campaignReply.flowId) {
+                try {
+                  const db = require("../config/database");
+                  const [cFlows] = await db.promise().query("SELECT * FROM wa_flows WHERE id = ? AND status = 'active' LIMIT 1", [campaignReply.flowId]);
+                  if (cFlows.length > 0) {
+                    console.log(`🚀 [Campaign -> Flow Bot] Launching linked Flow "${cFlows[0].name}" (#${cFlows[0].id}) for +${cleanPhone}`);
+                    await require("./waFlowEngine").startFlowRun(cFlows[0], cleanPhone, this.key, msg.body);
+                    return;
+                  }
+                } catch (cfErr) {
+                  console.warn("[Campaign -> Flow Bot] Error launching linked flow:", cfErr.message);
+                }
+              }
             }
 
             // Describe any attachment, but DON'T download it yet — the engine
