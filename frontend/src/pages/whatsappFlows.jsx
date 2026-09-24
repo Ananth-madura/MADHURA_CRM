@@ -387,8 +387,8 @@ export default function WhatsAppFlows() {
       setEditingFlowId(null);
       setFlowName("Food & Products Flow Bot");
       setFlowDesc("Interactive flow bot: Quick buttons -> Category List (View All Categories) -> Products -> Instant Orders & Bulk Quote");
-      setFlowTriggerType("all_inbound");
-      setFlowKeywords("hi, hello, food, menu, order, price, start");
+      setFlowTriggerType("manual");
+      setFlowKeywords("menu");
       setFlowEntryNode("start");
       const defaultNodes = getFoodBotStarterNodes();
       setNodes(defaultNodes);
@@ -400,20 +400,24 @@ export default function WhatsAppFlows() {
     resetSimulation();
   };
 
-  const triggerFlowForPhone = async (phone) => {
+  const triggerFlowForPhone = async (phone, explicitFlowId = null) => {
     try {
       const token = localStorage.getItem("token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const targetFlowId = editingFlowId || flows[0]?.id;
+      const targetFlowId = explicitFlowId || editingFlowId || flows[0]?.id;
       let cleanPhone = String(phone || "").replace(/\D/g, "");
       if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
+      if (!cleanPhone || cleanPhone.length < 10) {
+        alert("Please enter a valid phone number with country code (e.g. 919876543210)");
+        return;
+      }
       const res = await axios.post(`${API}/api/wa-flows/send-menu`, {
         phone: cleanPhone,
         flow_id: targetFlowId
       }, { headers });
-      alert(`✅ WhatsApp menu sent to +${cleanPhone}!\nResult: ${res.data.message}`);
+      alert(`✅ Flow Bot sent successfully to +${cleanPhone}!\nResult: ${res.data.message || "Active"}`);
     } catch (err) {
-      alert(`❌ Error sending to WhatsApp: ${err.response?.data?.error || err.message}`);
+      alert(`❌ Error sending Flow Bot to WhatsApp: ${err.response?.data?.error || err.message}`);
     }
   };
 
@@ -3540,8 +3544,16 @@ export default function WhatsAppFlows() {
                   placeholder="Flow Name..."
                   className="bg-transparent text-xs sm:text-sm font-bold text-white outline-none hover:bg-slate-800/60 px-1.5 py-0.5 rounded focus:ring-1 focus:ring-emerald-500 max-w-[140px] sm:max-w-xs truncate"
                 />
-                <div className="flex items-center gap-2 text-[10px] text-slate-400 px-1.5 truncate">
-                  <span>Trigger: <b className="text-emerald-400">{flowTriggerType}</b></span>
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 px-1.5">
+                  <span>Trigger:</span>
+                  <select
+                    value={flowTriggerType || "manual"}
+                    onChange={(e) => setFlowTriggerType(e.target.value)}
+                    className="bg-slate-800 text-emerald-400 font-bold rounded px-1.5 py-0.5 text-[10px] border border-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="manual">Manual / Given Number Only</option>
+                    <option value="keyword">Keyword Command Only</option>
+                  </select>
                   <span>•</span>
                   <span>{nodes.length} Nodes</span>
                 </div>
@@ -3617,8 +3629,8 @@ export default function WhatsAppFlows() {
                   onClick={() => {
                     setFlowName("Food & Products Flow Bot");
                     setFlowDesc("Interactive flow bot: Buttons -> View All Categories -> Products -> Orders & Inquiries");
-                    setFlowTriggerType("all_inbound");
-                    setFlowKeywords("hi, hello, food, menu, order, price, start");
+                    setFlowTriggerType("manual");
+                    setFlowKeywords("menu");
                     const starter = getFoodBotStarterNodes();
                     setNodes(starter);
                     setSelectedNodeKey("welcome_menu");
@@ -3638,8 +3650,8 @@ export default function WhatsAppFlows() {
                   onClick={() => {
                     setFlowName("Interactive Banking & Account Services Bot");
                     setFlowDesc("Multi-section interactive banking menu");
-                    setFlowTriggerType("all_inbound");
-                    setFlowKeywords("bank, account, balance, card, loan, hi, hello, menu");
+                    setFlowTriggerType("manual");
+                    setFlowKeywords("menu, banking");
                     const starter = getDefaultStarterNodes();
                     setNodes(starter);
                     setSelectedNodeKey("banking_menu");
@@ -4316,6 +4328,17 @@ export default function WhatsAppFlows() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const phone = prompt(`Enter customer phone number to send "${flow.name}" to (e.g. 919876543210):`);
+                              if (phone) triggerFlowForPhone(phone, flow.id);
+                            }}
+                            className="p-2 text-cyan-600 hover:text-cyan-800 hover:bg-cyan-50 rounded-xl transition"
+                            title="Send Flow Bot to Phone Number"
+                          >
+                            <Send size={15} />
+                          </button>
                           <button
                             onClick={(e) => openAnalytics(flow, e)}
                             className="p-2 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition"

@@ -490,8 +490,8 @@ router.post("/seed", auth, async (req, res) => {
       {
         name: "Food & Products Flow Bot (Interactive Catalog & Orders)",
         description: "Official WhatsApp Cloud API interactive flow bot: Quick reply buttons -> Category List ('View All Categories') -> Product details -> Instant Ordering, Bulk Quote Inquiry capture to CRM, and Sales team handoff.",
-        trigger_type: "all_inbound",
-        trigger_config: { keywords: ["hi", "hello", "food", "menu", "order", "price", "products", "catalog", "start"] },
+        trigger_type: "manual",
+        trigger_config: { keywords: ["menu"] },
         entry_node_key: "start",
         nodes: [
           { node_key: "start", node_type: "start", config: { next_node_key: "welcome_menu" }, position_x: 260, position_y: 40 },

@@ -11,13 +11,18 @@ async function seedAll(forceUpdate = false) {
   try {
     console.log("🌱 [WA Flow & Automation Seed] Starting initialization...");
 
-    // 1. Seed Flow Bots if empty or forceUpdate
+    // 1. Seed Flow Bots if empty or forceUpdate; migrate legacy all_inbound triggers to manual
+    try {
+      await db.promise().query(
+        "UPDATE wa_flows SET trigger_type = 'manual' WHERE trigger_type IN ('all_inbound', 'universal', 'default', 'fallback', 'catch_all', 'no_keyword')"
+      );
+    } catch (_) {}
+
     const [existingFlows] = await db.promise().query("SELECT COUNT(*) as count FROM wa_flows");
     if (existingFlows[0].count === 0 || forceUpdate) {
       await seedFlowBots();
     } else {
-      console.log(`ℹ️ [WA Flow Seed] ${existingFlows[0].count} flow(s) already exist in DB. Ensuring all are active...`);
-      await db.promise().query("UPDATE wa_flows SET status = 'active' WHERE status = 'draft'");
+      console.log(`ℹ️ [WA Flow Seed] ${existingFlows[0].count} flow(s) exist in DB. Flows are configured to run for given numbers via Send Flow Bot.`);
     }
 
     // 2. Seed & Activate Automations
@@ -38,9 +43,9 @@ async function seedFlowBots() {
   const seedFlows = [
     {
       name: "Interactive Main Business & Services Menu",
-      description: "24/7 Universal WhatsApp receptionist: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer for all inbound chats.",
-      trigger_type: "all_inbound",
-      trigger_config: { keywords: ["hi", "hello", "menu", "start", "help", "hey", "namaste", "info", "welcome", "services"] },
+      description: "Interactive WhatsApp menu: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer. Triggered for given numbers via Send Flow Bot.",
+      trigger_type: "manual",
+      trigger_config: { keywords: ["menu"] },
       entry_node_key: "start",
       nodes: [
         { node_key: "start", node_type: "start", config: { next_node_key: "main_menu" } },

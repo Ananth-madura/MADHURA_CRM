@@ -58,14 +58,13 @@ class WaFlowEngine {
       if (lower.startsWith(kw) && /^[\s,.!?:;-]/.test(lower.slice(kw.length))) return true;
       if (strict) return false;
 
-      // Whole-word mention anywhere in the sentence
+      // Exact whole-word match or keyword at start followed by punctuation/space
       try {
-        if (new RegExp(`\\b${this.escapeRegex(kw)}\\b`, "i").test(raw)) return true;
+        if (new RegExp(`^${this.escapeRegex(kw)}$`, "i").test(lower)) return true;
+        if (new RegExp(`^#?${this.escapeRegex(kw)}[\\s,.!?:;-]`, "i").test(raw)) return true;
+        if (new RegExp(`^#${this.escapeRegex(kw)}$`, "i").test(raw)) return true;
+        if (new RegExp(`\\b${this.escapeRegex(kw)}\\b`, "i").test(raw) && kw.length >= 4) return true;
       } catch (_) {}
-      // Loose containment for longer keywords. Both sides need >= 3 chars,
-      // otherwise a 1-2 letter reply ("in", "a") triggers any flow containing it.
-      if (kw.length >= 3 && lower.includes(kw)) return true;
-      if (kw.length >= 3 && lower.length >= 3 && kw.includes(lower)) return true;
       return false;
     });
   }
@@ -269,9 +268,9 @@ class WaFlowEngine {
         return false;
       }
 
-      // Priority 1: Keyword Match Flows
+      // Priority 1: Explicit Keyword Match Flows (Only fires if flow is configured as 'keyword' and user types exact command)
       for (const flow of activeFlows) {
-        if (flow.trigger_type === "keyword" || !flow.trigger_type) {
+        if (flow.trigger_type === "keyword") {
           if (this.matchesTriggerKeywords(messageText, flow)) {
             console.log(`🤖 Triggering Keyword WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
             return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
@@ -279,77 +278,8 @@ class WaFlowEngine {
         }
       }
 
-      // Priority 2: First Inbound / Welcome Bot (triggers ONLY when customer initiates conversation, never on campaign replies)
-      for (const flow of activeFlows) {
-        const isWelcomeTrigger = ["first_inbound", "welcome", "welcome_bot", "first_message"].includes(flow.trigger_type);
-        if (isWelcomeTrigger) {
-          // If customer is replying to a bulk campaign, do not fire welcome flow
-          if (options.isCampaignReply) {
-            console.log(`🛡️ [WA FlowEngine] Skipped first-inbound flow "${flow.name}" for +${cleanPhone}: message is a campaign reply.`);
-            continue;
-          }
-
-          // Check if company sent an outbound message within last 24h (customer is replying, not initiating)
-          try {
-            const [recentOutbound] = await db.promise().query(
-              `SELECT id FROM wa_message_logs
-               WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'outbound'
-                 AND created_at >= NOW() - INTERVAL 24 HOUR
-               LIMIT 1`,
-              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
-            );
-            if (recentOutbound && recentOutbound.length > 0) {
-              console.log(`🛡️ [WA FlowEngine] Skipped first-inbound flow "${flow.name}" for +${cleanPhone}: company sent outbound message within last 24h.`);
-              continue;
-            }
-
-            const [[{ count }]] = await db.promise().query(
-              "SELECT COUNT(*) as count FROM wa_message_logs WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'",
-              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
-            );
-            // Also check if there has been no inbound message in the last 24 hours (new session)
-            const [recentInbounds] = await db.promise().query(
-              `SELECT id FROM wa_message_logs
-               WHERE (phone LIKE ? OR phone LIKE ?) AND direction = 'inbound'
-                 AND created_at < NOW() - INTERVAL 1 MINUTE
-                 AND created_at >= NOW() - INTERVAL 24 HOUR
-               LIMIT 1`,
-              [`%${cleanPhone.slice(-10)}`, `%${cleanPhone}`]
-            );
-
-            if (count <= 1 || recentInbounds.length === 0) {
-              console.log(`👋 Triggering First-Inbound/Welcome Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-              return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
-            }
-          } catch (e) {
-            console.warn("First-inbound check error:", e.message);
-          }
-        }
-      }
-
-      // Priority 3: Universal 24/7 Bot (Triggers for ALL Inbound Messages as Default / No-Keyword Fallback)
-      for (const flow of activeFlows) {
-        const isUniversalTrigger = ["all_inbound", "universal", "default", "fallback", "no_keyword", "catch_all"].includes(flow.trigger_type);
-        if (isUniversalTrigger) {
-          // If customer is replying to a bulk campaign, do not fire universal fallback flow
-          if (options.isCampaignReply) {
-            console.log(`🛡️ [WA FlowEngine] Skipped universal flow "${flow.name}" for +${cleanPhone}: message is a campaign reply.`);
-            continue;
-          }
-          console.log(`🌐 Triggering Universal 24/7 WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-          return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
-        }
-      }
-
-      // Priority 4: AI Intent Classifier
-      for (const flow of activeFlows) {
-        if (flow.trigger_type === "ai_intent") {
-          if (options.isCampaignReply) continue;
-          console.log(`🧠 Triggering AI Intent Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
-          return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
-        }
-      }
-
+      // NOTE: Universal catch-all / all_inbound fallback is disabled.
+      // Flow bots must work ONLY for given numbers when triggered via 'Send Flow Bot' or when continuing an active session.
       return false;
     } catch (err) {
       console.error("waFlowEngine dispatch error:", err.message);

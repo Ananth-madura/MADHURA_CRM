@@ -525,12 +525,12 @@ class WhatsAppService {
         this.isSyncing = true;
         console.log(`✅ WhatsApp Client is Ready for phone: ${this.phone} [Quarantine Active for initial history sync]`);
 
-        // 20-second quarantine grace period: WhatsApp Web replays historic/unread messages during initial sync.
+        // 45-second quarantine grace period: WhatsApp Web replays historic/unread messages during initial sync.
         // During this window, all old/sync messages are ingested for CRM live chat but strictly blocked from firing automations.
         setTimeout(() => {
           this.isSyncing = false;
           console.log(`🛡️ [WA Quarantine Guard] Initial sync completed for session ${this.key}. Live real-time automations are active.`);
-        }, 20000);
+        }, 45000);
 
         try {
           const db = require("../config/database");
@@ -642,13 +642,15 @@ class WhatsAppService {
         // ── 🛡️ STRICT CONNECTION & REPLAY QUARANTINE GUARD ─────────────────────
         // Connecting a WhatsApp number alone MUST NEVER trigger automated messages.
         // A message is considered historical or pre-connection sync if:
-        // 1. Its timestamp is before this session became ready (with 10s clock tolerance)
-        // 2. Its timestamp is older than 60 seconds from current system time
-        // 3. Session is in initial sync grace period and message was sent >15s ago
-        const isPreConnection = this.connectedAt > 0 && msgTimestampMs < (connectedTime - 10000);
-        const isStale = (nowMs - msgTimestampMs) > 60000;
-        const isSyncReplay = Boolean(this.isSyncing && (nowMs - msgTimestampMs) > 15000);
-        const isHistoricalOrSync = isPreConnection || isStale || isSyncReplay;
+        // 1. Session is currently syncing (this.isSyncing is true)
+        // 2. Its timestamp is before this session became ready or within 10s of connection
+        // 3. Its timestamp is older than 25 seconds from current system time
+        // 4. Session was connected less than 30 seconds ago
+        const isPreConnection = Boolean(this.connectedAt > 0 && msgTimestampMs <= (connectedTime + 10000));
+        const isStale = (nowMs - msgTimestampMs) > 25000;
+        const isSyncReplay = Boolean(this.isSyncing);
+        const isRecentConnectionGrace = Boolean(this.connectedAt > 0 && (nowMs - this.connectedAt) < 30000);
+        const isHistoricalOrSync = isPreConnection || isStale || isSyncReplay || isRecentConnectionGrace;
 
         const liveMsg = {
           id: msg.id?.id || `msg_${Date.now()}`,
