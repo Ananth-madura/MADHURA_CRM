@@ -45,7 +45,7 @@ if exist "%~dp0.last-build-ip" (
     set "CACHED_IP=!CACHED_IP: =!"
     if not "!CACHED_IP!"=="" (
         if not "!CACHED_IP!"=="127.0.0.1" (
-            set "SERVER_IP=192.168.0.118"
+            set "SERVER_IP=!CACHED_IP!"
             echo   Using IP from server cache: !SERVER_IP!
             goto :test_server
         )
@@ -91,7 +91,7 @@ for /l %%i in (1,1,254) do (
 )
 
 if not "%FOUND_IP%"=="" (
-    set "SERVER_IP=192.168.0.118"
+    set "SERVER_IP=!FOUND_IP!"
 ) else (
     echo.
     echo   [WARN] Auto-detection failed. Using default: %SERVER_IP%
@@ -100,7 +100,7 @@ if not "%FOUND_IP%"=="" (
     echo   (Ask your IT admin for the server IP address)
     echo.
     set /p "USER_IP=Server IP (press ENTER for %SERVER_IP%): "
-    if not "!USER_IP!"=="" set "SERVER_IP=192.168.0.118"
+    if not "!USER_IP!"=="" set "SERVER_IP=!USER_IP!"
 )
 
 :: ================================================================

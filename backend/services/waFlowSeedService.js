@@ -14,9 +14,11 @@ async function seedAll(forceUpdate = false) {
     // 1. Seed Flow Bots if empty or forceUpdate; migrate legacy all_inbound triggers to manual
     try {
       await db.promise().query(
-        "UPDATE wa_flows SET trigger_type = 'manual' WHERE trigger_type IN ('all_inbound', 'universal', 'default', 'fallback', 'catch_all', 'no_keyword')"
+        "UPDATE wa_flows SET trigger_type = 'manual' WHERE trigger_type IN ('all_inbound', 'universal', 'default', 'fallback', 'catch_all', 'no_keyword', 'first_inbound', 'ai_intent')"
       );
-    } catch (_) {}
+    } catch (err) {
+      console.error("❌ [WA Flow Seed] Failed to migrate legacy flow trigger types to manual:", err.message);
+    }
 
     const [existingFlows] = await db.promise().query("SELECT COUNT(*) as count FROM wa_flows");
     if (existingFlows[0].count === 0 || forceUpdate) {

@@ -402,20 +402,24 @@ export default function WhatsAppFlows() {
 
   const triggerFlowForPhone = async (phone, explicitFlowId = null) => {
     try {
-      const token = localStorage.getItem("token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const targetFlowId = explicitFlowId || editingFlowId || flows[0]?.id;
+      const targetFlowId = explicitFlowId || editingFlowId;
+      if (!targetFlowId) {
+        alert("Please save your flow first before sending it to a phone number.");
+        return;
+      }
       let cleanPhone = String(phone || "").replace(/\D/g, "");
       if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
       if (!cleanPhone || cleanPhone.length < 10) {
         alert("Please enter a valid phone number with country code (e.g. 919876543210)");
         return;
       }
+      const token = localStorage.getItem("token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await axios.post(`${API}/api/wa-flows/send-menu`, {
         phone: cleanPhone,
         flow_id: targetFlowId
       }, { headers });
-      alert(`✅ Flow Bot sent successfully to +${cleanPhone}!\nResult: ${res.data.message || "Active"}`);
+      alert(`✅ Flow Bot sent successfully!\n${res.data.message || `Sent to +${cleanPhone}`}`);
     } catch (err) {
       alert(`❌ Error sending Flow Bot to WhatsApp: ${err.response?.data?.error || err.message}`);
     }

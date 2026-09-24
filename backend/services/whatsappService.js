@@ -156,6 +156,8 @@ class WhatsAppService {
     this.chatsFetching = false;
     this.connectedAt = 0;
     this.isSyncing = false;
+    this._quarantineTimer = null;
+    this._quarantineToken = null;
     this._queue = Promise.resolve();
     this._sendQueue = Promise.resolve();
     this._lastSendAt = 0;
@@ -163,6 +165,14 @@ class WhatsAppService {
     this._getQrPromise = null;
     this.lidToPhoneMap = new Map();
     this.phoneToLidMap = new Map();
+  }
+
+  clearQuarantineTimer() {
+    if (this._quarantineTimer) {
+      clearTimeout(this._quarantineTimer);
+      this._quarantineTimer = null;
+    }
+    this._quarantineToken = null;
   }
 
   async resolveLidToPhone(lidJid) {
@@ -527,8 +537,17 @@ class WhatsAppService {
 
         // 45-second quarantine grace period: WhatsApp Web replays historic/unread messages during initial sync.
         // During this window, all old/sync messages are ingested for CRM live chat but strictly blocked from firing automations.
-        setTimeout(() => {
+        if (this._quarantineTimer) {
+          clearTimeout(this._quarantineTimer);
+          this._quarantineTimer = null;
+        }
+        const currentToken = Symbol("quarantineToken");
+        this._quarantineToken = currentToken;
+
+        this._quarantineTimer = setTimeout(() => {
+          if (this._quarantineToken !== currentToken || !this.ready) return;
           this.isSyncing = false;
+          this._quarantineTimer = null;
           console.log(`🛡️ [WA Quarantine Guard] Initial sync completed for session ${this.key}. Live real-time automations are active.`);
         }, 45000);
 
@@ -581,6 +600,11 @@ class WhatsAppService {
         this.isInitializing = false;
         this.connectedAt = 0;
         this.isSyncing = false;
+        if (this._quarantineTimer) {
+          clearTimeout(this._quarantineTimer);
+          this._quarantineTimer = null;
+        }
+        this._quarantineToken = null;
         this.emitWaEvent("wa_disconnected", null, this.phone, { reason: "AUTH_FAILURE", message: msg });
       });
 
@@ -593,6 +617,11 @@ class WhatsAppService {
         this.isInitializing = false;
         this.connectedAt = 0;
         this.isSyncing = false;
+        if (this._quarantineTimer) {
+          clearTimeout(this._quarantineTimer);
+          this._quarantineTimer = null;
+        }
+        this._quarantineToken = null;
 
         this.emitWaEvent("wa_disconnected", null, this.phone, { reason: reasonStr });
 
@@ -641,16 +670,12 @@ class WhatsAppService {
 
         // ── 🛡️ STRICT CONNECTION & REPLAY QUARANTINE GUARD ─────────────────────
         // Connecting a WhatsApp number alone MUST NEVER trigger automated messages.
-        // A message is considered historical or pre-connection sync if:
-        // 1. Session is currently syncing (this.isSyncing is true)
-        // 2. Its timestamp is before this session became ready or within 10s of connection
-        // 3. Its timestamp is older than 25 seconds from current system time
-        // 4. Session was connected less than 30 seconds ago
-        const isPreConnection = Boolean(this.connectedAt > 0 && msgTimestampMs <= (connectedTime + 10000));
+        // Distinguish genuine live customer replies from replayed sync messages:
+        const isNewReply = Boolean(this.connectedAt > 0 && msgTimestampMs > connectedTime && (nowMs - msgTimestampMs) <= 20000);
+        const isPreConnection = Boolean(this.connectedAt > 0 && msgTimestampMs <= connectedTime);
         const isStale = (nowMs - msgTimestampMs) > 25000;
-        const isSyncReplay = Boolean(this.isSyncing);
-        const isRecentConnectionGrace = Boolean(this.connectedAt > 0 && (nowMs - this.connectedAt) < 30000);
-        const isHistoricalOrSync = isPreConnection || isStale || isSyncReplay || isRecentConnectionGrace;
+        const isSyncReplay = Boolean(this.isSyncing && !isNewReply);
+        const isHistoricalOrSync = !isNewReply && (isPreConnection || isStale || isSyncReplay);
 
         const liveMsg = {
           id: msg.id?.id || `msg_${Date.now()}`,
@@ -1146,6 +1171,7 @@ class WhatsAppService {
   async hibernate() {
     if (!this.client) return;
     console.log(`💤 [VPS RAM Saver] Hibernating idle WhatsApp Web session ${this.key}`);
+    this.clearQuarantineTimer();
     const deadClient = this.client;
     this.client = null;
     this.isInitializing = false;
@@ -1161,6 +1187,7 @@ class WhatsAppService {
   // errors deep inside the library, outside any of its own event handlers.
   forceReset(reason = "unknown") {
     console.warn(`⚠️ WhatsApp Web session force-reset (${reason})`);
+    this.clearQuarantineTimer();
     const deadClient = this.client;
     this.ready = false;
     this.qrCode = null;

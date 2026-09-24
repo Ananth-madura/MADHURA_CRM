@@ -244,10 +244,10 @@ router.post("/:id/test-simulate", auth, async (req, res) => {
     // WhatsApp. The simulator always force-starts at the entry node, so without
     // this a non-matching message looks like it works when it never would.
     const triggerKeywords = waFlowEngine.getTriggerKeywords(flow);
-    const isKeywordFlow = flow.trigger_type === "keyword" || !flow.trigger_type;
+    const isKeywordFlow = waFlowEngine.isKeywordEligible(flow);
     const triggerMatched = isKeywordFlow
       ? waFlowEngine.matchesTriggerKeywords(input, flow)
-      : true; // all_inbound / first_inbound / ai_intent fire without a keyword
+      : false;
 
     res.json({
       success: true,
@@ -271,10 +271,10 @@ router.post("/draft-simulate", auth, async (req, res) => {
 
     const simResult = await waFlowEngine.simulateFlowStep(flow, input, state);
     const triggerKeywords = waFlowEngine.getTriggerKeywords(flow);
-    const isKeywordFlow = flow.trigger_type === "keyword" || !flow.trigger_type;
+    const isKeywordFlow = waFlowEngine.isKeywordEligible(flow);
     const triggerMatched = isKeywordFlow
       ? waFlowEngine.matchesTriggerKeywords(input, flow)
-      : true;
+      : false;
 
     res.json({
       success: true,
@@ -678,8 +678,8 @@ router.post("/seed", auth, async (req, res) => {
       {
         name: "Interactive Banking & Account Services Bot",
         description: "Multi-section interactive banking menu with structured button options, instant FD, account balance lookup, card applications, loan eligibility checks, and live agent handoff.",
-        trigger_type: "all_inbound",
-        trigger_config: { keywords: ["bank", "account", "balance", "card", "loan", "hi", "hello", "menu"] },
+        trigger_type: "manual",
+        trigger_config: { keywords: ["banking", "bank"] },
         entry_node_key: "start",
         nodes: [
           { node_key: "start", node_type: "start", config: { next_node_key: "banking_menu" }, position_x: 280, position_y: 40 },
@@ -950,8 +950,8 @@ router.post("/seed", auth, async (req, res) => {
       {
         name: "Interactive Main Business & Services Menu",
         description: "24/7 Universal WhatsApp receptionist: Services, Instant Appointment Booking, Working Hours, and Live Agent Transfer for all inbound chats.",
-        trigger_type: "all_inbound",
-        trigger_config: { keywords: ["hi", "hello", "menu", "start", "help", "hey", "namaste", "info", "welcome"] },
+        trigger_type: "manual",
+        trigger_config: { keywords: ["menu"] },
         entry_node_key: "start",
         nodes: [
           { node_key: "start", node_type: "start", config: { next_node_key: "main_menu" } },

@@ -32,6 +32,14 @@ class WaFlowEngine {
   }
 
   /**
+   * Helper: Check if a flow is eligible for keyword triggers.
+   * Only flows explicitly configured with trigger_type === 'keyword' are keyword-eligible.
+   */
+  isKeywordEligible(flow) {
+    return flow?.trigger_type === "keyword";
+  }
+
+  /**
    * Does this inbound message fire the flow's keyword trigger?
    * Single source of truth — starting a flow from idle and switching flows
    * mid-conversation previously used two different, silently inconsistent rule
@@ -233,7 +241,7 @@ class WaFlowEngine {
 
         let switchedFlow = null;
         for (const f of otherFlows) {
-          if (f.trigger_type === "keyword" || !f.trigger_type) {
+          if (this.isKeywordEligible(f)) {
             // strict: only a deliberate command may abandon a running flow
             if (this.matchesTriggerKeywords(messageText, f, { strict: true })) {
               switchedFlow = f;
@@ -270,7 +278,7 @@ class WaFlowEngine {
 
       // Priority 1: Explicit Keyword Match Flows (Only fires if flow is configured as 'keyword' and user types exact command)
       for (const flow of activeFlows) {
-        if (flow.trigger_type === "keyword") {
+        if (this.isKeywordEligible(flow)) {
           if (this.matchesTriggerKeywords(messageText, flow)) {
             console.log(`🤖 Triggering Keyword WhatsApp Flow "${flow.name}" (ID: ${flow.id}) for +${cleanPhone}`);
             return await this.startFlowRun(flow, cleanPhone, sessionKey, messageText);
