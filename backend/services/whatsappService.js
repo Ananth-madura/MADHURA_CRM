@@ -646,7 +646,8 @@ class WhatsAppService {
         }
       });
 
-      const handleLiveMessage = (msg) => {
+      const handleLiveMessage = async (msg) => {
+        if (!msg) return;
         const chatId = msg.fromMe ? msg.to : msg.from;
         if (!chatId) return;
 
@@ -658,7 +659,16 @@ class WhatsAppService {
         let cleanPhone = digitsOnly;
         if (!isGroup && (chatId.includes("@lid") || digitsOnly.length >= 14)) {
           const mapped = this.lidToPhoneMap?.get(chatId) || this.lidToPhoneMap?.get(digitsOnly);
-          if (mapped) cleanPhone = mapped;
+          if (mapped) {
+            cleanPhone = mapped;
+          } else {
+            try {
+              const resolved = await this.resolveLidToPhone(chatId).catch(() => null);
+              if (resolved && resolved.length <= 13) {
+                cleanPhone = resolved;
+              }
+            } catch (_) {}
+          }
         }
         const rawFilename = msg._data?.filename || (/\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|png|jpg|jpeg|webp|mp4|mp3|ogg|wav)$/i.test(msg.body || "") ? msg.body : "");
         const isMedia = Boolean(msg.hasMedia || msg.type === "document" || msg.type === "image" || msg.type === "video" || msg.type === "audio" || rawFilename);
@@ -671,9 +681,9 @@ class WhatsAppService {
         // ── 🛡️ STRICT CONNECTION & REPLAY QUARANTINE GUARD ─────────────────────
         // Connecting a WhatsApp number alone MUST NEVER trigger automated messages.
         // Distinguish genuine live customer replies from replayed sync messages:
-        const isNewReply = Boolean(this.connectedAt > 0 && msgTimestampMs > connectedTime && (nowMs - msgTimestampMs) <= 20000);
+        const isNewReply = Boolean(this.connectedAt > 0 && msgTimestampMs > connectedTime && (nowMs - msgTimestampMs) <= 60000);
         const isPreConnection = Boolean(this.connectedAt > 0 && msgTimestampMs <= connectedTime);
-        const isStale = (nowMs - msgTimestampMs) > 25000;
+        const isStale = (nowMs - msgTimestampMs) > 120000;
         const isSyncReplay = Boolean(this.isSyncing && !isNewReply);
         const isHistoricalOrSync = !isNewReply && (isPreConnection || isStale || isSyncReplay);
 
@@ -695,19 +705,32 @@ class WhatsAppService {
             : null,
         };
 
+        const canonicalChatId = (!isGroup && cleanPhone && cleanPhone.length <= 13) ? `${cleanPhone}@c.us` : chatId;
+
+        // Cache message under both raw chatId and canonicalChatId
         if (!this.messagesCache[chatId]) this.messagesCache[chatId] = [];
         if (!this.messagesCache[chatId].some((m) => m.id === liveMsg.id)) {
           this.messagesCache[chatId].unshift(liveMsg);
-          if (this.messagesCache[chatId].length > 200) {
-            this.messagesCache[chatId].length = 200;
+          if (this.messagesCache[chatId].length > 200) this.messagesCache[chatId].length = 200;
+        }
+        if (canonicalChatId !== chatId) {
+          if (!this.messagesCache[canonicalChatId]) this.messagesCache[canonicalChatId] = [];
+          if (!this.messagesCache[canonicalChatId].some((m) => m.id === liveMsg.id)) {
+            this.messagesCache[canonicalChatId].unshift(liveMsg);
+            if (this.messagesCache[canonicalChatId].length > 200) this.messagesCache[canonicalChatId].length = 200;
           }
         }
         delete this.messagesFetchCache[chatId];
+        if (canonicalChatId !== chatId) delete this.messagesFetchCache[canonicalChatId];
 
         // 1. Emit live Socket event INSTANTLY (< 1ms) so CRM operator sees message in chat
         const eventName = msg.fromMe ? "wa_message_sent" : "wa_message_received";
-        this.emitWaEvent(eventName, chatId, cleanPhone, liveMsg);
-        this.emitWaEvent("wa_message", chatId, cleanPhone, liveMsg);
+        console.log(`📥 [WA Live Message] ${eventName} for ${cleanPhone || chatId}: "${(liveMsg.body || "").slice(0, 60)}" (isMe: ${liveMsg.isMe})`);
+        this.emitWaEvent(eventName, canonicalChatId, cleanPhone, liveMsg);
+        if (canonicalChatId !== chatId) {
+          this.emitWaEvent(eventName, chatId, cleanPhone, liveMsg);
+        }
+        this.emitWaEvent("wa_message", canonicalChatId, cleanPhone, liveMsg);
 
         // 2. Async DB log and bot automation in background (zero blocking)
         process.nextTick(async () => {
@@ -727,7 +750,7 @@ class WhatsAppService {
                VALUES (?, ?, ?, ?, ?, ?, 'delivered', FROM_UNIXTIME(?))`,
               [
                 this.key,
-                phoneToStore || chatId,
+                phoneToStore || cleanPhone || chatId,
                 msg.fromMe ? "outbound" : "inbound",
                 liveMsg.type,
                 liveMsg.body,
@@ -744,12 +767,14 @@ class WhatsAppService {
                  VALUES (?, ?, ?, 'WhatsApp Chat', 1, ?, NOW(), ?)
                  ON DUPLICATE KEY UPDATE
                    last_message_text = VALUES(last_message_text),
-                   last_message_at = NOW()`,
+                   last_message_at = NOW(),
+                   unread_count = CASE WHEN ? = 1 THEN unread_count + 1 ELSE unread_count END`,
                 [
                   msg.fromMe ? "Me" : (msg._data?.notifyName || formatPhoneDisplay(phoneToStore)),
                   phoneToStore,
                   countryCode,
                   liveMsg.body,
+                  msg.fromMe ? 0 : 1,
                   msg.fromMe ? 0 : 1
                 ]
               ).catch(() => {});
@@ -902,6 +927,62 @@ class WhatsAppService {
       this.client.on("message", (msg) => {
         if (!msg.fromMe) safeHandleLiveMessage(msg);
       });
+
+      // Capture incoming messages delivered via WhatsApp Web chat unread counter
+      this.client.on("unread_count", async (chat) => {
+        try {
+          if (chat && chat.lastMessage && !chat.lastMessage.fromMe) {
+            console.log(`📥 [WA Inbound unread_count] New message from ${chat.lastMessage.from}: "${chat.lastMessage.body}"`);
+            safeHandleLiveMessage(chat.lastMessage);
+          }
+        } catch (_) {}
+      });
+
+      // Handle delayed end-to-end ciphertext decryption
+      this.client.on("message_ciphertext", (msg) => {
+        try {
+          console.log(`🔐 [WA Ciphertext] Encrypted message from ${msg.from}, checking for decrypted content...`);
+          setTimeout(async () => {
+            try {
+              if (!this.ready || !this.client) return;
+              const formatted = formatChatJid(msg.from);
+              let chat = await this.client.getChatById(formatted).catch(() => null);
+              if (!chat && formatted !== msg.from) {
+                chat = await this.client.getChatById(msg.from).catch(() => null);
+              }
+              if (chat) {
+                const recent = await chat.fetchMessages({ limit: 5 }).catch(() => []);
+                for (const m of recent) {
+                  if (m && m.type !== "ciphertext" && !m.fromMe) {
+                    safeHandleLiveMessage(m);
+                  }
+                }
+              }
+            } catch (_) {}
+          }, 1500);
+        } catch (_) {}
+      });
+
+      // Active Inbound Watcher: Guarantee NO inbound message is EVER lost, even if webhooks/events glitch
+      if (this._inboundWatchTimer) clearInterval(this._inboundWatchTimer);
+      this._inboundWatchTimer = setInterval(async () => {
+        try {
+          if (!this.ready || !this.client || this.isSyncing) return;
+          const chats = await this.enqueue(() => this.withTimeout(this.client.getChats(), 4000, "inboundWatcher getChats")).catch(() => []);
+          for (const c of (chats || []).slice(0, 20)) {
+            if (c && (c.unreadCount > 0 || (c.lastMessage && !c.lastMessage.fromMe))) {
+              const lastMsg = c.lastMessage;
+              if (lastMsg && !lastMsg.fromMe) {
+                const msgId = lastMsg.id?._serialized || lastMsg.id?.id;
+                if (msgId && !processedMsgIds.has(msgId)) {
+                  console.log(`📥 [WA Watcher] Discovered unhandled incoming message from ${lastMsg.from}: "${(lastMsg.body || "").slice(0, 50)}"`);
+                  safeHandleLiveMessage(lastMsg);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }, 5000);
 
       // Real-time message emoji reactions
       this.client.on("message_reaction", (reaction) => {
@@ -1799,29 +1880,34 @@ class WhatsAppService {
     }
 
     let liveMsgs = this.messagesCache[chatId] || [];
+    if (!this._lastChatFetchTime) this._lastChatFetchTime = {};
+    const lastFetch = this._lastChatFetchTime[chatId] || 0;
+    const shouldFetchLive = this.ready && this.client && (forceRefresh || !liveMsgs.length || (now - lastFetch > 5000));
 
-    // 2. Non-blocking background fetch if empty or forceRefresh to keep UI ultra-fast (< 5ms)
-    if (this.ready && this.client && (forceRefresh || (!liveMsgs.length && dbMsgs.length === 0))) {
-      process.nextTick(async () => {
-        try {
-          const formattedChatId = formatChatJid(chatId);
-          let chat = await this.enqueue(() => this.withTimeout(this.client.getChatById(formattedChatId), 3000, "WhatsApp Web getChatById")).catch(() => null);
-          if (!chat && formattedChatId !== chatId) {
-            chat = await this.enqueue(() => this.withTimeout(this.client.getChatById(chatId), 2500, "WhatsApp Web getChatById fallback")).catch(() => null);
-          }
-          if (chat) {
-            const fetchLimit = Math.max(numericLimit, 50);
-            const msgs = await this.enqueue(() => this.withTimeout(chat.fetchMessages({ limit: fetchLimit }), 3000, "WhatsApp Web fetchMessages")).catch(() => []);
+    // 2. Fetch live messages from WhatsApp Web
+    if (shouldFetchLive) {
+      this._lastChatFetchTime[chatId] = now;
+      try {
+        const formattedChatId = formatChatJid(chatId);
+        let chat = await this.enqueue(() => this.withTimeout(this.client.getChatById(formattedChatId), 3500, "WhatsApp Web getChatById")).catch(() => null);
+        if (!chat && formattedChatId !== chatId) {
+          chat = await this.enqueue(() => this.withTimeout(this.client.getChatById(chatId), 2500, "WhatsApp Web getChatById fallback")).catch(() => null);
+        }
+        if (chat) {
+          const fetchLimit = Math.max(numericLimit, 50);
+          const msgs = await this.enqueue(() => this.withTimeout(chat.fetchMessages({ limit: fetchLimit }), 4000, "WhatsApp Web fetchMessages")).catch(() => []);
+          if (msgs && msgs.length) {
             const freshLive = msgs.map((m) => {
               const filename = m._data?.filename || (/\.(md|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|rar|png|jpg|jpeg|webp|mp4|mp3|ogg|wav)$/i.test(m.body || "") ? m.body : "");
               const isMedia = Boolean(m.hasMedia || m.type === "document" || m.type === "image" || m.type === "video" || m.type === "audio" || filename);
               return {
-                id: m.id.id,
-                serializedId: m.id._serialized || m.id.id,
+                id: m.id?.id || m.id?._serialized,
+                serializedId: m.id?._serialized || m.id?.id,
                 from: m.from,
+                to: m.to,
                 body: filename || describeLastMessage(m) || m.body || "",
-                timestamp: m.timestamp,
-                isMe: m.fromMe,
+                timestamp: m.timestamp || Math.floor(Date.now() / 1000),
+                isMe: Boolean(m.fromMe),
                 type: m.type || (isMedia ? "document" : "text"),
                 hasMedia: isMedia,
                 filename: filename || "",
@@ -1832,31 +1918,35 @@ class WhatsAppService {
                   : null,
               };
             });
-            if (freshLive.length) {
-              this.messagesCache[chatId] = freshLive;
+            this.messagesCache[chatId] = freshLive;
+            liveMsgs = freshLive;
 
-              // Auto-persist loaded chat messages into wa_message_logs DB
-              const db = require("../config/database");
-              for (const m of freshLive) {
-                await db.promise().query(
-                  `INSERT IGNORE INTO wa_message_logs (session_key, phone, direction, message_type, message_text, wa_message_id, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'sent', FROM_UNIXTIME(?))`,
-                  [
-                    this.key,
-                    digitsOnly,
-                    m.isMe ? "outbound" : "inbound",
-                    m.hasMedia ? (m.type || "media") : "text",
-                    m.body || describeLastMessage(m) || "",
-                    m.id,
-                    m.timestamp || Math.floor(Date.now() / 1000)
-                  ]
-                ).catch(() => {});
-              }
-              this.emitWaEvent("wa_chat_history_updated", chatId, digitsOnly, { count: freshLive.length });
-            }
+            // Auto-persist loaded chat messages into wa_message_logs DB
+            process.nextTick(async () => {
+              try {
+                const db = require("../config/database");
+                for (const m of freshLive) {
+                  await db.promise().query(
+                    `INSERT IGNORE INTO wa_message_logs (session_key, phone, direction, message_type, message_text, wa_message_id, status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 'delivered', FROM_UNIXTIME(?))`,
+                    [
+                      this.key,
+                      digitsOnly,
+                      m.isMe ? "outbound" : "inbound",
+                      m.hasMedia ? (m.type || "media") : "text",
+                      m.body || describeLastMessage(m) || "",
+                      m.id,
+                      m.timestamp || Math.floor(Date.now() / 1000)
+                    ]
+                  ).catch(() => {});
+                }
+              } catch (_) {}
+            });
           }
-        } catch (_) {}
-      });
+        }
+      } catch (err) {
+        console.warn(`⚠️ [WhatsApp Web] Live fetch error for ${chatId}:`, err?.message || err);
+      }
     }
 
     const msgMap = new Map();

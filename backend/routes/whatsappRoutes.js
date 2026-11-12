@@ -22,11 +22,9 @@ const s = (req) => {
   const reqKey = req.headers["x-session-key"] || req.query?.sessionKey || req.user?.id;
   if (reqKey) {
     const target = mgr.get(reqKey);
-    // Explicit fallback allowed only when requested (e.g. system broadcast or shared fallback)
-    if (!target.ready && (req.query?.fallback === "true" || req.headers["x-allow-fallback"] === "true")) {
-      const readySession = mgr.all().find((ses) => ses.ready);
-      if (readySession) return readySession;
-    }
+    if (target.ready) return target;
+    const readySession = mgr.all().find((ses) => ses.ready);
+    if (readySession) return readySession;
     return target;
   }
   return mgr.default();

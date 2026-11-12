@@ -815,7 +815,7 @@ export default function WhatsAppPage() {
     setSyncing(false);
   };
 
-  const fetchMessages = useCallback(async (chatId, limit = 10) => {
+  const fetchMessages = useCallback(async (chatId, limit = 10, refresh = false) => {
     const hasCached = Boolean(messagesCacheRef.current[chatId] && messagesCacheRef.current[chatId].length > 0);
     if (!hasCached) {
       if (limit === 10) setMessagesLoading(true);
@@ -823,7 +823,8 @@ export default function WhatsAppPage() {
     }
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/api/whatsapp/chat/${encodeURIComponent(chatId)}/messages?limit=${limit}`, {
+      const url = `${API}/api/whatsapp/chat/${encodeURIComponent(chatId)}/messages?limit=${limit}${refresh ? "&refresh=true" : ""}`;
+      const res = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = res.data || [];
@@ -952,7 +953,7 @@ export default function WhatsAppPage() {
       axios.post(`${API}/api/whatsapp/chat/${encodeURIComponent(chat.id)}/read`, {}, { headers }).catch(() => {});
     } catch (_) {}
 
-    fetchMessages(chat.id, 10);
+    fetchMessages(chat.id, 10, true);
   };
 
   const handleSend = async () => {
@@ -2146,12 +2147,12 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (status.connected) {
       if (pollRef.current) clearInterval(pollRef.current);
-      // Real-time updates arrive over the socket below — this is just a slow
-      // fallback in case a socket event is missed.
+      // Real-time updates arrive over the socket below — this is a background
+      // fallback every 10s to ensure no messages are missed.
       pollRef.current = setInterval(() => {
         fetchChats();
-        if (selectedChat) fetchMessages(selectedChat.id);
-      }, 20000);
+        if (selectedChatRef.current) fetchMessages(selectedChatRef.current.id, 10, true);
+      }, 10000);
     } else {
       if (pollRef.current) clearInterval(pollRef.current);
     }
@@ -2167,20 +2168,24 @@ export default function WhatsAppPage() {
   // laggy or missing before.
   useEffect(() => {
     const handleRealtimeUpdate = (data) => {
-      const { chatId, message, phone } = data || {};
-      if (!chatId && !phone) {
+      const { chatId, message, phone, rawChatId } = data || {};
+      if (!chatId && !phone && !rawChatId) {
         fetchChats();
-        if (selectedChatRef.current) fetchMessages(selectedChatRef.current.id);
+        if (selectedChatRef.current) fetchMessages(selectedChatRef.current.id, 10, true);
         return;
       }
 
       const activeSelected = selectedChatRef.current;
       const targetChatId = chatId || (phone ? `${phone}@c.us` : "");
-      const selClean = (activeSelected?.id || activeSelected?.phone || "").replace(/\D/g, "");
-      const msgClean = (targetChatId || phone || "").replace(/\D/g, "");
+      const incomingRaw = rawChatId || "";
+      const selClean = (activeSelected?.phoneNumber || activeSelected?.phone || activeSelected?.id || "").replace(/\D/g, "");
+      const msgClean = (phone || targetChatId || incomingRaw).replace(/\D/g, "");
       const sel10 = selClean.slice(-10);
       const msg10 = msgClean.slice(-10);
-      const isCurrentChat = Boolean(sel10 && msg10 && sel10 === msg10);
+      const isCurrentChat = Boolean(
+        (sel10 && msg10 && sel10 === msg10) ||
+        (activeSelected?.id && (activeSelected.id === targetChatId || activeSelected.id === incomingRaw))
+      );
 
       const msgObj = message || {
         id: data?.id || `ws_${Date.now()}`,
@@ -2213,7 +2218,11 @@ export default function WhatsAppPage() {
           if (prev.some((m) => m.id === msgObj.id || (m.serializedId && m.serializedId === msgObj.serializedId))) {
             return prev;
           }
-          return [msgObj, ...prev];
+          const updated = [msgObj, ...prev];
+          if (activeSelected?.id) {
+            messagesCacheRef.current[activeSelected.id] = updated;
+          }
+          return updated;
         });
         const isNearBottom = threadRef.current
           ? threadRef.current.scrollHeight - threadRef.current.scrollTop - threadRef.current.clientHeight <= 220
@@ -2226,11 +2235,11 @@ export default function WhatsAppPage() {
       }
 
       setChats((prev) => {
-        const cleanDigits = (targetChatId || phone || "").replace(/\D/g, "");
+        const cleanDigits = (targetChatId || phone || incomingRaw).replace(/\D/g, "");
         const clean10Digits = cleanDigits.slice(-10);
         const idx = prev.findIndex((c) => {
           const cPhone = (c.phoneNumber || c.id || c.phone || "").replace(/\D/g, "");
-          return c.id === targetChatId || cPhone === cleanDigits || (clean10Digits && cPhone.slice(-10) === clean10Digits);
+          return c.id === targetChatId || c.id === incomingRaw || cPhone === cleanDigits || (clean10Digits && cPhone.slice(-10) === clean10Digits);
         });
 
         const msgBody = previewText(msgObj) || msgObj.body || (msgObj.isMe ? "Sent message" : "Incoming message");
@@ -2270,8 +2279,8 @@ export default function WhatsAppPage() {
       if (activeSelected && chatId) {
         const selClean = (activeSelected.id || "").replace(/\D/g, "").slice(-10);
         const eventClean = (chatId || "").replace(/\D/g, "").slice(-10);
-        if (selClean === eventClean) {
-          fetchMessages(activeSelected.id);
+        if (selClean === eventClean || activeSelected.id === chatId) {
+          fetchMessages(activeSelected.id, 10, true);
         }
       }
     };
@@ -3358,6 +3367,21 @@ export default function WhatsAppPage() {
                     title="View Contact Profile, CRM Inquiries & Quick Links"
                   >
                     <Info size={18} />
+                  </button>
+
+                  {/* Manual Refresh Button */}
+                  <button
+                    onClick={() => {
+                      if (selectedChat?.id) {
+                        fetchMessages(selectedChat.id, msgLimit, true);
+                        fetchChats(true);
+                      }
+                    }}
+                    disabled={messagesLoading}
+                    className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition disabled:opacity-50"
+                    title="Fetch latest messages from WhatsApp phone"
+                  >
+                    <RotateCw size={18} className={messagesLoading ? "animate-spin text-[#00a884]" : ""} />
                   </button>
                 </div>
               </div>
